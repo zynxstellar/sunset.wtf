@@ -1317,6 +1317,123 @@ do
     track(RunService.Stepped:Connect(apply))
     track({ Disconnect = function() Settings.WalkSpeedEnabled = false restore() end })
 end
+-- ---- Player / Spin
+do
+    local s = makeSection(PlayerTab.Right, "Spin")
+    local enabled = false
+    local rate = 360
+    local trackedHumanoid, originalAutoRotate, trackedRoot
+    local yaw = 0
+    local function restoreSpin()
+        if trackedHumanoid and trackedHumanoid.Parent then
+            trackedHumanoid.AutoRotate = originalAutoRotate
+        end
+        trackedHumanoid, originalAutoRotate, trackedRoot = nil, nil, nil
+    end
+    Elements.Toggle(s, "Spin", false, function(on)
+        enabled = on
+        if not on then restoreSpin() end
+    end)
+    Elements.Slider(s, "Spin Speed", 30, 1440, 360, "deg/s", function(value) rate = value end)
+    track(RunService.Stepped:Connect(function(_, dt)
+        if not enabled then return end
+        -- Avoid competing with movement modules that own the character rotation.
+        if Settings.FlyEnabled or Settings.AutoTp then restoreSpin() return end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or humanoid.Health <= 0 or not root or root.Anchored or humanoid.Sit then
+            restoreSpin()
+            return
+        end
+        if trackedHumanoid ~= humanoid or trackedRoot ~= root then
+            restoreSpin()
+            trackedHumanoid, trackedRoot = humanoid, root
+            originalAutoRotate = humanoid.AutoRotate
+            local _, initialYaw = root.CFrame:ToOrientation()
+            yaw = initialYaw
+        end
+        humanoid.AutoRotate = false
+        yaw = (yaw + math.rad(rate) * math.min(dt, 0.1)) % (math.pi * 2)
+        root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
+    end))
+    track({ Disconnect = function() enabled = false restoreSpin() end })
+end
+
+-- ---- Player / Third Person
+do
+    local s = makeSection(PlayerTab.Right, "Third Person")
+    local enabled = false
+    local distance = 10
+    local snapshot
+    local function restoreView(force)
+        if not snapshot then return end
+        LocalPlayer.CameraMaxZoomDistance = math.max(LocalPlayer.CameraMinZoomDistance, snapshot.max)
+        LocalPlayer.CameraMinZoomDistance = snapshot.min
+        LocalPlayer.CameraMaxZoomDistance = snapshot.max
+        local camera = workspace.CurrentCamera
+        if (Window.Visible or loading) and not force then
+            savedCamMode = snapshot.mode
+            if useScriptable then savedCamType = snapshot.kind end
+        else
+            LocalPlayer.CameraMode = snapshot.mode
+            if camera then camera.CameraType = snapshot.kind end
+        end
+        if camera then
+            if snapshot.subject and snapshot.subject.Parent then
+                camera.CameraSubject = snapshot.subject
+            else
+                local character = LocalPlayer.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid then camera.CameraSubject = humanoid end
+            end
+        end
+        snapshot = nil
+    end
+    local function applyView()
+        if not enabled then return end
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        if not snapshot then
+            snapshot = {
+                mode = savedCamMode or LocalPlayer.CameraMode,
+                min = LocalPlayer.CameraMinZoomDistance,
+                max = LocalPlayer.CameraMaxZoomDistance,
+                kind = savedCamType or camera.CameraType,
+                subject = camera.CameraSubject,
+            }
+        end
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMaxZoomDistance = math.max(distance, LocalPlayer.CameraMinZoomDistance)
+        LocalPlayer.CameraMinZoomDistance = distance
+        LocalPlayer.CameraMaxZoomDistance = distance
+        -- Let the menu's cursor-unlock camera keep control while it is visible.
+        if not Window.Visible and not loading then
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                camera.CameraSubject = humanoid
+                camera.CameraType = Enum.CameraType.Custom
+            end
+        end
+    end
+    Elements.Toggle(s, "Third Person", false, function(on)
+        enabled = on
+        if on then applyView() else restoreView() end
+    end)
+    Elements.Slider(s, "Distance", 5, 40, 10, "studs", function(value)
+        distance = value
+        applyView()
+    end)
+    local binding = "SunsetThirdPerson"
+    RunService:UnbindFromRenderStep(binding)
+    RunService:BindToRenderStep(binding, Enum.RenderPriority.Camera.Value - 1, applyView)
+    track({ Disconnect = function()
+        enabled = false
+        RunService:UnbindFromRenderStep(binding)
+        restoreView(true)
+    end })
+end
 -- ---- Main / Player
 do
     local s = makeSection(PlayerTab.Left, "God Mode")
