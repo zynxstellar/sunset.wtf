@@ -67,6 +67,8 @@ local Settings = {
     WatermarkOn    = true,
     DisableMoveOpen= false,
 }
+local showZombieWindow
+local zombieShowButton
 
 -- ============================================================
 -- Tiny UI helpers
@@ -114,6 +116,10 @@ local Window = new("Frame", {
     BorderSizePixel = 0,
     Active = true,
 }, Gui)
+local ZombieWindow
+local function anyMenuVisible()
+    return Window.Visible or (ZombieWindow and ZombieWindow.Visible) or false
+end
 border(Window, T.outer, 1)
 local menuScale = new("UIScale", { Scale = 1 }, Window)
 local function fitMenu()
@@ -153,7 +159,7 @@ local useScriptable = not canHook
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 
 local function onMenuVisibility()
-    if Window.Visible or loading then
+    if anyMenuVisible() or loading then
         if savedCamMode ~= nil then return end
         savedCamMode = LocalPlayer.CameraMode
         LocalPlayer.CameraMode = Enum.CameraMode.Classic
@@ -174,7 +180,7 @@ end
 track(Window:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
 
 local function forceUnlock()
-    if not Window.Visible and not loading then return end
+    if not anyMenuVisible() and not loading then return end
     if useScriptable then
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Scriptable
@@ -202,7 +208,7 @@ track(RunService.Heartbeat:Connect(forceUnlock))
 if canHook then
     local oldNewIndex
     oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
-        if not checkcaller() and Window and Window.Parent and (Window.Visible or loading) then
+        if not checkcaller() and Window and Window.Parent and (anyMenuVisible() or loading) then
             if self == UIS and key == "MouseBehavior" then
                 value = Enum.MouseBehavior.Default
             end
@@ -502,14 +508,16 @@ function Elements.ColorPicker(parent, text, default, callback)
 end
 
 -- Numeric fields accept finite numbers, round to the slider step, and clamp.
-local function sliderNumber(raw, low, high, previous)
+local function sliderNumber(raw, low, high, previous, step)
     local number = tonumber(raw)
     if not number or number ~= number or number == math.huge or number == -math.huge then return previous end
-    return math.clamp(math.floor(number + 0.5), low, high)
+    step = step or 1
+    local rounded = low + math.floor((number - low) / step + 0.5) * step
+    return math.clamp(tonumber(string.format("%.4f", rounded)), low, high)
 end
-function Elements.Slider(parent, text, min, max, default, suffix, callback)
+function Elements.Slider(parent, text, min, max, default, suffix, callback, step)
     local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1 }, parent)
-    local value = sliderNumber(default or min, min, max, min)
+    local value = sliderNumber(default or min, min, max, min, step)
     local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
     local title = label(top, text .. ((suffix and suffix ~= "") and (" (" .. suffix:match("^%s*(.-)%s*$") .. ")") or ""), 12)
     title.Size = UDim2.new(1, -98, 1, 0)
@@ -527,7 +535,7 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback)
     border(bar, T.border)
     local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.red, BorderSizePixel = 0 }, bar)
     local function set(raw, initial)
-        local updated = sliderNumber(raw, min, max, value)
+        local updated = sliderNumber(raw, min, max, value, step)
         local changed = updated ~= value
         value = updated
         number.Text = tostring(value)
@@ -548,8 +556,8 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback)
     track(UIS.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
     end))
-    plus.MouseButton1Click:Connect(function() set(value + 1) end)
-    minus.MouseButton1Click:Connect(function() set(value - 1) end)
+    plus.MouseButton1Click:Connect(function() set(value + (step or 1)) end)
+    minus.MouseButton1Click:Connect(function() set(value - (step or 1)) end)
     set(value, true)
     return holder
 end
@@ -609,6 +617,54 @@ function Elements.Dropdown(parent, text, options, default, callback)
     return obj
 end
 
+function Elements.MultiSelect(parent, text, options, callback)
+    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1 }, parent)
+    label(holder, text)
+    local button = new("TextButton", {
+        Position = UDim2.fromOffset(0, 18), Size = UDim2.new(1, 0, 0, 18),
+        BackgroundColor3 = T.element, BorderSizePixel = 0, Text = "  Select gear +",
+        TextColor3 = T.text, Font = T.font, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
+    }, holder)
+    border(button, T.border)
+    local list = new("ScrollingFrame", {
+        Position = UDim2.fromOffset(0, 36), Size = UDim2.new(1, 0, 0, math.min(#options, 6) * 20),
+        BackgroundColor3 = T.element, BorderSizePixel = 0, Visible = false,
+        ScrollBarThickness = 3, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    }, holder)
+    border(list, T.border)
+    new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, list)
+    local selected = {}
+    local function update()
+        local names = {}
+        for _, option in ipairs(options) do
+            if selected[option] then table.insert(names, option) end
+        end
+        button.Text = #names == 0 and "  Select gear +" or ("  " .. table.concat(names, ", "))
+        if callback then callback(names) end
+    end
+    for _, option in ipairs(options) do
+        local row = new("TextButton", {
+            Size = UDim2.new(1, 0, 0, 20), BackgroundColor3 = T.element,
+            BorderSizePixel = 0, TextColor3 = T.text, Font = T.font,
+            TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+            AutoButtonColor = false,
+        }, list)
+        local function render() row.Text = (selected[option] and "  [x] " or "  [ ] ") .. option end
+        render()
+        row.MouseButton1Click:Connect(function()
+            selected[option] = not selected[option]
+            render()
+            update()
+        end)
+    end
+    button.MouseButton1Click:Connect(function()
+        list.Visible = not list.Visible
+        holder.Size = UDim2.new(1, 0, 0, list.Visible and 36 + list.Size.Y.Offset or 36)
+    end)
+    return holder
+end
+
 function Elements.TextBox(parent, text, placeholder, callback)
     local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1 }, parent)
     label(holder, text)
@@ -654,6 +710,297 @@ function Elements.Keybind(parent, text)
     end)
     return object
 end
+-- ============================================================
+-- Zombie Survival Arena feature modules. Kept local to this single-file loader.
+-- ============================================================
+local Zombie = { alive = true }
+do
+    local storage = game:GetService("ReplicatedStorage")
+    local Core = { LocalPlayer = LocalPlayer, ReplicatedStorage = storage }
+    function Core.findIn(parent, ...)
+        for _, name in ipairs({ ... }) do
+            parent = parent and parent:FindFirstChild(name)
+        end
+        return parent
+    end
+    local registryModule = Core.findIn(storage, "Modules", "ServiceRegistry")
+    local registry
+    if registryModule then
+        local ok, result = pcall(require, registryModule)
+        if ok then registry = result end
+    end
+    function Core.getService(name, timeout)
+        if not registry then return nil end
+        if registry.WaitFor then
+            local ok, result = pcall(registry.WaitFor, name, timeout or 10)
+            if ok and result then return result end
+        end
+        if registry.Get then
+            local ok, result = pcall(registry.Get, name)
+            if ok then return result end
+        end
+        return nil
+    end
+    function Core.fireRemote(remote, ...)
+        if remote and remote:IsA("RemoteEvent") then
+            pcall(remote.FireServer, remote, ...)
+        end
+    end
+    Core.GameStateRemotes = storage:FindFirstChild("GameStateRemotes")
+    Core.WaveRemotes = storage:FindFirstChild("WaveRemotes")
+    Core.UpgradeRemotes = storage:FindFirstChild("UpgradeRemotes")
+    Core.GearRemotes = storage:FindFirstChild("GearRemotes")
+    Core.GunRemotes = storage:FindFirstChild("GunRemotes")
+    Zombie.Core = Core
+
+    local function remote(folder, name) return folder and folder:FindFirstChild(name) end
+    local function flagModule()
+        local module = { enabled = false }
+        function module.SetEnabled(state) module.enabled = state == true end
+        function module.IsEnabled() return module.enabled end
+        return module
+    end
+
+    local AutoReplay = flagModule()
+    Zombie.AutoReplay = AutoReplay
+    local replayVote = remote(Core.GameStateRemotes, "VotePlayAgain")
+    local voted = false
+    local started = remote(Core.GameStateRemotes, "GameOverStarted")
+    local ended = remote(Core.GameStateRemotes, "GameOverEnded")
+    if started then track(started.OnClientEvent:Connect(function()
+        if not Zombie.alive or not AutoReplay.enabled or voted or not replayVote then return end
+        voted = true
+        task.delay(1, function()
+            if Zombie.alive and AutoReplay.enabled then Core.fireRemote(replayVote) end
+        end)
+    end)) end
+    if ended then track(ended.OnClientEvent:Connect(function() voted = false end)) end
+
+    local AutoNextWave = flagModule()
+    Zombie.AutoNextWave = AutoNextWave
+    local skipVote = remote(Core.WaveRemotes, "SkipVote")
+    local skipUpdate = remote(Core.WaveRemotes, "SkipUpdate")
+    if skipUpdate then track(skipUpdate.OnClientEvent:Connect(function(data)
+        if Zombie.alive and AutoNextWave.enabled and type(data) == "table"
+            and data.Action == "SpawningComplete" then Core.fireRemote(skipVote, true) end
+    end)) end
+    task.spawn(function()
+        local settingsClient = Core.getService("SettingsClient", 20)
+        if not Zombie.alive or not settingsClient then return end
+        local previousVote
+        while Zombie.alive do
+            pcall(function()
+                if AutoNextWave.enabled then
+                    if previousVote == nil then previousVote = settingsClient:Get("AutoVote") end
+                    if settingsClient:Get("AutoVote") ~= true then settingsClient:Set("AutoVote", true) end
+                elseif previousVote ~= nil then
+                    settingsClient:Set("AutoVote", previousVote)
+                    previousVote = nil
+                end
+            end)
+            task.wait(1)
+        end
+        if previousVote ~= nil then pcall(function() settingsClient:Set("AutoVote", previousVote) end) end
+    end)
+
+    local AutoSkipWave = flagModule()
+    Zombie.AutoSkipWave = AutoSkipWave
+    if skipUpdate then track(skipUpdate.OnClientEvent:Connect(function(data)
+        if Zombie.alive and AutoSkipWave.enabled and type(data) == "table"
+            and (data.Action == "SpawningComplete" or data.Action == "Update") then
+            Core.fireRemote(skipVote, true)
+        end
+    end)) end
+    task.spawn(function()
+        while Zombie.alive do
+            if AutoSkipWave.enabled then Core.fireRemote(skipVote, true) end
+            task.wait(2)
+        end
+    end)
+
+    local AutoEquip = flagModule()
+    Zombie.AutoEquip = AutoEquip
+    task.spawn(function()
+        while Zombie.alive do
+            if AutoEquip.enabled then
+                local character = LocalPlayer.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                local backpack = LocalPlayer:FindFirstChild("Backpack")
+                local tool = backpack and backpack:FindFirstChildOfClass("Tool")
+                if humanoid and tool and not character:FindFirstChildOfClass("Tool") then
+                    pcall(humanoid.EquipTool, humanoid, tool)
+                end
+            end
+            task.wait(0.5)
+        end
+    end)
+
+    local Crosshair = flagModule()
+    Zombie.Crosshair = Crosshair
+    local crosshairWasEnabled
+    function Crosshair.SetEnabled(state)
+        Crosshair.enabled = state == true
+        local gui = PlayerGui:FindFirstChild("CrosshairGui")
+        if Crosshair.enabled then
+            if gui and crosshairWasEnabled == nil then crosshairWasEnabled = gui.Enabled end
+            if gui then gui.Enabled = false end
+        else
+            if gui and crosshairWasEnabled ~= nil then gui.Enabled = crosshairWasEnabled end
+            crosshairWasEnabled = nil
+        end
+    end
+    task.spawn(function()
+        while Zombie.alive do
+            if Crosshair.enabled then Crosshair.SetEnabled(true) end
+            task.wait(0.25)
+        end
+    end)
+
+    local Upgrades = { health = false, weapon = false }
+    Zombie.Upgrades = Upgrades
+    function Upgrades.SetHealthEnabled(state) Upgrades.health = state == true end
+    function Upgrades.SetWeaponEnabled(state) Upgrades.weapon = state == true end
+    local healthPurchase = remote(Core.UpgradeRemotes, "PurchaseHealthUpgrade")
+    local weaponPurchase = remote(Core.UpgradeRemotes, "PurchaseWeaponUpgrade")
+    task.spawn(function()
+        while Zombie.alive do
+            if Upgrades.health then Core.fireRemote(healthPurchase) end
+            if Upgrades.weapon then Core.fireRemote(weaponPurchase) end
+            task.wait(1)
+        end
+    end)
+
+    local AutoGear = flagModule()
+    Zombie.AutoGear = AutoGear
+    local gearPurchase = remote(Core.GearRemotes, "GearPurchase")
+    local gearModule = Core.findIn(storage, "Data", "GearData")
+    local gearData
+    if gearModule then
+        local ok, result = pcall(require, gearModule)
+        if ok then gearData = result end
+    end
+    local selectedGear, nextFire = {}, {}
+    function AutoGear.GetGearList()
+        if not gearData then return {} end
+        local ok, names = pcall(gearData.GetAllGearNames)
+        if not ok or type(names) ~= "table" then return {} end
+        table.sort(names)
+        return names
+    end
+    function AutoGear.SetSelected(names) selectedGear = names or {} end
+    task.spawn(function()
+        while Zombie.alive do
+            if AutoGear.enabled and gearPurchase then
+                local now = os.clock()
+                for _, name in ipairs(selectedGear) do
+                    if now >= (nextFire[name] or 0) then
+                        local cooldown = 1
+                        if gearData then
+                            local ok, config = pcall(gearData.GetConfig, name)
+                            if ok and config and type(config.Cooldown) == "number" then cooldown = config.Cooldown end
+                        end
+                        Core.fireRemote(gearPurchase, name)
+                        nextFire[name] = now + math.max(cooldown, 0.1)
+                    end
+                end
+            end
+            task.wait(0.1)
+        end
+    end)
+
+    local KillAura = flagModule()
+    Zombie.KillAura = KillAura
+    local radius, maxTargets, tickRate = 60, 18, 0.03
+    function KillAura.SetRadius(value) radius = math.clamp(tonumber(value) or 60, 10, 200) end
+    function KillAura.SetMaxTargets(value) maxTargets = math.clamp(math.floor(tonumber(value) or 18), 1, 30) end
+    function KillAura.SetTickRate(value) tickRate = math.max(tonumber(value) or 0.03, 0.03) end
+    local gunHit = remote(Core.GunRemotes, "GunHit")
+    task.spawn(function()
+        local zombieClient = Core.getService("ZombieClient", 30)
+        local gunClient = Core.getService("GunClient", 30)
+        while Zombie.alive do
+            if KillAura.enabled and zombieClient and gunHit then
+                pcall(function()
+                    local character = LocalPlayer.Character
+                    local root = character and character:FindFirstChild("HumanoidRootPart")
+                    local equipped = gunClient and gunClient.EquippedGun
+                    local tool = character and character:FindFirstChildOfClass("Tool")
+                    local gunName = (equipped and equipped.Name) or (tool and tool.Name)
+                    if root and gunName then
+                        local ids = zombieClient:GetNearbyZombieIds(root.Position, radius)
+                        local alive = {}
+                        for _, id in ipairs(ids or {}) do
+                            local record = zombieClient.Zombies and zombieClient.Zombies[id]
+                            if record and not record.IsDying and (record.Health == nil or record.Health > 0) then
+                                table.insert(alive, { id = id, record = record, hp = record.Health or math.huge })
+                            end
+                        end
+                        table.sort(alive, function(a, b) return a.hp < b.hp end)
+                        for i = 1, math.min(#alive, maxTargets) do
+                            local item = alive[i]
+                            local model = item.record.Model
+                            local part = model and model.Parent and (model.PrimaryPart
+                                or model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso"))
+                            if part and (part.Position - root.Position).Magnitude <= radius then
+                                Core.fireRemote(gunHit, gunName, item.id, part.Position)
+                            end
+                        end
+                    end
+                end)
+            end
+            task.wait(tickRate)
+        end
+    end)
+
+    local RapidFire = flagModule()
+    Zombie.RapidFire = RapidFire
+    local interval = 0.02
+    local originalRates = setmetatable({}, { __mode = "k" })
+    local activeConfig
+    local function restoreRates()
+        for config, rate in pairs(originalRates) do
+            config.FireRate = rate
+            originalRates[config] = nil
+        end
+    end
+    function RapidFire.SetInterval(value) interval = math.clamp(tonumber(value) or 0.02, 0.01, 0.2) end
+    function RapidFire.SetEnabled(state)
+        RapidFire.enabled = state == true
+        if not RapidFire.enabled then
+            restoreRates()
+            activeConfig = nil
+        end
+    end
+    task.spawn(function()
+        local gunClient = Core.getService("GunClient", 30)
+        while Zombie.alive do
+            local config = gunClient and gunClient.EquippedConfig
+            if RapidFire.enabled then
+                if activeConfig and activeConfig ~= config then
+                    activeConfig.FireRate = originalRates[activeConfig]
+                    originalRates[activeConfig] = nil
+                end
+                activeConfig = config
+                if config then
+                    if originalRates[config] == nil then originalRates[config] = config.FireRate end
+                    config.FireRate = interval
+                end
+            end
+            task.wait(0.1)
+        end
+        restoreRates()
+    end)
+    function Zombie.Stop()
+        Zombie.alive = false
+        for _, module in ipairs({ AutoReplay, AutoNextWave, AutoSkipWave, AutoEquip,
+            AutoGear, KillAura }) do module.SetEnabled(false) end
+        Crosshair.SetEnabled(false)
+        Upgrades.SetHealthEnabled(false)
+        Upgrades.SetWeaponEnabled(false)
+        RapidFire.SetEnabled(false)
+    end
+end
+
 -- ============================================================
 -- FLY
 -- ============================================================
@@ -1145,7 +1492,7 @@ do
         if releaseAt > 0 and now >= releaseAt then stopFire() end
         if not Settings.AimEnabled and not Settings.TriggerEnabled then pause("Off") return end
         if not focused then pause("Paused: game not focused") return end
-        if Window.Visible then pause("Close menu with " .. Settings.MenuKey.Name .. " to aim") return end
+        if anyMenuVisible() then pause("Close the menus to aim") return end
         if UIS:GetFocusedTextBox() or listeningFor then pause("Paused: typing") return end
         if not held() then pause("Hold " .. Settings.AimHoldInput .. " to aim") nextScan = 0 return end
         local character = LocalPlayer.Character
@@ -1372,7 +1719,7 @@ do
         LocalPlayer.CameraMinZoomDistance = snapshot.min
         LocalPlayer.CameraMaxZoomDistance = snapshot.max
         local camera = workspace.CurrentCamera
-        if (Window.Visible or loading) and not force then
+        if (anyMenuVisible() or loading) and not force then
             savedCamMode = snapshot.mode
             if useScriptable then savedCamType = snapshot.kind end
         else
@@ -1408,7 +1755,7 @@ do
         LocalPlayer.CameraMinZoomDistance = distance
         LocalPlayer.CameraMaxZoomDistance = distance
         -- Let the menu's cursor-unlock camera keep control while it is visible.
-        if not Window.Visible and not loading then
+        if not anyMenuVisible() and not loading then
             local character = LocalPlayer.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             if humanoid then
@@ -1754,6 +2101,11 @@ do
     Elements.Keybind(s, "Menu Key")
     Elements.Line(s)
 
+    zombieShowButton = Elements.Button(s, "Show Zombie Survival Arena", function()
+        if showZombieWindow then showZombieWindow() end
+    end)
+    zombieShowButton.Visible = false
+
     Elements.Button(s, "Unload", function() ENV.SunsetUnload() end)
 end
 
@@ -1813,6 +2165,158 @@ do
 end
 MainTab.Select()
 
+-- Game-specific window uses the same theme and controls as the main menu.
+ZombieWindow = new("Frame", {
+    Name = "ZombieSurvivalArenaWindow", Visible = false,
+    Size = UDim2.fromOffset(560, 480),
+    Position = UDim2.new(0.5, 285, 0.5, 0),
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    BackgroundColor3 = T.bg, BorderSizePixel = 0, Active = true,
+}, Gui)
+border(ZombieWindow, T.outer)
+new("UICorner", { CornerRadius = UDim.new(0, 6) }, ZombieWindow)
+local zombieScale = new("UIScale", { Scale = 1 }, ZombieWindow)
+local function fitZombieWindow()
+    local camera = workspace.CurrentCamera
+    if camera then
+        zombieScale.Scale = math.max(0.2, math.min(1,
+            (camera.ViewportSize.X - 24) / 560, (camera.ViewportSize.Y - 24) / 480))
+    end
+end
+fitZombieWindow()
+track(RunService.Heartbeat:Connect(fitZombieWindow))
+local zombieTitleBar = new("Frame", {
+    Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = T.bg, BorderSizePixel = 0,
+}, ZombieWindow)
+local zombieTitle = label(zombieTitleBar, "  sunset.wtf | Zombie Survival Arena", 13)
+zombieTitle.Size = UDim2.new(1, -28, 1, 0)
+local hideZombie = new("TextButton", {
+    Position = UDim2.new(1, -25, 0, 2), Size = UDim2.fromOffset(20, 18),
+    BackgroundColor3 = T.element, BorderSizePixel = 0, Text = "−",
+    TextColor3 = T.text, Font = T.font, TextSize = 16,
+}, zombieTitleBar)
+border(hideZombie, T.border)
+hideZombie.MouseButton1Click:Connect(function() ZombieWindow.Visible = false end)
+new("Frame", {
+    Size = UDim2.new(1, -16, 0, 2), Position = UDim2.fromOffset(8, 22),
+    BackgroundColor3 = T.red, BorderSizePixel = 0,
+}, ZombieWindow)
+local zombiePanel = new("Frame", {
+    Size = UDim2.new(1, -16, 1, -38), Position = UDim2.fromOffset(8, 30),
+    BackgroundColor3 = T.panel, BorderSizePixel = 0,
+}, ZombieWindow)
+border(zombiePanel, T.border)
+local zombieTabBar = new("Frame", {
+    Size = UDim2.new(1, -16, 0, 22), Position = UDim2.fromOffset(8, 6),
+    BackgroundTransparency = 1,
+}, zombiePanel)
+new("UIListLayout", {
+    FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+}, zombieTabBar)
+local zombiePages = new("Frame", {
+    Size = UDim2.new(1, -16, 1, -44), Position = UDim2.fromOffset(8, 36),
+    BackgroundTransparency = 1,
+}, zombiePanel)
+local currentZombieTab
+local function makeZombieTab(name)
+    local button = new("TextButton", {
+        Size = UDim2.new(0.2, -5, 0, 26), BackgroundColor3 = T.inner,
+        BorderSizePixel = 0, Text = name, Font = T.font, TextSize = 13,
+        TextColor3 = T.dim, AutoButtonColor = false,
+    }, zombieTabBar)
+    local stroke = border(button, T.border)
+    local page = new("Frame", {
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false,
+    }, zombiePages)
+    local function column(position)
+        local col = new("ScrollingFrame", {
+            Size = UDim2.new(0.5, -5, 1, 0), Position = position,
+            BackgroundTransparency = 1, BorderSizePixel = 0,
+            ScrollBarThickness = 3, ScrollBarImageColor3 = T.red,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+        }, page)
+        new("UIListLayout", {
+            Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder,
+        }, col)
+        new("UIPadding", {
+            PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
+            PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 6),
+        }, col)
+        return col
+    end
+    local tab = {
+        Button = button, Stroke = stroke, Page = page,
+        Left = column(UDim2.fromOffset(0, 0)), Right = column(UDim2.new(0.5, 5, 0, 0)),
+    }
+    function tab.Select()
+        if currentZombieTab then
+            currentZombieTab.Page.Visible = false
+            currentZombieTab.Button.TextColor3 = T.dim
+            currentZombieTab.Stroke.Color = T.border
+        end
+        currentZombieTab = tab
+        page.Visible = true
+        button.TextColor3 = T.text
+        stroke.Color = T.red
+    end
+    button.MouseButton1Click:Connect(tab.Select)
+    return tab
+end
+local zombieMain = makeZombieTab("Main")
+local zombieWeapons = makeZombieTab("Weapons")
+local zombieArsenal = makeZombieTab("Arsenal")
+local zombieMisc = makeZombieTab("Misc")
+local zombieSettings = makeZombieTab("Settings")
+
+do
+    local waves = makeSection(zombieMain.Left, "Waves")
+    Elements.Toggle(waves, "Auto Next Wave", false, Zombie.AutoNextWave.SetEnabled)
+    Elements.Toggle(waves, "Auto Skip Wave", false, Zombie.AutoSkipWave.SetEnabled)
+    local replay = makeSection(zombieMain.Right, "Replay")
+    Elements.Toggle(replay, "Auto Replay", false, Zombie.AutoReplay.SetEnabled)
+end
+do
+    local aura = makeSection(zombieWeapons.Left, "Kill Aura")
+    Elements.Toggle(aura, "Kill Aura", false, Zombie.KillAura.SetEnabled)
+    Elements.Slider(aura, "Kill Aura Radius", 10, 200, 60, "studs", Zombie.KillAura.SetRadius)
+    Elements.Slider(aura, "Maximum Targets", 1, 30, 18, "", Zombie.KillAura.SetMaxTargets)
+    local guns = makeSection(zombieWeapons.Right, "Weapons")
+    Elements.Toggle(guns, "Rapid Fire", false, Zombie.RapidFire.SetEnabled)
+    Elements.Slider(guns, "Rapid Fire Interval", 0.01, 0.2, 0.02,
+        "seconds", Zombie.RapidFire.SetInterval, 0.01)
+    Elements.Toggle(guns, "Auto Equip Weapon", false, Zombie.AutoEquip.SetEnabled)
+end
+do
+    local gear = makeSection(zombieArsenal.Left, "Gear")
+    Elements.MultiSelect(gear, "Gears to auto-use", Zombie.AutoGear.GetGearList(),
+        Zombie.AutoGear.SetSelected)
+    Elements.Toggle(gear, "Auto Use Gear", false, Zombie.AutoGear.SetEnabled)
+    local upgrades = makeSection(zombieArsenal.Right, "Upgrades")
+    Elements.Toggle(upgrades, "Auto Upgrade Weapon", false, Zombie.Upgrades.SetWeaponEnabled)
+    Elements.Toggle(upgrades, "Auto Upgrade Health", false, Zombie.Upgrades.SetHealthEnabled)
+end
+do
+    local visual = makeSection(zombieMisc.Left, "Display")
+    Elements.Toggle(visual, "Hide Built-In Crosshair", false, Zombie.Crosshair.SetEnabled)
+end
+do
+    local controls = makeSection(zombieSettings.Left, "Window")
+    Elements.Button(controls, "Hide Zombie Survival Arena", function()
+        ZombieWindow.Visible = false
+    end)
+    Elements.Label(controls, "Use Settings in the main window to show it again.")
+end
+zombieMain.Select()
+makeDraggable(ZombieWindow, zombieTitleBar)
+track(ZombieWindow:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
+showZombieWindow = function()
+    if Settings.SelectedGame == "Zombie Survival Arena" then
+        ZombieWindow.Visible = true
+    end
+end
+
 -- ============================================================
 -- Dragging + keybinds
 -- ============================================================
@@ -1825,6 +2329,7 @@ ENV.SunsetUnload = function()
     Settings.FlyEnabled = false
 
     Settings.WatermarkOn = false
+    Zombie.Stop()
     pcall(Fly.Stop)
     pcall(ESP.Destroy)
     for _, c in ipairs(Connections) do
@@ -1837,7 +2342,7 @@ end
 
 print("Sunset.wtf loaded. RightShift to open/close.")
 
--- Game picker and animated intro. Both choices open the same menu.
+-- Game picker and animated intro.
 do
     local stopped, selected, elapsed = false, false, 0
     local animations, frameConnection = {}, nil
@@ -1847,7 +2352,7 @@ do
         BorderSizePixel = 0, Text = "", AutoButtonColor = false, Modal = true, ZIndex = 1000,
     }, Gui)
     local picker = new("CanvasGroup", {
-        Size = UDim2.fromOffset(400, 306), Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(400, 390), Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(16, 17, 23),
         BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 1001,
     }, Gui)
@@ -1879,14 +2384,22 @@ do
     new("Frame", { Size = UDim2.fromOffset(40, 2), Position = UDim2.fromOffset(-5, 14), BackgroundColor3 = T.red, BorderSizePixel = 0 }, reticle)
     new("Frame", { Size = UDim2.fromOffset(2, 40), Position = UDim2.fromOffset(14, -5), BackgroundColor3 = T.red, BorderSizePixel = 0 }, reticle)
     text(gameButton, "Sniper Duels", 70, 23, 240, 26, 18, T.text, Enum.Font.GothamBold)
+    local zombieButton = new("TextButton", {
+        Position = UDim2.fromOffset(26, 196), Size = UDim2.fromOffset(348, 72),
+        BackgroundColor3 = Color3.fromRGB(35, 23, 30), BorderSizePixel = 0,
+        Text = "Zombie Survival Arena", Font = Enum.Font.GothamBold,
+        TextSize = 18, TextColor3 = T.text, AutoButtonColor = false,
+    }, picker)
+    new("UICorner", { CornerRadius = UDim.new(0, 9) }, zombieButton)
+    border(zombieButton, T.red)
     local otherButton = new("TextButton", {
-        Position = UDim2.fromOffset(26, 196), Size = UDim2.fromOffset(348, 44),
+        Position = UDim2.fromOffset(26, 282), Size = UDim2.fromOffset(348, 44),
         BackgroundColor3 = Color3.fromRGB(26, 28, 36), BorderSizePixel = 0,
         Text = "My game's not on here", Font = Enum.Font.Gotham, TextSize = 14,
         TextColor3 = T.dim, AutoButtonColor = false,
     }, picker)
     new("UICorner", { CornerRadius = UDim.new(0, 8) }, otherButton)
-    text(picker, "BY ZYNX", 26, 264, 348, 18, 10, T.dim)
+    text(picker, "BY ZYNX", 26, 350, 348, 18, 10, T.dim)
     local intro = new("CanvasGroup", {
         Size = UDim2.fromOffset(400, 330), Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(12, 13, 19),
@@ -1963,6 +2476,7 @@ do
         if selected or stopped then return end
         selected = true
         Settings.SelectedGame = name
+        zombieShowButton.Visible = name == "Zombie Survival Arena"
         gameText.Text = name == "Other" and "Your game  /  ZYNX" or name .. "  /  ZYNX"
         animate(picker, 0.2, { GroupTransparency = 1 })
         task.spawn(function()
@@ -1998,13 +2512,20 @@ do
             if stopped or not Gui.Parent then return end
             dispose()
             loading = false
+            if name == "Zombie Survival Arena" then
+                Window.Position = UDim2.new(0.5, -285, 0.5, 0)
+                ZombieWindow.Visible = true
+            end
             Window.Visible = true
         end)
     end
     gameButton.MouseButton1Click:Connect(function() selectGame("Sniper Duels") end)
+    zombieButton.MouseButton1Click:Connect(function() selectGame("Zombie Survival Arena") end)
     otherButton.MouseButton1Click:Connect(function() selectGame("Other") end)
     gameButton.MouseEnter:Connect(function() if not selected then animate(gameButton, 0.15, { BackgroundColor3 = Color3.fromRGB(53, 28, 37) }) end end)
     gameButton.MouseLeave:Connect(function() if not selected then animate(gameButton, 0.15, { BackgroundColor3 = Color3.fromRGB(35, 23, 30) }) end end)
+    zombieButton.MouseEnter:Connect(function() if not selected then animate(zombieButton, 0.15, { BackgroundColor3 = Color3.fromRGB(53, 28, 37) }) end end)
+    zombieButton.MouseLeave:Connect(function() if not selected then animate(zombieButton, 0.15, { BackgroundColor3 = Color3.fromRGB(35, 23, 30) }) end end)
     otherButton.MouseEnter:Connect(function() if not selected then animate(otherButton, 0.15, { TextColor3 = T.text }) end end)
     otherButton.MouseLeave:Connect(function() if not selected then animate(otherButton, 0.15, { TextColor3 = T.dim }) end end)
     animate(picker, 0.3, { GroupTransparency = 0 })
