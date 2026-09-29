@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local CollectionService = game:GetService("CollectionService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -725,19 +726,33 @@ do
     end
     local registryModule = Core.findIn(storage, "Modules", "ServiceRegistry")
     local registry
-    if registryModule then
-        local ok, result = pcall(require, registryModule)
-        if ok then registry = result end
-    end
-    function Core.getService(name, timeout)
-        if not registry then return nil end
-        if registry.WaitFor then
-            local ok, result = pcall(registry.WaitFor, name, timeout or 10)
-            if ok and result then return result end
+    local function findRegistry()
+        if registry then return registry end
+        registryModule = registryModule or Core.findIn(storage, "Modules", "ServiceRegistry")
+        if registryModule then
+            local ok, result = pcall(require, registryModule)
+            if ok then registry = result end
         end
-        if registry.Get then
-            local ok, result = pcall(registry.Get, name)
-            if ok then return result end
+        return registry
+    end
+    findRegistry()
+    function Core.getService(name, timeout)
+        local serviceRegistry = findRegistry()
+        if not serviceRegistry then return nil end
+        for _, methodName in ipairs({ "Get", "WaitFor" }) do
+            local method = serviceRegistry[methodName]
+            if type(method) == "function" then
+                -- Some registry versions use colon methods; others expose plain functions.
+                for _, useSelf in ipairs({ false, true }) do
+                    local ok, result
+                    if useSelf then
+                        ok, result = pcall(method, serviceRegistry, name, timeout or 2)
+                    else
+                        ok, result = pcall(method, name, timeout or 2)
+                    end
+                    if ok and result then return result end
+                end
+            end
         end
         return nil
     end
@@ -746,11 +761,12 @@ do
             pcall(remote.FireServer, remote, ...)
         end
     end
-    Core.GameStateRemotes = storage:FindFirstChild("GameStateRemotes")
-    Core.WaveRemotes = storage:FindFirstChild("WaveRemotes")
-    Core.UpgradeRemotes = storage:FindFirstChild("UpgradeRemotes")
-    Core.GearRemotes = storage:FindFirstChild("GearRemotes")
-    Core.GunRemotes = storage:FindFirstChild("GunRemotes")
+    local remoteRoot = storage:FindFirstChild("Remotes")
+    Core.GameStateRemotes = remoteRoot and remoteRoot:FindFirstChild("GameStateRemotes")
+    Core.WaveRemotes = remoteRoot and remoteRoot:FindFirstChild("WaveRemotes")
+    Core.UpgradeRemotes = remoteRoot and remoteRoot:FindFirstChild("UpgradeRemotes")
+    Core.GearRemotes = remoteRoot and remoteRoot:FindFirstChild("GearRemotes")
+    Core.GunRemotes = remoteRoot and remoteRoot:FindFirstChild("GunRemotes")
     Zombie.Core = Core
 
     local function remote(folder, name) return folder and folder:FindFirstChild(name) end
@@ -780,27 +796,61 @@ do
     Zombie.AutoNextWave = AutoNextWave
     local skipVote = remote(Core.WaveRemotes, "SkipVote")
     local skipUpdate = remote(Core.WaveRemotes, "SkipUpdate")
+    local nextWaveReady = false
+    local gameOver = false
+    if started then track(started.OnClientEvent:Connect(function() gameOver = true end)) end
+    if ended then track(ended.OnClientEvent:Connect(function() gameOver = false end)) end
     if skipUpdate then track(skipUpdate.OnClientEvent:Connect(function(data)
-        if Zombie.alive and AutoNextWave.enabled and type(data) == "table"
-            and data.Action == "SpawningComplete" then Core.fireRemote(skipVote, true) end
+        if type(data) ~= "table" then return end
+        local action = data.Action or data.State
+        if action == "SpawningComplete" or action == "WaveComplete"
+            or action == "Intermission" or action == "VoteOpen" then
+            nextWaveReady = true
+        elseif action == "WaveStarted" or action == "SpawningStarted" then
+            nextWaveReady = false
+        end
     end)) end
     task.spawn(function()
-        local settingsClient = Core.getService("SettingsClient", 20)
-        if not Zombie.alive or not settingsClient then return end
+        local settingsClient, zombieClient
         local previousVote
+        local lastLookup, lastVote = 0, 0
         while Zombie.alive do
+            if os.clock() - lastLookup > 2 then
+                lastLookup = os.clock()
+                settingsClient = Core.getService("SettingsClient", 2) or settingsClient
+                zombieClient = Core.getService("ZombieClient", 2) or zombieClient
+            end
             pcall(function()
                 if AutoNextWave.enabled then
-                    if previousVote == nil then previousVote = settingsClient:Get("AutoVote") end
-                    if settingsClient:Get("AutoVote") ~= true then settingsClient:Set("AutoVote", true) end
+                    if settingsClient then
+                        if previousVote == nil then previousVote = settingsClient:Get("AutoVote") end
+                        if settingsClient:Get("AutoVote") ~= true then settingsClient:Set("AutoVote", true) end
+                    end
+                    local noZombies = false
+                    if zombieClient and type(zombieClient.Zombies) == "table" then
+                        noZombies = true
+                        for _, record in pairs(zombieClient.Zombies) do
+                            if record and not record.IsDying and (record.Health == nil or record.Health > 0) then
+                                noZombies = false
+                                break
+                            end
+                        end
+                    end
+                    if not gameOver and skipVote and (nextWaveReady or noZombies)
+                        and os.clock() - lastVote >= 2 then
+                        Core.fireRemote(skipVote, true)
+                        lastVote = os.clock()
+                    end
                 elseif previousVote ~= nil then
-                    settingsClient:Set("AutoVote", previousVote)
+                    if settingsClient then settingsClient:Set("AutoVote", previousVote) end
                     previousVote = nil
                 end
             end)
-            task.wait(1)
+            task.wait(0.5)
         end
-        if previousVote ~= nil then pcall(function() settingsClient:Set("AutoVote", previousVote) end) end
+        if previousVote ~= nil and settingsClient then
+            pcall(function() settingsClient:Set("AutoVote", previousVote) end)
+        end
     end)
 
     local AutoSkipWave = flagModule()
@@ -910,46 +960,207 @@ do
 
     local KillAura = flagModule()
     Zombie.KillAura = KillAura
-    local radius, maxTargets, tickRate = 60, 18, 0.03
+    local radius, maxTargets = 60, 18
+    KillAura.Status = "Off"
     function KillAura.SetRadius(value) radius = math.clamp(tonumber(value) or 60, 10, 200) end
     function KillAura.SetMaxTargets(value) maxTargets = math.clamp(math.floor(tonumber(value) or 18), 1, 30) end
-    function KillAura.SetTickRate(value) tickRate = math.max(tonumber(value) or 0.03, 0.03) end
-    local gunHit = remote(Core.GunRemotes, "GunHit")
+    local hookedGun, originalAim, resolvedAim, originalAutoShoot, originalFiring
+    local aimRecord
+    local targetIndex = 0
+    local function releaseGun()
+        if hookedGun then
+            hookedGun.GetAimDirection = originalAim
+            hookedGun.IsAutoShooting = originalAutoShoot
+            if hookedGun.IsFiring then
+                hookedGun.IsFiring = originalFiring == true
+                    or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+                    or hookedGun.ControllerShootHeld == true
+            end
+        end
+        hookedGun, originalAim, resolvedAim, originalAutoShoot, originalFiring, aimRecord = nil, nil, nil, nil, nil, nil
+    end
+    function KillAura.SetEnabled(state)
+        KillAura.enabled = state == true
+        if not KillAura.enabled then
+            releaseGun()
+            KillAura.Status = "Off"
+        end
+    end
     task.spawn(function()
-        local zombieClient = Core.getService("ZombieClient", 30)
-        local gunClient = Core.getService("GunClient", 30)
+        local zombieClient, gunClient
+        local lastLookup = 0
         while Zombie.alive do
-            if KillAura.enabled and zombieClient and gunHit then
-                pcall(function()
+            if KillAura.enabled then
+                if os.clock() - lastLookup > 2 then
+                    lastLookup = os.clock()
+                    zombieClient = Core.getService("ZombieClient", 2) or zombieClient
+                    gunClient = Core.getService("GunClient", 2) or gunClient
+                end
+                if not zombieClient then
+                    releaseGun()
+                    KillAura.Status = "ZombieClient unavailable"
+                elseif not gunClient then
+                    releaseGun()
+                    KillAura.Status = "GunClient unavailable"
+                else
+                local ok, err = pcall(function()
                     local character = LocalPlayer.Character
                     local root = character and character:FindFirstChild("HumanoidRootPart")
-                    local equipped = gunClient and gunClient.EquippedGun
-                    local tool = character and character:FindFirstChildOfClass("Tool")
-                    local gunName = (equipped and equipped.Name) or (tool and tool.Name)
-                    if root and gunName then
+                    local equipped = gunClient.EquippedGun
+                    local config = gunClient.EquippedConfig
+                    if not root then
+                        releaseGun()
+                        KillAura.Status = "Waiting for character"
+                    elseif not equipped or not config then
+                        releaseGun()
+                        KillAura.Status = "Equip a gun"
+                    elseif type(gunClient.GetAimDirection) ~= "function" then
+                        releaseGun()
+                        KillAura.Status = "Gun aiming unavailable"
+                    else
                         local ids = zombieClient:GetNearbyZombieIds(root.Position, radius)
                         local alive = {}
                         for _, id in ipairs(ids or {}) do
                             local record = zombieClient.Zombies and zombieClient.Zombies[id]
-                            if record and not record.IsDying and (record.Health == nil or record.Health > 0) then
-                                table.insert(alive, { id = id, record = record, hp = record.Health or math.huge })
+                            local model = record and record.Model
+                            local position = record and record.CurrentPosition
+                            if record and position and model and model.Parent and not record.IsDying
+                                and (record.Health == nil or record.Health > 0)
+                                and (position - root.Position).Magnitude <= radius then
+                                table.insert(alive, { record = record,
+                                    distance = (position - root.Position).Magnitude })
                             end
                         end
-                        table.sort(alive, function(a, b) return a.hp < b.hp end)
-                        for i = 1, math.min(#alive, maxTargets) do
-                            local item = alive[i]
-                            local model = item.record.Model
-                            local part = model and model.Parent and (model.PrimaryPart
-                                or model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso"))
-                            if part and (part.Position - root.Position).Magnitude <= radius then
-                                Core.fireRemote(gunHit, gunName, item.id, part.Position)
+                        table.sort(alive, function(a, b) return a.distance < b.distance end)
+                        local count = math.min(#alive, maxTargets)
+                        if count == 0 then
+                            releaseGun()
+                            KillAura.Status = "No nearby zombies"
+                        elseif type(gunClient.CanFire) ~= "function" or not gunClient:CanFire() then
+                            releaseGun()
+                            KillAura.Status = "Gun not ready to fire"
+                        else
+                            if gunClient ~= hookedGun then
+                                releaseGun()
+                                hookedGun = gunClient
+                                originalAim = rawget(gunClient, "GetAimDirection")
+                                resolvedAim = gunClient.GetAimDirection
+                                originalAutoShoot = gunClient.IsAutoShooting
+                                originalFiring = gunClient.IsFiring
+                                gunClient.GetAimDirection = function(self, ...)
+                                    local record = aimRecord
+                                    if record and record.CurrentPosition and not record.IsDying
+                                        and self.EquippedGun then
+                                        local origin = self:GetFireOrigin()
+                                        local target = record.CurrentPosition
+                                        if record.HitboxTop then
+                                            target = target + Vector3.new(0,
+                                                (record.HitboxTop - (record.HitboxBottom or 0)) * 0.5, 0)
+                                        end
+                                        local delta = origin and (target - origin)
+                                        if delta and delta.Magnitude > 0.01 then
+                                            return delta.Unit
+                                        end
+                                    end
+                                    return resolvedAim(self, ...)
+                                end
                             end
+                            targetIndex = targetIndex % count + 1
+                            aimRecord = alive[targetIndex].record
+                            gunClient.IsAutoShooting = true
+                            gunClient.IsFiring = true
+                            local before = gunClient.LastFireTime or 0
+                            gunClient:TryFire()
+                            local shotStarted = (gunClient.LastFireTime or 0) > before
+                                or tick() - (gunClient.LastFireTime or 0) < 0.5
+                            local bullets = gunClient.ActiveBullets and #gunClient.ActiveBullets or 0
+                            KillAura.Status = (shotStarted and "Shot" or "Spinning")
+                                .. " | Bullets: " .. bullets .. " | Target: " .. targetIndex .. "/" .. count
                         end
                     end
                 end)
+                if not ok then
+                    releaseGun()
+                    KillAura.Status = "Error: " .. tostring(err):sub(1, 90)
+                end
+                end
+            else
+                releaseGun()
+                KillAura.Status = "Off"
             end
-            task.wait(tickRate)
+            task.wait(0.25)
         end
+        releaseGun()
+    end)
+
+    local ZombieRadar = flagModule()
+    Zombie.ZombieRadar = ZombieRadar
+    ZombieRadar.Status = "Off"
+    local outlined = {}
+    local function clearOutlines()
+        for model, highlight in pairs(outlined) do
+            highlight:Destroy()
+            outlined[model] = nil
+        end
+    end
+    function ZombieRadar.SetEnabled(state)
+        ZombieRadar.enabled = state == true
+        if not ZombieRadar.enabled then
+            clearOutlines()
+            ZombieRadar.Status = "Off"
+        end
+    end
+    task.spawn(function()
+        local zombieClient, lastLookup = nil, 0
+        while Zombie.alive do
+            if ZombieRadar.enabled then
+                if os.clock() - lastLookup > 2 then
+                    lastLookup = os.clock()
+                    zombieClient = Core.getService("ZombieClient", 2) or zombieClient
+                end
+                local seen, count, nearest = {}, 0, math.huge
+                local character = LocalPlayer.Character
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                local records = zombieClient and zombieClient.Zombies
+                if type(records) == "table" then
+                    for _, record in pairs(records) do
+                        local model = record and record.Model
+                        if model and model.Parent and not record.IsDying
+                            and (record.Health == nil or record.Health > 0) then
+                            seen[model] = true
+                            count = count + 1
+                            local highlight = outlined[model]
+                            if not highlight or not highlight.Parent then
+                                highlight = Instance.new("Highlight")
+                                highlight.Name = "SunsetZombieOutline"
+                                highlight.Adornee = model
+                                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                                highlight.FillTransparency = 1
+                                highlight.OutlineColor = Color3.fromRGB(255, 90, 75)
+                                highlight.Parent = model
+                                outlined[model] = highlight
+                            end
+                            local part = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
+                                or model:FindFirstChildWhichIsA("BasePart")
+                            if root and part then
+                                nearest = math.min(nearest, (part.Position - root.Position).Magnitude)
+                            end
+                        end
+                    end
+                end
+                for model, highlight in pairs(outlined) do
+                    if not seen[model] then
+                        highlight:Destroy()
+                        outlined[model] = nil
+                    end
+                end
+                ZombieRadar.Status = not zombieClient and "Waiting for zombie data"
+                    or ("Zombies: " .. count .. (nearest < math.huge
+                        and ("  |  Nearest: " .. math.floor(nearest) .. " studs") or ""))
+            end
+            task.wait(0.25)
+        end
+        clearOutlines()
     end)
 
     local RapidFire = flagModule()
@@ -990,6 +1201,96 @@ do
         end
         restoreRates()
     end)
+    local Hitscan = flagModule()
+    Zombie.Hitscan = Hitscan
+    local scannedBullets = setmetatable({}, { __mode = "k" })
+    function Hitscan.SetEnabled(state)
+        Hitscan.enabled = state == true
+        if not Hitscan.enabled then
+            table.clear(scannedBullets)
+        end
+    end
+    local gunClientForScan, lastScanLookup = nil, 0
+    local scanParams = RaycastParams.new()
+    scanParams.IgnoreWater = true
+    local function scanBullet(gunClient, bullet, hitRemote)
+        local config = bullet.Config
+        if not config or bullet.Kind or config.IsRocket or config.IsExplosive
+            or typeof(bullet.Origin) ~= "Vector3" or typeof(bullet.Direction) ~= "Vector3"
+            or type(gunClient.CheckBulletHit) ~= "function" then return end
+        local range = math.clamp(tonumber(bullet.MaxRange) or 300, 1, 2000)
+        local step = math.max(4, range / 160)
+        local tagged = CollectionService:GetTagged("BulletCollide")
+        scanParams.IncludeInstances = tagged
+        local previous = bullet.Origin
+        local probe = {
+            Direction = bullet.Direction, Speed = bullet.Speed,
+            Config = config, HitZombies = bullet.HitZombies or {},
+        }
+        for distance = step, range + step, step do
+            probe.Position = bullet.Origin + bullet.Direction * math.min(distance, range)
+            local wall = #tagged > 0 and workspace:Raycast(previous,
+                probe.Position - previous, scanParams) or nil
+            local hit = gunClient:CheckBulletHit(probe, previous)
+            if hit and (not wall or (hit.HitPosition - previous).Magnitude < wall.Distance) then
+                if not probe.HitZombies[hit.ZombieId] then
+                    hitRemote:FireServer(bullet.GunName, hit.ZombieId, hit.HitPosition)
+                    probe.HitZombies[hit.ZombieId] = true
+                end
+                return
+            end
+            if wall then return end
+            previous = probe.Position
+        end
+    end
+    track(RunService.Heartbeat:Connect(function()
+        if not Zombie.alive or not Hitscan.enabled then return end
+        if not gunClientForScan and os.clock() - lastScanLookup > 2 then
+            lastScanLookup = os.clock()
+            gunClientForScan = Core.getService("GunClient", 2)
+        end
+        local hitRemote = Core.GunRemotes and Core.GunRemotes:FindFirstChild("GunHit")
+        if not gunClientForScan or not hitRemote then return end
+        for _, bullet in ipairs(gunClientForScan.ActiveBullets or {}) do
+            if bullet.IsLocal and not scannedBullets[bullet] then
+                scannedBullets[bullet] = true
+                local ok, err = pcall(scanBullet, gunClientForScan, bullet, hitRemote)
+                if not ok then warn("[Sunset Hitscan] " .. tostring(err)) end
+            end
+        end
+    end))
+    local BulletNoClip = flagModule()
+    Zombie.BulletNoClip = BulletNoClip
+    local removedBulletTags = setmetatable({}, { __mode = "k" })
+    local function removeBulletCollisionTags()
+        for _, instance in ipairs(CollectionService:GetTagged("BulletCollide")) do
+            removedBulletTags[instance] = true
+            CollectionService:RemoveTag(instance, "BulletCollide")
+        end
+    end
+    local function restoreBulletCollisionTags()
+        for instance in pairs(removedBulletTags) do
+            if instance.Parent and not CollectionService:HasTag(instance, "BulletCollide") then
+                CollectionService:AddTag(instance, "BulletCollide")
+            end
+            removedBulletTags[instance] = nil
+        end
+    end
+    function BulletNoClip.SetEnabled(state)
+        BulletNoClip.enabled = state == true
+        if BulletNoClip.enabled then
+            removeBulletCollisionTags()
+        else
+            restoreBulletCollisionTags()
+        end
+    end
+    task.spawn(function()
+        while Zombie.alive do
+            if BulletNoClip.enabled then removeBulletCollisionTags() end
+            task.wait(0.25)
+        end
+        restoreBulletCollisionTags()
+    end)
     function Zombie.Stop()
         Zombie.alive = false
         for _, module in ipairs({ AutoReplay, AutoNextWave, AutoSkipWave, AutoEquip,
@@ -997,7 +1298,10 @@ do
         Crosshair.SetEnabled(false)
         Upgrades.SetHealthEnabled(false)
         Upgrades.SetWeaponEnabled(false)
+        ZombieRadar.SetEnabled(false)
         RapidFire.SetEnabled(false)
+        Hitscan.SetEnabled(false)
+        BulletNoClip.SetEnabled(false)
     end
 end
 
@@ -1006,7 +1310,8 @@ end
 -- ============================================================
 local Fly = {}
 do
-    local bv, bg, conn
+    local bv, bg, conn, physicsConn, flightRoot
+    local desiredVelocity = Vector3.zero
 
     local function getRoot()
         local char = LocalPlayer.Character
@@ -1017,9 +1322,18 @@ do
         local root, hum = getRoot()
         if not root then return end
         Fly.Stop()
+        flightRoot = root
         hum.PlatformStand = true
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
         bv = new("BodyVelocity", { MaxForce = Vector3.new(1e9, 1e9, 1e9), Velocity = Vector3.zero }, root)
         bg = new("BodyGyro", { MaxTorque = Vector3.new(1e9, 1e9, 1e9), P = 1e4, CFrame = root.CFrame }, root)
+
+        physicsConn = RunService.Stepped:Connect(function()
+            if not flightRoot or not flightRoot.Parent then return end
+            flightRoot.AssemblyLinearVelocity = desiredVelocity
+            flightRoot.AssemblyAngularVelocity = Vector3.zero
+        end)
 
         conn = RunService.RenderStepped:Connect(function()
             if not root.Parent then Fly.Stop() return end
@@ -1032,15 +1346,23 @@ do
             if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
             if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis end
             if dir.Magnitude > 0 then dir = dir.Unit end
-            bv.Velocity = dir * Settings.FlySpeed
+            desiredVelocity = dir * Settings.FlySpeed
+            bv.Velocity = desiredVelocity
             bg.CFrame = CFrame.lookAt(root.Position, root.Position + Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z))
         end)
     end
 
     function Fly.Stop()
         if conn then conn:Disconnect() conn = nil end
+        if physicsConn then physicsConn:Disconnect() physicsConn = nil end
         if bv then bv:Destroy() bv = nil end
         if bg then bg:Destroy() bg = nil end
+        if flightRoot and flightRoot.Parent then
+            flightRoot.AssemblyLinearVelocity = Vector3.zero
+            flightRoot.AssemblyAngularVelocity = Vector3.zero
+        end
+        flightRoot = nil
+        desiredVelocity = Vector3.zero
         local _, hum = getRoot()
         if hum then hum.PlatformStand = false end
     end
@@ -1323,6 +1645,9 @@ Settings.AimTeamCheck = true
 Settings.AimVisibleCheck = true
 Settings.AimAllDirections = false
 Settings.AimRange = 300
+Settings.AimFovEnabled = true
+Settings.AimFovVisible = true
+Settings.AimFovRadius = 160
 Settings.AimPart = "Head"
 Settings.AimMode = "Hold"
 Settings.AimHoldInput = "Right Mouse"
@@ -1343,6 +1668,9 @@ do
         function(v) Settings.AimPart = v end)
     Elements.Slider(left, "Smoothness", 0, 100, 30, "", function(v) Settings.AimSmoothTime = v / 250 end)
     Elements.Slider(left, "Range", 25, 1000, 300, "", function(v) Settings.AimRange = v end)
+    Elements.Toggle(right, "FOV Limit", true, function(v) Settings.AimFovEnabled = v end)
+    Elements.Toggle(right, "Show FOV Circle", true, function(v) Settings.AimFovVisible = v end)
+    Elements.Slider(right, "FOV Radius", 30, 500, 160, "px", function(v) Settings.AimFovRadius = v end)
     local status = Elements.Label(left, "Off")
     status.TextWrapped = true
     status.Parent.Size = UDim2.new(1, 0, 0, 44)
@@ -1356,6 +1684,19 @@ do
     }, Gui)
     border(aimStatus, T.red)
     track(status:GetPropertyChangedSignal("Text"):Connect(function() aimStatus.Text = status.Text end))
+    local fovGui = new("ScreenGui", {
+        Name = "SunsetFovCircle", ResetOnSpawn = false, IgnoreGuiInset = true,
+        DisplayOrder = 2147483646, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    }, PlayerGui)
+    local fovCircle = new("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, fovGui)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, fovCircle)
+    local fovOutline = new("UIStroke", {
+        Color = T.red, Thickness = 1.5, Transparency = 0.1,
+    }, fovCircle)
+    track({ Disconnect = function() fovGui:Destroy() end })
     Elements.Toggle(right, "Team Check", true, function(v) Settings.AimTeamCheck = v end)
     Elements.Toggle(right, "Wall Check", true, function(v) Settings.AimVisibleCheck = v end)
     Elements.Toggle(right, "Look Behind", false, function(v) Settings.AimAllDirections = v end)
@@ -1429,6 +1770,13 @@ do
         local distance = (part.Position - origin).Magnitude
         if distance > Settings.AimRange or distance < 0.01 then return nil, "out of range" end
         local screen, inView = camera:WorldToViewportPoint(part.Position)
+        if Settings.AimFovEnabled then
+            if not inView or screen.Z <= 0 then return nil, "outside FOV" end
+            local center = camera.ViewportSize * 0.5
+            if (Vector2.new(screen.X, screen.Y) - center).Magnitude > Settings.AimFovRadius then
+                return nil, "outside FOV"
+            end
+        end
         if not retaining and not Settings.AimAllDirections and (not inView or screen.Z <= 0) then return nil, "off screen" end
         if Settings.AimVisibleCheck and not rayClear(camera.CFrame.Position, part, camera) then return nil, "behind wall" end
         local center = camera.ViewportSize * 0.5
@@ -1545,6 +1893,10 @@ do
         else stopFire() end
     end
     RunService:BindToRenderStep(binding, Enum.RenderPriority.Last.Value + 1, function(dt)
+        local diameter = Settings.AimFovRadius * 2
+        fovCircle.Size = UDim2.fromOffset(diameter, diameter)
+        fovGui.Enabled = Settings.AimFovVisible and Settings.AimFovEnabled and not loading
+        fovOutline.Color = T.red
         aimStatus.Visible = Settings.AimEnabled or Settings.TriggerEnabled
         local ok, message = pcall(updateAim, dt)
         if not ok then
@@ -2221,7 +2573,7 @@ local zombiePages = new("Frame", {
 local currentZombieTab
 local function makeZombieTab(name)
     local button = new("TextButton", {
-        Size = UDim2.new(0.2, -5, 0, 26), BackgroundColor3 = T.inner,
+        Size = UDim2.new(1 / 6, -5, 0, 26), BackgroundColor3 = T.inner,
         BorderSizePixel = 0, Text = name, Font = T.font, TextSize = 13,
         TextColor3 = T.dim, AutoButtonColor = false,
     }, zombieTabBar)
@@ -2268,6 +2620,7 @@ local zombieMain = makeZombieTab("Main")
 local zombieWeapons = makeZombieTab("Weapons")
 local zombieArsenal = makeZombieTab("Arsenal")
 local zombieMisc = makeZombieTab("Misc")
+local zombieBullets = makeZombieTab("Bullets")
 local zombieSettings = makeZombieTab("Settings")
 
 do
@@ -2281,12 +2634,17 @@ do
     local aura = makeSection(zombieWeapons.Left, "Kill Aura")
     Elements.Toggle(aura, "Kill Aura", false, Zombie.KillAura.SetEnabled)
     Elements.Slider(aura, "Kill Aura Radius", 10, 200, 60, "studs", Zombie.KillAura.SetRadius)
-    Elements.Slider(aura, "Maximum Targets", 1, 30, 18, "", Zombie.KillAura.SetMaxTargets)
+    Elements.Slider(aura, "Target Pool", 1, 30, 18, "", Zombie.KillAura.SetMaxTargets)
     local guns = makeSection(zombieWeapons.Right, "Weapons")
     Elements.Toggle(guns, "Rapid Fire", false, Zombie.RapidFire.SetEnabled)
     Elements.Slider(guns, "Rapid Fire Interval", 0.01, 0.2, 0.02,
         "seconds", Zombie.RapidFire.SetInterval, 0.01)
     Elements.Toggle(guns, "Auto Equip Weapon", false, Zombie.AutoEquip.SetEnabled)
+end
+do
+    local bullets = makeSection(zombieBullets.Left, "Bullets")
+    Elements.Toggle(bullets, "Hitscan", false, Zombie.Hitscan.SetEnabled)
+    Elements.Toggle(bullets, "Bullet No Clip", false, Zombie.BulletNoClip.SetEnabled)
 end
 do
     local gear = makeSection(zombieArsenal.Left, "Gear")
@@ -2300,6 +2658,8 @@ end
 do
     local visual = makeSection(zombieMisc.Left, "Display")
     Elements.Toggle(visual, "Hide Built-In Crosshair", false, Zombie.Crosshair.SetEnabled)
+    local radar = makeSection(zombieMisc.Right, "Zombie Radar")
+    Elements.Toggle(radar, "Zombie Outlines", false, Zombie.ZombieRadar.SetEnabled)
 end
 do
     local controls = makeSection(zombieSettings.Left, "Window")
