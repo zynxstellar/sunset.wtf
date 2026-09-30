@@ -1,3 +1,4 @@
+local source = [========[
 --[[
     Menu  -  Informant-style UI
     RightShift  : open / close
@@ -8,14 +9,17 @@
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
+local SUNSET_BUILD = "20260930-sprint-burrow-7f1c"
+local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
 -- Kill any previously injected copy (fly, esp, loops, guis) before building
@@ -54,6 +58,7 @@ local sniperOnlySections = {}
 local bedWarsOutlineToggle
 local bedWarsNamesToggle
 local AutoReinject = { enabled = true }
+local RefreshConfigList
 
 -- ============================================================
 -- Settings (state the features read from)
@@ -73,6 +78,7 @@ local Settings = {
     TpBelowLimit   = 25,
     GodMode        = false,
     EspBoxColor    = Color3.fromRGB(255, 255, 255),
+    AimFovColor    = Color3.fromRGB(255, 255, 255),
     WatermarkOn    = true,
     DisableMoveOpen= false,
 }
@@ -113,9 +119,8 @@ end
 
 local Gui = new("ScreenGui", { Name = "MenuUI", DisplayOrder = 2147483647, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, PlayerGui)
 
-local loading = true
 local Window = new("Frame", {
-    Name = "Window", Visible = false,
+    Name = "Window", Visible = true,
     Size = UDim2.fromOffset(560, 480),
     Position = UDim2.fromScale(0.5, 0.5),
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -145,9 +150,9 @@ Title.Size = UDim2.new(1, 0, 1, 0)
 new("Frame", { Size = UDim2.new(1, -16, 0, 2), Position = UDim2.fromOffset(8, 22), BackgroundColor3 = T.red, BorderSizePixel = 0 }, Window)
 
 local listeningFor = nil
--- Menu binding is available even before the remaining UI finishes building.
+-- The menu is available as soon as its window is created.
 track(UIS.InputBegan:Connect(function(i, gp)
-    if not loading and not listeningFor and i.KeyCode == Settings.MenuKey and not UIS:GetFocusedTextBox() then
+    if not listeningFor and i.KeyCode == Settings.MenuKey and not UIS:GetFocusedTextBox() then
         Window.Visible = not Window.Visible
     end
 end))
@@ -165,7 +170,7 @@ local useScriptable = not canHook
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 
 local function onMenuVisibility()
-    if anyMenuVisible() or loading then
+    if anyMenuVisible() then
         if savedCamMode ~= nil then return end
         savedCamMode = LocalPlayer.CameraMode
         LocalPlayer.CameraMode = Enum.CameraMode.Classic
@@ -186,7 +191,7 @@ end
 track(Window:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
 
 local function forceUnlock()
-    if not anyMenuVisible() and not loading then return end
+    if not anyMenuVisible() then return end
     if useScriptable then
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Scriptable
@@ -214,7 +219,7 @@ track(RunService.Heartbeat:Connect(forceUnlock))
 if canHook then
     local oldNewIndex
     oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
-        if not checkcaller() and Window and Window.Parent and (anyMenuVisible() or loading) then
+        if not checkcaller() and Window and Window.Parent and anyMenuVisible() then
             if self == UIS and key == "MouseBehavior" then
                 value = Enum.MouseBehavior.Default
             end
@@ -271,7 +276,7 @@ end
 local Tabs, currentTab = {}, nil
 local function makeTab(name)
     local btn = new("TextButton", {
-        Size = UDim2.new(1 / 6, -5, 0, 26),
+        Size = UDim2.new(1 / 7, -6, 0, 26),
         BackgroundColor3 = T.inner,
         BorderSizePixel = 0,
         Text = name,
@@ -355,6 +360,17 @@ end
 -- ============================================================
 local Elements = {}
 local ConfigControls = {}
+local function configKey(parent, text)
+    local section = parent and parent.Parent
+    local title = section and section:FindFirstChildOfClass("TextLabel")
+    local page = section and section.Parent and section.Parent.Parent
+    local tabName = "Menu"
+    for name, tab in pairs(Tabs) do
+        if tab.Page == page then tabName = name break end
+    end
+    return tabName .. "/" .. (section and section:GetAttribute("SunsetGame") or "All")
+        .. "/" .. (title and title.Text or "Section") .. "/" .. text
+end
 
 function Elements.Label(parent, text, rightText)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1 }, parent)
@@ -458,7 +474,8 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     render()
     obj.SetBind(defaultKey)
     if callback and state then task.spawn(callback, state) end
-    table.insert(ConfigControls, { Kind = "toggle", Get = obj.Get, Set = obj.Set,
+    table.insert(ConfigControls, { Kind = "toggle", Key = configKey(parent, text),
+        Get = obj.Get, Set = obj.Set,
         GetBind = obj.GetBind, SetBind = obj.SetBind, Box = parent.Parent, Row = row })
     return obj
 end
@@ -603,7 +620,8 @@ function Elements.ColorPicker(parent, text, default, callback)
         repaint()
     end
     repaint(false)
-    table.insert(ConfigControls, { Kind = "color", Get = picker.Get, Set = picker.Set,
+    table.insert(ConfigControls, { Kind = "color", Key = configKey(parent, text),
+        Get = picker.Get, Set = picker.Set,
         Box = parent.Parent })
     return picker
 end
@@ -659,11 +677,12 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     plus.MouseButton1Click:Connect(function() set(value + (step or 1)) end)
     minus.MouseButton1Click:Connect(function() set(value - (step or 1)) end)
     set(value, true)
-    table.insert(ConfigControls, { Kind = "number", Get = function() return value end,
+    table.insert(ConfigControls, { Kind = "number", Key = configKey(parent, text),
+        Get = function() return value end,
         Set = function(nextValue) set(nextValue) end, Box = parent.Parent })
     return holder
 end
-function Elements.Dropdown(parent, text, options, default, callback)
+function Elements.Dropdown(parent, text, options, default, callback, noConfig)
     local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, ZIndex = 5 }, parent)
     label(holder, text)
     local btn = new("TextButton", {
@@ -727,8 +746,11 @@ function Elements.Dropdown(parent, text, options, default, callback)
 
     obj.SetOptions(options)
     btn.MouseButton1Click:Connect(function() list.Visible = not list.Visible holder.Size = UDim2.new(1, 0, 0, list.Visible and 40 + list.Size.Y.Offset or 36) end)
-    table.insert(ConfigControls, { Kind = "choice", Get = function() return obj.Value end,
-        Set = obj.Set, Box = parent.Parent })
+    if not noConfig then
+        table.insert(ConfigControls, { Kind = "choice", Key = configKey(parent, text),
+            Get = function() return obj.Value end,
+            Set = obj.Set, Box = parent.Parent })
+    end
     return obj
 end
 
@@ -1987,18 +2009,19 @@ task.spawn(function()
             Watermark.Text = string.format("sunset.wtf | v1.0 | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
             frames, last = 0, os.clock()
         end
-        Watermark.Visible = Settings.WatermarkOn and not loading
+        Watermark.Visible = Settings.WatermarkOn
     end))
 end)
 
 -- ============================================================
 -- Build pages
 -- ============================================================
-local AimTab = makeTab("Combat")
 local MainTab = makeTab("Movement")
 local PlayerTab = makeTab("Player")
-local MiscTab = makeTab("Misc")
 local VisualsTab = makeTab("Visuals")
+local AimTab = makeTab("Combat")
+local MiscTab = makeTab("Misc")
+local FunTab = makeTab("Fun")
 local SettingsTab = makeTab("Sunset")
 -- ---- Aim
 Settings.AimEnabled = false
@@ -2057,7 +2080,7 @@ do
     }, fovGui)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, fovCircle)
     local fovOutline = new("UIStroke", {
-        Color = Color3.fromRGB(255, 255, 255), Thickness = 1.5, Transparency = 0.1,
+        Color = Settings.AimFovColor, Thickness = 1.5, Transparency = 0.1,
     }, fovCircle)
     track({ Disconnect = function() fovGui:Destroy() end })
     Elements.Toggle(right, "Team Check", true, function(v) Settings.AimTeamCheck = v end)
@@ -2259,8 +2282,8 @@ do
     RunService:BindToRenderStep(binding, Enum.RenderPriority.Last.Value + 1, function(dt)
         local diameter = Settings.AimFovRadius * 2
         fovCircle.Size = UDim2.fromOffset(diameter, diameter)
-        fovGui.Enabled = Settings.AimFovVisible and Settings.SelectedGame ~= "BedWars" and not loading
-        fovOutline.Color = Color3.fromRGB(255, 255, 255)
+        fovGui.Enabled = Settings.AimFovVisible and Settings.SelectedGame ~= "BedWars"
+        fovOutline.Color = Settings.AimFovColor
         aimStatus.Visible = Settings.SelectedGame == "Sniper Arena"
             and (Settings.AimEnabled or Settings.TriggerEnabled)
         local ok, message = pcall(updateAim, dt)
@@ -2428,6 +2451,246 @@ do
     track({ Disconnect = function() enabled = false restoreSpin() end })
 end
 
+-- ---- Misc / Burrow
+local Burrow = { Depth = 4, Generation = 0,
+    Speed = 24, Color = Color3.fromRGB(220, 95, 75), Effects = {} }
+do
+    local s = makeSection(MiscTab.Right, "Burrow")
+    local status = Elements.Label(s, "Sink below the floor, then rise back up.")
+    local toggle
+    local function ring(position)
+        for i = 1, 12 do
+            local angle = i * math.pi / 6
+            local spark = new("Part", {
+                Name = "SunsetBurrowSpark", Shape = Enum.PartType.Ball,
+                Size = Vector3.new(0.25, 0.25, 0.25), Position = position,
+                Color = Burrow.Color, Material = Enum.Material.Neon,
+                Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
+            }, workspace)
+            Burrow.Effects[spark] = true
+            local target = position + Vector3.new(math.cos(angle) * 2.3, 0.1,
+                math.sin(angle) * 2.3)
+            local tween = TweenService:Create(spark, TweenInfo.new(0.45),
+                { Position = target, Transparency = 1 })
+            tween.Completed:Connect(function()
+                Burrow.Effects[spark] = nil
+                spark:Destroy()
+            end)
+            Debris:AddItem(spark, 0.8)
+            tween:Play()
+        end
+    end
+    local function cancelTween()
+        if Burrow.Tween then
+            Burrow.Tween:Cancel()
+            Burrow.Tween = nil
+        end
+    end
+    local function stopMotion()
+        if Burrow.Velocity then Burrow.Velocity:Destroy() Burrow.Velocity = nil end
+        Burrow.HoldY = nil
+    end
+    local function restore()
+        cancelTween()
+        stopMotion()
+        local root, humanoid = Burrow.Root, Burrow.Humanoid
+        if root and root.Parent then
+            local position = root.Position
+            root.CFrame = Burrow.ExitCFrame or (CFrame.new(position.X,
+                Burrow.Origin.Position.Y, position.Z) * Burrow.Origin.Rotation)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.Anchored = Burrow.WasAnchored
+        end
+        for part, collision in pairs(Burrow.Collisions or {}) do
+            if part.Parent then part.CanCollide = collision end
+        end
+        if humanoid and humanoid.Parent then
+            humanoid.PlatformStand = Burrow.WasPlatformStand
+            humanoid.AutoRotate = Burrow.WasAutoRotate
+        end
+        Burrow.Root, Burrow.Humanoid, Burrow.Origin, Burrow.Collisions = nil, nil, nil, nil
+        Burrow.ExitCFrame = nil
+    end
+    function Burrow.Stop()
+        Burrow.Generation += 1
+        restore()
+        for spark in pairs(Burrow.Effects) do spark:Destroy() end
+        table.clear(Burrow.Effects)
+        status.Text = "Ready"
+    end
+    local function setBurrow(on)
+        Burrow.Generation += 1
+        local generation = Burrow.Generation
+        cancelTween()
+        stopMotion()
+        if on then
+            if Settings.FlyEnabled then
+                status.Text = "Turn Fly off first"
+                if toggle then toggle.Set(false) end
+                return
+            end
+            local character = LocalPlayer.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if not root or not humanoid or humanoid.Health <= 0 then
+                status.Text = "Waiting for character"
+                if toggle then toggle.Set(false) end
+                return
+            end
+            if Burrow.Root ~= root then
+                restore()
+                Burrow.Root, Burrow.Humanoid = root, humanoid
+                Burrow.Origin = root.CFrame
+                Burrow.WasAnchored = root.Anchored
+                Burrow.WasPlatformStand = humanoid.PlatformStand
+                Burrow.WasAutoRotate = humanoid.AutoRotate
+                Burrow.Collisions = {}
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        Burrow.Collisions[part] = part.CanCollide
+                        part.CanCollide = false
+                    end
+                end
+                root.Anchored = true
+                humanoid.PlatformStand = true
+                humanoid.AutoRotate = false
+                ring(Burrow.Origin.Position - Vector3.new(0,
+                    humanoid.HipHeight + root.Size.Y / 2, 0))
+            end
+            root.Anchored = true
+            status.Text = "Burrowing..."
+            local target = CFrame.new(root.Position.X,
+                Burrow.Origin.Position.Y - Burrow.Depth, root.Position.Z)
+                * Burrow.Origin.Rotation
+            Burrow.Tween = TweenService:Create(root,
+                TweenInfo.new(0.55, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
+                { CFrame = target })
+            Burrow.Tween:Play()
+            Burrow.Tween.Completed:Wait()
+            if generation == Burrow.Generation then
+                Burrow.Tween = nil
+                Burrow.HoldY = root.Position.Y
+                Burrow.Velocity = new("BodyVelocity", {
+                    MaxForce = Vector3.new(1e6, 1e6, 1e6), P = 1e4,
+                    Velocity = Vector3.zero,
+                }, root)
+                root.Anchored = false
+                status.Text = "Underground - WASD to move"
+            end
+        elseif Burrow.Root and Burrow.Root.Parent then
+            status.Text = "Rising..."
+            local current = Burrow.Root.Position
+            Burrow.ExitCFrame = CFrame.new(current.X, Burrow.Origin.Position.Y,
+                current.Z) * Burrow.Origin.Rotation
+            ring(Burrow.ExitCFrame.Position - Vector3.new(0,
+                Burrow.Humanoid.HipHeight + Burrow.Root.Size.Y / 2, 0))
+            Burrow.Root.Anchored = true
+            Burrow.Tween = TweenService:Create(Burrow.Root,
+                TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
+                { CFrame = Burrow.ExitCFrame })
+            Burrow.Tween:Play()
+            Burrow.Tween.Completed:Wait()
+            if generation == Burrow.Generation then
+                restore()
+                status.Text = "Ready"
+            end
+        else
+            restore()
+            status.Text = "Ready"
+        end
+    end
+    toggle = Elements.Toggle(s, "Burrow Animation", false, setBurrow)
+    Elements.Slider(s, "Burrow Depth", 2, 7, 4, "studs", function(value)
+        Burrow.Depth = value
+        if toggle.Get() then task.spawn(setBurrow, true) end
+    end)
+    Elements.Slider(s, "Burrow Speed", 8, 60, 24, "", function(value)
+        Burrow.Speed = value
+    end)
+    Elements.ColorPicker(s, "Burrow Color", Burrow.Color, function(color)
+        Burrow.Color = color
+    end)
+    track(LocalPlayer.CharacterAdded:Connect(function()
+        if toggle.Get() then
+            task.wait(0.4)
+            Burrow.Stop()
+            task.spawn(setBurrow, true)
+        end
+    end))
+    track(RunService.Heartbeat:Connect(function()
+        local root, velocity = Burrow.Root, Burrow.Velocity
+        if not root or not root.Parent or not velocity or not velocity.Parent then return end
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        local look = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
+        local right = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
+        if look.Magnitude < 0.01 or right.Magnitude < 0.01 then return end
+        local forwardInput = (UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
+            - (UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
+        local sideInput = (UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0)
+            - (UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
+        local movement = look.Unit * forwardInput + right.Unit * sideInput
+        if movement.Magnitude > 1 then movement = movement.Unit end
+        local y = math.clamp(((Burrow.HoldY or root.Position.Y) - root.Position.Y) * 12,
+            -30, 30)
+        velocity.Velocity = movement * Burrow.Speed + Vector3.new(0, y, 0)
+        for _, part in ipairs(root.Parent:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if Burrow.Collisions[part] == nil then Burrow.Collisions[part] = part.CanCollide end
+                part.CanCollide = false
+            end
+        end
+    end))
+end
+
+-- ---- Misc / Ghost Pulse
+local GhostPulse = { Enabled = false, Speed = 2,
+    Color = Color3.fromRGB(170, 105, 255), Rainbow = true }
+do
+    local s = makeSection(MiscTab.Right, "Ghost Pulse")
+    local function clearHighlight()
+        if GhostPulse.Highlight then GhostPulse.Highlight:Destroy() end
+        GhostPulse.Highlight = nil
+        GhostPulse.Character = nil
+    end
+    function GhostPulse.Stop()
+        GhostPulse.Enabled = false
+        clearHighlight()
+    end
+    Elements.Toggle(s, "Ghost Pulse", false, function(on)
+        GhostPulse.Enabled = on
+        if not on then clearHighlight() end
+    end)
+    Elements.Slider(s, "Pulse Speed", 0.5, 6, 2, "", function(value)
+        GhostPulse.Speed = value
+    end)
+    Elements.Toggle(s, "Rainbow Override", true, function(on) GhostPulse.Rainbow = on end)
+    Elements.ColorPicker(s, "Ghost Color", GhostPulse.Color, function(color)
+        GhostPulse.Color = color
+    end)
+    track(RunService.RenderStepped:Connect(function()
+        if not GhostPulse.Enabled then return end
+        local character = LocalPlayer.Character
+        if not character then clearHighlight() return end
+        if GhostPulse.Character ~= character or not GhostPulse.Highlight
+            or not GhostPulse.Highlight.Parent then
+            clearHighlight()
+            GhostPulse.Character = character
+            GhostPulse.Highlight = new("Highlight", {
+                Name = "SunsetGhostPulse", Adornee = character,
+                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+                FillTransparency = 0.7, OutlineTransparency = 0,
+            }, character)
+        end
+        local phase = os.clock() * GhostPulse.Speed
+        local color = GhostPulse.Rainbow
+            and Color3.fromHSV((phase * 0.08) % 1, 0.62, 1) or GhostPulse.Color
+        GhostPulse.Highlight.FillColor = color
+        GhostPulse.Highlight.OutlineColor = color
+        GhostPulse.Highlight.FillTransparency = 0.68 + math.sin(phase) * 0.16
+    end))
+end
+
 -- ---- Player / Third Person
 do
     local s = makeSection(PlayerTab.Right, "Third Person")
@@ -2440,7 +2703,7 @@ do
         LocalPlayer.CameraMinZoomDistance = snapshot.min
         LocalPlayer.CameraMaxZoomDistance = snapshot.max
         local camera = workspace.CurrentCamera
-        if (anyMenuVisible() or loading) and not force then
+        if anyMenuVisible() and not force then
             savedCamMode = snapshot.mode
             if useScriptable then savedCamType = snapshot.kind end
         else
@@ -2476,7 +2739,7 @@ do
         LocalPlayer.CameraMinZoomDistance = distance
         LocalPlayer.CameraMaxZoomDistance = distance
         -- Let the menu's cursor-unlock camera keep control while it is visible.
-        if not anyMenuVisible() and not loading then
+        if not anyMenuVisible() then
             local character = LocalPlayer.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             if humanoid then
@@ -2706,6 +2969,9 @@ do
         Settings.AimFovRadius = value
     end)
     Elements.Toggle(fov, "Limit Aim to FOV", true, function(on) Settings.AimFovEnabled = on end)
+    Elements.ColorPicker(fov, "Circle Color", Settings.AimFovColor, function(color)
+        Settings.AimFovColor = color
+    end)
     local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
     atmosphere.Parent.LayoutOrder = 3
     Elements.Toggle(atmosphere, "Enabled", false, setAtmosphereEnabled, nil, true)
@@ -3052,21 +3318,57 @@ do
     local nameHolder = Elements.TextBox(s, "Config Name", "default", nil)
     local nameBox = nameHolder:FindFirstChildOfClass("TextBox")
     nameBox.Text = "default"
+    local noConfigs = "No saved configs"
+    local selector = Elements.Dropdown(s, "Saved Configs", { noConfigs }, noConfigs, function(name)
+        if name ~= noConfigs then nameBox.Text = name end
+    end, true)
     local status = Elements.Label(s, "Ready")
     status.TextColor3 = T.dim
     local pendingDelete
-    local function configPath()
-        local gameName = (Settings.SelectedGame or "Other"):gsub("[^%w%-_]", "_")
-        local name = nameBox.Text:match("^%s*(.-)%s*$"):gsub("[^%w%-_]", "_"):sub(1, 32)
-        if name == "" then name = "default" end
-        return "SunsetConfigs/" .. gameName .. "_" .. name .. ".json"
+    local function cleanName(text)
+        local name = tostring(text or ""):match("^%s*(.-)%s*$")
+            :gsub("[^%w%-_]", "_"):sub(1, 32)
+        return name ~= "" and name or "default"
+    end
+    local function gamePrefix()
+        return (Settings.SelectedGame or "Other"):gsub("[^%w%-_]", "_") .. "_"
+    end
+    local function configPath(name)
+        return "SunsetConfigs/" .. gamePrefix() .. cleanName(name) .. ".json"
     end
     local function ensureFolder()
         if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
     end
+    local function refreshConfigs(preferred)
+        local names = {}
+        if typeof(listfiles) == "function" then
+            ensureFolder()
+            local ok, files = pcall(listfiles, "SunsetConfigs")
+            if ok and type(files) == "table" then
+                for _, path in ipairs(files) do
+                    local base = tostring(path):gsub("\\", "/"):match("([^/]+)$")
+                    local name = base and base:match("^" .. gamePrefix() .. "(.+)%.json$")
+                    if name then names[#names + 1] = name end
+                end
+            end
+        end
+        if #names == 0 and preferred then names[1] = cleanName(preferred) end
+        table.sort(names)
+        selector.SetOptions(#names > 0 and names or { noConfigs })
+        if preferred and table.find(names, cleanName(preferred)) then
+            selector.Set(cleanName(preferred))
+        end
+        return names
+    end
+    RefreshConfigList = refreshConfigs
+    Elements.Button(s, "Refresh Configs", function()
+        local names = refreshConfigs()
+        status.Text = #names > 0 and ("Found " .. #names .. " configs") or "No saved configs"
+    end)
     Elements.Button(s, "Save Config", function()
         if typeof(writefile) ~= "function" then status.Text = "File saving unavailable" return end
         ensureFolder()
+        local name = cleanName(nameBox.Text)
         local saved = {}
         for i, control in ipairs(ConfigControls) do
             local value = control.Get()
@@ -3074,26 +3376,33 @@ do
                 value = { math.floor(value.R * 255 + 0.5), math.floor(value.G * 255 + 0.5), math.floor(value.B * 255 + 0.5) }
             end
             local bind = control.GetBind and control.GetBind()
-            saved[i] = { Kind = control.Kind, Value = value, Bind = bind and bind.Name or nil }
+            saved[i] = { Key = control.Key, Kind = control.Kind,
+                Value = value, Bind = bind and bind.Name or nil }
         end
-        local path = configPath()
+        local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
-            Version = 1, Game = Settings.SelectedGame, Controls = saved,
+            Version = 2, Game = Settings.SelectedGame, Controls = saved,
             MenuKey = Settings.MenuKey.Name,
         }))
-        status.Text = ok and "Saved " .. nameBox.Text or "Could not save config"
+        status.Text = ok and "Saved " .. name or "Could not save config"
+        if ok then nameBox.Text = name refreshConfigs(name) end
         pendingDelete = nil
     end)
     Elements.Button(s, "Load Config", function()
         if typeof(readfile) ~= "function" then status.Text = "File loading unavailable" return end
-        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath())) end)
+        local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath(name))) end)
         if not ok or type(data) ~= "table" or data.Game ~= Settings.SelectedGame
-            or data.Version ~= 1 then
+            or (data.Version ~= 1 and data.Version ~= 2) then
             status.Text = "Config missing or incompatible"
             return
         end
+        local byKey = {}
+        for _, control in ipairs(ConfigControls) do
+            if control.Key then byKey[control.Key] = control end
+        end
         for i, item in ipairs(data.Controls or {}) do
-            local control = ConfigControls[i]
+            local control = item.Key and byKey[item.Key] or ConfigControls[i]
             if control and control.Kind == item.Kind and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
@@ -3110,20 +3419,23 @@ do
         if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
             menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
         end
-        status.Text = "Loaded " .. nameBox.Text
+        nameBox.Text = name
+        status.Text = "Loaded " .. name
         pendingDelete = nil
     end)
     Elements.Button(s, "Delete Config", function()
-        local path = configPath()
+        local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
+        local path = configPath(name)
         if pendingDelete ~= path then
             pendingDelete = path
-            status.Text = "Click Delete again to confirm"
+            status.Text = "Click Delete again: " .. name
             return
         end
         pendingDelete = nil
         if typeof(delfile) ~= "function" then status.Text = "File deletion unavailable" return end
         local ok = pcall(delfile, path)
-        status.Text = ok and "Config deleted" or "Could not delete config"
+        status.Text = ok and ("Deleted " .. name) or "Could not delete config"
+        if ok then refreshConfigs() end
     end)
 end
 -- ---- Settings / Credits
@@ -3135,7 +3447,10 @@ do
     local s = makeSection(SettingsTab.Left, "Arena Travel")
     Elements.Toggle(s, "Auto Reinject", true, function(on)
         AutoReinject.enabled = on == true
+        ENV.SunsetAutoReinject = AutoReinject.enabled
+        if AutoReinject.enabled and AutoReinject.Queue then AutoReinject.Queue() end
     end)
+    AutoReinject.Status = Elements.Label(s, "Checking teleport support...")
 end
 MainTab.Select()
 
@@ -3144,6 +3459,7 @@ local gameSections = {}
 local function gameSection(gameName, column, title)
     local content = makeSection(column, title)
     local box = content.Parent
+    box:SetAttribute("SunsetGame", gameName)
     box.Visible = false
     table.insert(gameSections, { Game = gameName, Box = box })
     return content
@@ -3209,8 +3525,47 @@ end
 -- remotes are fired, so the controls remain useful after entering a match.
 BedWars = {
     PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
-    Running = true, AuraOn = false, ScaffoldOn = false,
+    Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
+    SprintOn = false,
+    AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
+    BedColor = Color3.fromRGB(255, 204, 82),
+    GeneratorColor = Color3.fromRGB(82, 220, 255),
+    WallCheck = true,
 }
+local sprintController
+local function bedWarsSprintController()
+    if sprintController then return sprintController end
+    local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+    local module = scripts and scripts:FindFirstChild("sprint-controller", true)
+    if module and module:IsA("ModuleScript") then
+        local ok, data = pcall(require, module)
+        if ok and type(data) == "table" then
+            sprintController = data.SprintController or data.default
+        end
+    end
+    if not sprintController then
+        local storage = game:GetService("ReplicatedStorage")
+        local include = storage:FindFirstChild("rbxts_include")
+        local runtimeModule = include and include:FindFirstChild("RuntimeLib")
+        if runtimeModule and scripts then
+            local ok, controller = pcall(function()
+                local runtime = require(runtimeModule)
+                local knit = runtime.import(module or scripts, storage,
+                    "rbxts_include", "node_modules", "@easy-games", "knit", "src").KnitClient
+                return knit.Controllers.SprintController
+            end)
+            if ok then sprintController = controller end
+        end
+    end
+    return sprintController
+end
+local function stopBedWarsSprint()
+    local controller = sprintController
+    if controller then
+        local stop = controller.stopSprinting or controller.stopSprint
+        if type(stop) == "function" then pcall(stop, controller) end
+    end
+end
 local bedWarsNet = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
 local function bedWarsRemote(name, blockEngine)
     local root = bedWarsNet and bedWarsNet:FindFirstChild("node_modules")
@@ -3223,21 +3578,59 @@ local function bedWarsRemote(name, blockEngine)
     local net = rbxts and rbxts:FindFirstChild("net")
     local out = net and net:FindFirstChild("out")
     local managed = out and out:FindFirstChild("_NetManaged")
-    return managed and managed:FindFirstChild(name)
+    local found = managed and managed:FindFirstChild(name)
+    if found then return found end
+    -- BedWars has moved some network objects between module folders over time.
+    local storage = game:GetService("ReplicatedStorage")
+    found = storage:FindFirstChild(name, true)
+    if found and (found:IsA("RemoteEvent") or found:IsA("RemoteFunction")) then
+        return found
+    end
+    return nil
 end
 local function bedWarsHeldItem()
     local character = LocalPlayer.Character
     local hand = character and character:FindFirstChild("HandInvItem")
     local item = hand and hand.Value
-    return typeof(item) == "Instance" and item or nil
+    if typeof(item) == "Instance" then return item end
+    return character and character:FindFirstChildOfClass("Tool") or nil
 end
-local function bedWarsInventory()
-    local character = LocalPlayer.Character
+local function bedWarsInventory(player)
+    player = player or LocalPlayer
+    local character = player.Character
     local inventoryValue = character and character:FindFirstChild("InventoryFolder")
     local inventory = inventoryValue and inventoryValue.Value
     if inventory then return inventory end
     local folders = game:GetService("ReplicatedStorage"):FindFirstChild("Inventories")
-    return folders and folders:FindFirstChild(LocalPlayer.Name)
+    return folders and folders:FindFirstChild(player.Name)
+end
+local function bedWarsGearScore(player, character)
+    local inventory = player and bedWarsInventory(player)
+    local armor, sword = 0, 0
+    local function inspect(item)
+        local name = string.lower(item.Name)
+        local tier = 0
+        if name:find("emerald", 1, true) or name:find("void", 1, true)
+            or name:find("rageblade", 1, true) then tier = 5
+        elseif name:find("diamond", 1, true) then tier = 4
+        elseif name:find("iron", 1, true) then tier = 3
+        elseif name:find("stone", 1, true) or name:find("chain", 1, true) then tier = 2
+        elseif name:find("wood", 1, true) or name:find("leather", 1, true) then tier = 1 end
+        if name:find("armor", 1, true) or name:find("helmet", 1, true)
+            or name:find("chestplate", 1, true) or name:find("boots", 1, true) then
+            armor = math.max(armor, tier)
+        elseif name:find("sword", 1, true) or name:find("blade", 1, true)
+            or name:find("scythe", 1, true) then
+            sword = math.max(sword, tier)
+        end
+    end
+    if inventory then
+        for _, item in ipairs(inventory:GetChildren()) do inspect(item) end
+    end
+    if character then
+        for _, item in ipairs(character:GetChildren()) do inspect(item) end
+    end
+    return armor * 10 + sword
 end
 local function bedWarsEquip(item)
     local equip = bedWarsRemote("SetInvItem", false)
@@ -3267,7 +3660,8 @@ local function bedWarsMeleeItem(item)
     if swords then
         local ok, data = pcall(require, swords)
         if ok and type(data.BedwarsMelees) == "table" then
-            if table.find(data.BedwarsMelees, item.Name) then return true end
+            if table.find(data.BedwarsMelees, item.Name)
+                or data.BedwarsMelees[item.Name] then return true end
         end
     end
     local name = string.lower(item.Name)
@@ -3322,80 +3716,359 @@ local function bedWarsEnemy(player)
     end
     return player.Character and teamRelation(player.Character) == "enemy"
 end
+local function bedWarsHostileNpc(model)
+    local name = string.lower(model.Name)
+    if name:find("shop", 1, true) or name:find("merchant", 1, true)
+        or name:find("upgrade", 1, true) then return false end
+    return name:find("dummy", 1, true) ~= nil
+        or name:find("enemy", 1, true) ~= nil
+        or name:find("golem", 1, true) ~= nil
+        or name:find("guardian", 1, true) ~= nil
+        or name:find("monster", 1, true) ~= nil
+end
+local function bedWarsVisible(character, target, origin, targetRoot)
+    if not BedWars.WallCheck then return true end
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.FilterDescendantsInstances = { character }
+    ray.RespectCanCollide = true
+    local head = target:FindFirstChild("Head")
+    local headPosition = head and head:IsA("BasePart") and head.Position or targetRoot.Position
+    for _, point in ipairs({ headPosition, targetRoot.Position }) do
+        local hit = workspace:Raycast(origin, point - origin, ray)
+        if not hit or hit.Instance:IsDescendantOf(target) then return true end
+    end
+    return false
+end
+local swordHitRemote, lastSwordRemoteLookup = nil, -math.huge
 local function bedWarsAuraStep()
+    if BedWars.ProjectileSwitching then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local weapon = bedWarsHeldItem()
-    local remote = bedWarsRemote("SwordHit", false)
-    if not root or not humanoid or humanoid.Health <= 0
-        or not remote or not remote:IsA("RemoteEvent") then return end
-    if not bedWarsMeleeItem(weapon) then
-        -- BedWars keeps swords in InventoryFolder even while another item is held.
-        -- Equip once, then let the next tick attack with the actual hand item.
-        if BedWars.ScaffoldOn and os.clock() - (BedWars.BridgingNeeded or -1e9) < 0.4 then return end
-        local sword = bedWarsBestSword()
-        bedWarsEquip(sword)
+    if not swordHitRemote or not swordHitRemote.Parent then
+        if os.clock() - lastSwordRemoteLookup >= 2 then
+            swordHitRemote = bedWarsRemote("SwordHit", false)
+            lastSwordRemoteLookup = os.clock()
+        end
+    end
+    local remote = swordHitRemote
+    if not root or not humanoid or humanoid.Health <= 0 then
+        BedWars.AuraStatus = "Waiting for character"
+        return
+    end
+    if not remote then
+        BedWars.AuraStatus = "SwordHit remote unavailable"
         return
     end
     local range = bedWarsAttackRange()
-    local closest, closestRoot, distance = nil, nil, range
+    local targets = {}
+    local seen = {}
+    local function consider(target)
+        if not target or target == character or seen[target] then return end
+        seen[target] = true
+        local owner = Players:GetPlayerFromCharacter(target)
+        if owner and not bedWarsEnemy(owner) then return end
+        if not owner and not bedWarsHostileNpc(target) then return end
+        local targetHumanoid = target:FindFirstChildOfClass("Humanoid")
+        local targetRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
+        if not targetHumanoid or targetHumanoid.Health <= 0 or not targetRoot
+            or target:FindFirstChildOfClass("ForceField") then return end
+        if not bedWarsVisible(character, target, root.Position + Vector3.new(0, 1.5, 0), targetRoot) then return end
+        local d = (root.Position - targetRoot.Position).Magnitude
+        if d <= range then
+            targets[#targets + 1] = {
+                model = target, root = targetRoot, distance = d,
+                health = targetHumanoid.Health,
+                gear = bedWarsGearScore(owner, target),
+            }
+        end
+    end
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then
-            local target = player.Character
-            local targetHumanoid = target and target:FindFirstChildOfClass("Humanoid")
-            local targetRoot = target and target:FindFirstChild("HumanoidRootPart")
-            if targetHumanoid and targetHumanoid.Health > 0 and targetRoot
-                and not target:FindFirstChildOfClass("ForceField") then
-                local d = (root.Position - targetRoot.Position).Magnitude
-                if d < distance then
-                    closest, closestRoot, distance = target, targetRoot, d
+        if bedWarsEnemy(player) then consider(player.Character) end
+    end
+    -- Practice arenas use enemy dummies, which are not in Players.
+    local overlap = OverlapParams.new()
+    overlap.FilterType = Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances = { character }
+    overlap.MaxParts = 200
+    for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, range, overlap)) do
+        local model = part:FindFirstAncestorOfClass("Model")
+        while model and not model:FindFirstChildOfClass("Humanoid") do
+            model = model:FindFirstAncestorOfClass("Model")
+        end
+        if model then consider(model) end
+    end
+    if #targets == 0 then
+        BedWars.AuraStatus = "No enemy in sword range"
+        return
+    end
+    -- BedWars validates SwordHit against the item actually equipped.
+    -- Only switch when an enemy is in range, and do not interrupt a held click.
+    if not bedWarsMeleeItem(weapon) then
+        if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            BedWars.AuraStatus = "Using held item"
+            return
+        end
+        local sword = bedWarsBestSword()
+        BedWars.AuraStatus = sword and "Equipping sword" or "No sword found"
+        bedWarsEquip(sword)
+        return
+    end
+    table.sort(targets, function(a, b)
+        if BedWars.AuraPriority == "Higher HP" and a.health ~= b.health then
+            return a.health > b.health
+        elseif BedWars.AuraPriority == "Lower HP" and a.health ~= b.health then
+            return a.health < b.health
+        elseif BedWars.AuraPriority == "More Gear" and a.gear ~= b.gear then
+            return a.gear > b.gear
+        end
+        return a.distance < b.distance
+    end)
+    local camera = workspace.CurrentCamera
+    local cameraPosition = camera and camera.CFrame.Position or root.Position + Vector3.new(0, 2, 0)
+    local target = targets[1]
+    local delta = target.root.Position - cameraPosition
+    if delta.Magnitude < 0.01 then return end
+    local payload = {
+        weapon = weapon,
+        entityInstance = target.model,
+        chargedAttack = { chargeRatio = 0 },
+        validate = {
+            raycast = {
+                cameraPosition = { value = cameraPosition },
+                cursorDirection = { value = delta.Unit },
+            },
+            selfPosition = { value = root.Position },
+            targetPosition = { value = target.root.Position },
+        },
+    }
+    local ok, err = pcall(function()
+        if remote:IsA("RemoteEvent") then
+            remote:FireServer(payload)
+        else
+            remote:InvokeServer(payload)
+        end
+    end)
+    BedWars.AuraStatus = ok and ("Target: " .. target.model.Name)
+        or ("Attack error: " .. tostring(err):sub(1, 45))
+end
+local bedWarsProjectileApi
+local function bedWarsGetProjectileApi()
+    if bedWarsProjectileApi then return bedWarsProjectileApi end
+    local storage = game:GetService("ReplicatedStorage")
+    local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+    local ts = scripts and scripts:FindFirstChild("TS")
+    local controllers = ts and ts:FindFirstChild("controllers")
+    local global = controllers and controllers:FindFirstChild("global")
+    local combat = global and global:FindFirstChild("combat")
+    local projectile = combat and combat:FindFirstChild("projectile")
+    local controllerModule = projectile and projectile:FindFirstChild("projectile-controller")
+    local shared = storage:FindFirstChild("TS")
+    local itemFolder = shared and shared:FindFirstChild("item")
+    local metaModule = itemFolder and itemFolder:FindFirstChild("item-meta")
+    local projectileFolder = shared and shared:FindFirstChild("projectile")
+    local projectileMetaModule = projectileFolder and projectileFolder:FindFirstChild("projectile-meta")
+    if not controllerModule or not metaModule or not projectileMetaModule then return nil end
+    local ok, api = pcall(function()
+        return {
+            controller = require(controllerModule).ProjectileController,
+            getItemMeta = require(metaModule).getItemMeta,
+            projectileMeta = require(projectileMetaModule).ProjectileMeta,
+        }
+    end)
+    if ok and api.controller and api.getItemMeta and api.projectileMeta then
+        bedWarsProjectileApi = api
+    end
+    return bedWarsProjectileApi
+end
+local function bedWarsOffensiveProjectile(name)
+    name = string.lower(name)
+    return name:find("bow", 1, true) or name:find("headhunter", 1, true)
+        or name:find("fireball", 1, true) or name:find("snowball", 1, true)
+        or name:find("spear", 1, true) or name:find("throwing_knife", 1, true)
+        or name:find("grenade", 1, true) or name:find("rocket", 1, true)
+        or name:find("orb", 1, true)
+end
+local function bedWarsProjectileTarget(character, root, range, origin)
+    local targets, seen = {}, {}
+    local function consider(model)
+        if not model or model == character or seen[model] then return end
+        seen[model] = true
+        local owner = Players:GetPlayerFromCharacter(model)
+        if owner and not bedWarsEnemy(owner) then return end
+        if not owner and not bedWarsHostileNpc(model) then return end
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
+        local targetRoot = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+        if not humanoid or humanoid.Health <= 0 or not targetRoot
+            or model:FindFirstChildOfClass("ForceField") then return end
+        local distance = (root.Position - targetRoot.Position).Magnitude
+        if distance > range or distance <= bedWarsAttackRange() then return end
+        if not bedWarsVisible(character, model, origin, targetRoot) then return end
+        targets[#targets + 1] = {
+            model = model, root = targetRoot, distance = distance,
+            health = humanoid.Health, gear = bedWarsGearScore(owner, model),
+        }
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if bedWarsEnemy(player) then consider(player.Character) end
+    end
+    local overlap = OverlapParams.new()
+    overlap.FilterType = Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances = { character }
+    overlap.MaxParts = 250
+    for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, range, overlap)) do
+        local model = part:FindFirstAncestorOfClass("Model")
+        while model and not model:FindFirstChildOfClass("Humanoid") do
+            model = model:FindFirstAncestorOfClass("Model")
+        end
+        if model then consider(model) end
+    end
+    table.sort(targets, function(a, b)
+        if BedWars.AuraPriority == "Higher HP" and a.health ~= b.health then
+            return a.health > b.health
+        elseif BedWars.AuraPriority == "Lower HP" and a.health ~= b.health then
+            return a.health < b.health
+        elseif BedWars.AuraPriority == "More Gear" and a.gear ~= b.gear then
+            return a.gear > b.gear
+        end
+        return a.distance < b.distance
+    end)
+    return targets[1]
+end
+local function bedWarsProjectileVelocity(origin, target, speed, gravity)
+    local delta = target - origin
+    local horizontal = Vector3.new(delta.X, 0, delta.Z)
+    local distance = horizontal.Magnitude
+    if distance < 0.1 or gravity <= 0 then return delta.Unit * speed end
+    local speedSquared = speed * speed
+    local discriminant = speedSquared * speedSquared
+        - gravity * (gravity * distance * distance + 2 * delta.Y * speedSquared)
+    if discriminant < 0 then return nil end
+    local angle = math.atan2(speedSquared - math.sqrt(discriminant), gravity * distance)
+    return horizontal.Unit * (math.cos(angle) * speed)
+        + Vector3.new(0, math.sin(angle) * speed, 0)
+end
+local function bedWarsProjectileStep()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 then return end
+    local api = bedWarsGetProjectileApi()
+    local inventory = bedWarsInventory()
+    if not api or not inventory then return end
+    local origin = root.Position + Vector3.new(0, 1.5, 0)
+    local target = bedWarsProjectileTarget(character, root, BedWars.ProjectileRange, origin)
+    if not target then return end
+    local candidates = {}
+    for _, item in ipairs(inventory:GetChildren()) do
+        if bedWarsOffensiveProjectile(item.Name) then
+            local ok, source = pcall(function()
+                local meta = api.getItemMeta(item.Name)
+                return meta and meta.projectileSource
+            end)
+            if ok and source and type(source.projectileType) == "function" then
+                local ammo, available = nil, true
+                if source.ammoItemTypes then
+                    available = false
+                    for _, ammoName in ipairs(source.ammoItemTypes) do
+                        if inventory:FindFirstChild(ammoName) then
+                            ammo, available = ammoName, true
+                            break
+                        end
+                    end
+                end
+                if available then
+                    candidates[#candidates + 1] = { item = item, source = source, ammo = ammo }
                 end
             end
         end
     end
-    if closest then
-        pcall(function()
-            remote:FireServer({
-                weapon = weapon,
-                entityInstance = closest,
-                chargedAttack = { chargeRatio = 0 },
-                validate = {
-                    selfPosition = { value = root.Position },
-                    targetPosition = { value = closestRoot.Position },
-                },
-            })
-        end)
-    end
+    if #candidates == 0 then return end
+    table.sort(candidates, function(a, b) return a.item.Name < b.item.Name end)
+    BedWars.ProjectileIndex = ((BedWars.ProjectileIndex or 0) % #candidates) + 1
+    local selected = candidates[BedWars.ProjectileIndex]
+    local ok, projectileType = pcall(selected.source.projectileType, selected.ammo)
+    if not ok or not projectileType then return end
+    local meta = api.projectileMeta[projectileType]
+    if not meta then return end
+    local speed = meta.launchVelocity or 100
+    if type(speed) ~= "number" or speed <= 0 then return end
+    local gravity = meta.gravitationalAcceleration or 196.2
+    local lead = math.min(target.distance / speed, 0.65)
+    local aim = target.root.Position + Vector3.new(0, 0.8, 0)
+        + target.root.AssemblyLinearVelocity * lead
+    local velocity = bedWarsProjectileVelocity(origin, aim, speed, gravity)
+    if not velocity then return end
+    local now = os.clock()
+    BedWars.ProjectileTimes = BedWars.ProjectileTimes or {}
+    local nextTime = BedWars.ProjectileTimes[selected.item.Name] or 0
+    if now < nextTime then return end
+    BedWars.ProjectileSwitching = true
+    pcall(function()
+        if BedWars.Running and BedWars.ProjectilesOn then
+            local drawTime = math.clamp(selected.source.maxStrengthChargeSec or 0.2, 0.2, 2)
+            task.wait(drawTime)
+            local currentRoot = character:FindFirstChild("HumanoidRootPart")
+            if currentRoot and target.root.Parent and selected.item.Parent then
+                local launchOk, launchPosition = pcall(function()
+                    return api.controller:getLaunchPosition(selected.item)
+                end)
+                local shotOrigin = launchOk and launchPosition or currentRoot.Position
+                local shotAim = target.root.Position + Vector3.new(0, 0.8, 0)
+                    + target.root.AssemblyLinearVelocity * math.min(target.distance / speed, 0.65)
+                local shotVelocity = bedWarsProjectileVelocity(shotOrigin, shotAim, speed, gravity)
+                if shotVelocity then
+                    BedWars.ProjectileTimes[selected.item.Name] = os.clock()
+                        + math.max(0.45, selected.source.fireDelaySec or 0.8)
+                    api.controller:launchProjectileWithValues({
+                        initialVelocity = shotVelocity,
+                        positionFrom = shotOrigin,
+                        drawDurationSeconds = drawTime,
+                    }, selected.item, selected.source, selected.ammo, {}, projectileType)
+                    task.wait(0.3)
+                end
+            end
+        end
+    end)
+    BedWars.ProjectileSwitching = false
 end
 local function bedWarsScaffoldStep()
+    if BedWars.ProjectileSwitching then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local item = bedWarsHeldItem()
     local remote = bedWarsRemote("PlaceBlock", true)
     if not root or not humanoid or humanoid.Health <= 0
-        or humanoid.MoveDirection.Magnitude < 0.05
         or not remote or not remote:IsA("RemoteFunction") then return end
-    -- Look one cell ahead so the request reaches the server before the player steps off.
-    local ahead = root.Position + humanoid.MoveDirection.Unit * 3.5
     local feetY = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
-    local grid = Vector3.new(math.round(ahead.X / 3), math.round((feetY - 1.5) / 3), math.round(ahead.Z / 3))
-    local center = grid * 3
     local overlap = OverlapParams.new()
     overlap.FilterType = Enum.RaycastFilterType.Exclude
     overlap.FilterDescendantsInstances = { character }
-    for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center), Vector3.new(2.6, 2.6, 2.6), overlap)) do
-        if part.CanCollide then return end
-    end
-    -- A normal floor or an existing bridge below the next step needs no block.
     local ray = RaycastParams.new()
     ray.FilterType = Enum.RaycastFilterType.Exclude
     ray.FilterDescendantsInstances = { character }
     ray.RespectCanCollide = true
-    if workspace:Raycast(Vector3.new(ahead.X, feetY + 0.5, ahead.Z), Vector3.new(0, -8, 0), ray) then
-        return
+    local function emptyCell(position)
+        local grid = Vector3.new(math.round(position.X / 3), math.round((feetY - 1.5) / 3), math.round(position.Z / 3))
+        local center = grid * 3
+        for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center), Vector3.new(2.6, 2.6, 2.6), overlap)) do
+            if part.CanCollide then return nil end
+        end
+        -- Check only the space immediately below the feet; distant ground
+        -- must not stop a bridge block from being placed over a gap.
+        if workspace:Raycast(Vector3.new(position.X, feetY + 0.35, position.Z), Vector3.new(0, -2.4, 0), ray) then
+            return nil
+        end
+        return grid
     end
+    local grid = emptyCell(root.Position)
+    if not grid and humanoid.MoveDirection.Magnitude >= 0.05 then
+        grid = emptyCell(root.Position + humanoid.MoveDirection.Unit * 3.5)
+    end
+    if not grid then return end
     BedWars.BridgingNeeded = os.clock()
     if not bedWarsWoolItem(item) then
         bedWarsEquip(bedWarsFindWool())
@@ -3404,7 +4077,7 @@ local function bedWarsScaffoldStep()
     local key = tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
     BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
     local now = os.clock()
-    if (BedWars.ScaffoldAttempts[key] or 0) + 0.3 > now
+    if (BedWars.ScaffoldAttempts[key] or 0) + 0.12 > now
         or (BedWars.ScaffoldPending or 0) >= 3 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
@@ -3426,14 +4099,16 @@ local function clearBedWarsMarks(kind)
 end
 local function setBedWarsMark(kind, target, color)
     local mark = bedWarsMarks[kind][target]
-    if not mark then
+    if not mark or not mark.Parent then
         mark = new("Highlight", {
-            Name = "SunsetBedWars" .. kind, Adornee = target,
+            Name = "SunsetBedWars" .. kind, Adornee = target, Enabled = true,
             DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-            FillTransparency = 0.78, OutlineTransparency = 0,
-        }, workspace)
+            FillTransparency = 1, OutlineTransparency = 0,
+        }, target)
         bedWarsMarks[kind][target] = mark
     end
+    mark.Adornee = target
+    mark.Enabled = true
     mark.FillColor = color
     mark.OutlineColor = color
 end
@@ -3446,7 +4121,7 @@ local function refreshBedWarsPlayers()
             local teammate = BedWars.TeamCheck and model
                 and teamRelation(model) == "friendly"
             if player ~= LocalPlayer and model and humanoid and humanoid.Health > 0
-                and not teammate then
+                and model:IsDescendantOf(workspace) and not teammate then
                 seen[model] = true
                 setBedWarsMark("Players", model, Settings.EspBoxColor)
             end
@@ -3472,12 +4147,12 @@ local function refreshBedWarsMap()
             local parentName = parent and string.lower(parent.Name) or ""
             if BedWars.BedsOn and name == "bed" and parentName ~= "bed" then
                 seenBeds[node] = true
-                setBedWarsMark("Beds", node, Color3.fromRGB(255, 204, 82))
+                setBedWarsMark("Beds", node, BedWars.BedColor)
                 count += 1
             elseif BedWars.GeneratorsOn and string.find(name, "generator", 1, true)
                 and not string.find(parentName, "generator", 1, true) then
                 seenGenerators[node] = true
-                setBedWarsMark("Generators", node, Color3.fromRGB(82, 220, 255))
+                setBedWarsMark("Generators", node, BedWars.GeneratorColor)
                 count += 1
             end
             if count >= 80 then break end
@@ -3500,13 +4175,22 @@ function BedWars.Stop()
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
+    BedWars.SprintOn = false
+    stopBedWarsSprint()
     for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
 end
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" then
-            refreshBedWarsPlayers()
-            refreshBedWarsMap()
+            pcall(refreshBedWarsPlayers)
+        end
+        task.wait(0.25)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" then
+            pcall(refreshBedWarsMap)
         end
         task.wait(2)
     end
@@ -3514,9 +4198,18 @@ end)
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.AuraOn then
-            bedWarsAuraStep()
+            local ok, err = pcall(bedWarsAuraStep)
+            if not ok then BedWars.AuraStatus = "Aura error: " .. tostring(err):sub(1, 55) end
         end
         task.wait(0.3)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.ProjectilesOn then
+            pcall(bedWarsProjectileStep)
+        end
+        task.wait(0.2)
     end
 end)
 task.spawn(function()
@@ -3527,17 +4220,305 @@ task.spawn(function()
         task.wait(0.05)
     end
 end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.SprintOn then
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                local controller = bedWarsSprintController()
+                local start = controller and (controller.startSprinting or controller.startSprint)
+                if type(start) == "function" then
+                    local ok = pcall(start, controller)
+                    if BedWars.SprintStatus then
+                        BedWars.SprintStatus.Text = ok and "Sprint active"
+                            or "Sprint retrying"
+                    end
+                elseif BedWars.SprintStatus then
+                    BedWars.SprintStatus.Text = "Sprint controller unavailable"
+                end
+            end
+        end
+        task.wait(0.35)
+    end
+end)
 
 do
     local gameName = "BedWars"
+    local sprintSection = gameSection(gameName, MainTab.Right, "Sprint")
+    Elements.Toggle(sprintSection, "Always Sprint", false, function(on)
+        BedWars.SprintOn = on
+        if not on then
+            stopBedWarsSprint()
+            if BedWars.SprintStatus then BedWars.SprintStatus.Text = "Off" end
+        end
+    end)
+    BedWars.SprintStatus = Elements.Label(sprintSection, "Off")
+    BedWars.SprintStatus.TextColor3 = T.dim
     local combatSection = gameSection(gameName, AimTab.Left, "Combat")
-    Elements.Toggle(combatSection, "Kill Aura", false, function(on) BedWars.AuraOn = on end)
-    local movementSection = gameSection(gameName, MainTab.Left, "Bridging")
-    Elements.Toggle(movementSection, "Scaffold", false, function(on) BedWars.ScaffoldOn = on end)
+    Elements.Toggle(combatSection, "Kill Aura", false, function(on)
+        BedWars.AuraOn = on
+        if not on then BedWars.AuraStatus = "Off" end
+    end)
+    Elements.Dropdown(combatSection, "Target Priority",
+        { "Anything", "Lower HP", "Higher HP", "More Gear" }, "Lower HP", function(value)
+            BedWars.AuraPriority = value
+    end)
+    Elements.Toggle(combatSection, "Wall Check", true, function(on)
+        BedWars.WallCheck = on
+    end)
+    Elements.Toggle(combatSection, "Projectile Aura", false, function(on)
+        BedWars.ProjectilesOn = on
+    end)
+    Elements.Slider(combatSection, "Projectile Range", 12, 100, 60, "studs", function(value)
+        BedWars.ProjectileRange = value
+    end)
+    local scaffoldSection = gameSection(gameName, MiscTab.Left, "Scaffold")
+    Elements.Toggle(scaffoldSection, "Scaffold", false, function(on) BedWars.ScaffoldOn = on end)
     local mapSection = gameSection(gameName, VisualsTab.Right, "BedWars Map")
     Elements.Toggle(mapSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
+    Elements.ColorPicker(mapSection, "Bed Color", BedWars.BedColor, function(color)
+        BedWars.BedColor = color
+    end)
     Elements.Toggle(mapSection, "Generator Outline", false, function(on) BedWars.GeneratorsOn = on end)
+    Elements.ColorPicker(mapSection, "Generator Color", BedWars.GeneratorColor, function(color)
+        BedWars.GeneratorColor = color
+    end)
 end
+-- Client-only visual projectiles. These never call a game combat remote.
+local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
+    Color = Color3.fromRGB(255, 116, 82), Active = {},
+    OrbitOn = false, OrbitRadius = 3, OrbitSpeed = 2,
+    OrbitColor = Color3.fromRGB(130, 180, 255), OrbitRainbow = true,
+    FireworksOn = false, FireworkColor = Color3.fromRGB(255, 185, 85),
+    FireworkRainbow = true, FootstepsOn = false,
+    StepColor = Color3.fromRGB(95, 220, 255), StepRainbow = true }
+local function clearFunEffect(kind)
+    for part, effect in pairs(Fun.Active) do
+        if not kind or effect == kind then
+            part:Destroy()
+            Fun.Active[part] = nil
+        end
+    end
+end
+local function funTarget(root)
+    local targets = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local model = player.Character
+            local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
+            local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+            local friendly = model and teamRelation(model) == "friendly"
+            if targetRoot and humanoid and humanoid.Health > 0 and not friendly
+                and (targetRoot.Position - root.Position).Magnitude <= Fun.Range then
+                targets[#targets + 1] = targetRoot
+            end
+        end
+    end
+    return #targets > 0 and targets[math.random(1, #targets)] or nil
+end
+local function throwFakeProjectile()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local target = funTarget(root)
+    if not target then return end
+    local start = root.Position + Vector3.new(0, 1.5, 0) + root.CFrame.LookVector * 2
+    local orb = new("Part", {
+        Name = "SunsetFakeProjectile", Shape = Enum.PartType.Ball,
+        Size = Vector3.new(0.6, 0.6, 0.6), Position = start,
+        Material = Enum.Material.Neon, Color = Fun.Color,
+        Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
+    }, workspace)
+    local a = new("Attachment", { Position = Vector3.new(0, 0.18, 0) }, orb)
+    local b = new("Attachment", { Position = Vector3.new(0, -0.18, 0) }, orb)
+    new("Trail", { Attachment0 = a, Attachment1 = b,
+        Color = ColorSequence.new(Fun.Color), Lifetime = 0.18,
+        LightEmission = 1, Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.15),
+            NumberSequenceKeypoint.new(1, 1),
+        }) }, orb)
+    Fun.Active[orb] = "projectile"
+    local destination = target.Position + Vector3.new(0, 1, 0)
+    local duration = math.clamp((destination - start).Magnitude / 95, 0.12, 0.8)
+    local tween = TweenService:Create(orb, TweenInfo.new(duration, Enum.EasingStyle.Linear),
+        { Position = destination })
+    tween.Completed:Connect(function()
+        Fun.Active[orb] = nil
+        orb:Destroy()
+    end)
+    Debris:AddItem(orb, 1.5)
+    tween:Play()
+end
+local function spawnTargetFireworks()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local target = funTarget(root)
+    if not target then return end
+    local center = target.Position + Vector3.new(0, 2, 0)
+    for i = 1, 14 do
+        local angle = i * math.pi * 2 / 14
+        local color = Fun.FireworkRainbow
+            and Color3.fromHSV((os.clock() * 0.16 + i / 14) % 1, 0.85, 1)
+            or Fun.FireworkColor
+        local particle = new("Part", {
+            Name = "SunsetFirework", Shape = Enum.PartType.Ball,
+            Size = Vector3.new(0.32, 0.32, 0.32), Position = center,
+            Material = Enum.Material.Neon, Color = color,
+            Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
+        }, workspace)
+        Fun.Active[particle] = "fireworks"
+        local radius = 3.5 + math.random() * 2
+        local endpoint = center + Vector3.new(math.cos(angle) * radius,
+            math.random(-1, 4), math.sin(angle) * radius)
+        local tween = TweenService:Create(particle,
+            TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Position = endpoint, Transparency = 1, Size = Vector3.new(0.08, 0.08, 0.08) })
+        tween.Completed:Connect(function()
+            Fun.Active[particle] = nil
+            particle:Destroy()
+        end)
+        Debris:AddItem(particle, 1)
+        tween:Play()
+    end
+end
+task.spawn(function()
+    while Fun.Running do
+        if Fun.Enabled and Settings.SelectedGame then
+            pcall(throwFakeProjectile)
+            task.wait(1 / math.max(Fun.Rate, 1))
+        else
+            task.wait(0.25)
+        end
+    end
+end)
+task.spawn(function()
+    while Fun.Running do
+        if Fun.FireworksOn and Settings.SelectedGame then
+            pcall(spawnTargetFireworks)
+            task.wait(2.4)
+        else
+            task.wait(0.25)
+        end
+    end
+end)
+local orbitParts = {}
+track(RunService.RenderStepped:Connect(function()
+    if not Fun.Running or not Fun.OrbitOn or not Settings.SelectedGame then
+        if #orbitParts > 0 then
+            clearFunEffect("orbit")
+            table.clear(orbitParts)
+        end
+        return
+    end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    if #orbitParts == 0 then
+        for i = 1, 6 do
+            local orb = new("Part", {
+                Name = "SunsetOrbitStar", Shape = Enum.PartType.Ball,
+                Size = Vector3.new(0.45, 0.45, 0.45),
+                Material = Enum.Material.Neon, Anchored = true,
+                CanCollide = false, CanTouch = false, CanQuery = false,
+            }, workspace)
+            Fun.Active[orb] = "orbit"
+            orbitParts[i] = orb
+        end
+    end
+    local time = os.clock() * Fun.OrbitSpeed
+    for i, orb in ipairs(orbitParts) do
+        local angle = time + (i - 1) * math.pi / 3
+        orb.Position = root.Position + Vector3.new(
+            math.cos(angle) * Fun.OrbitRadius,
+            1.5 + math.sin(time * 1.7 + i) * 0.65,
+            math.sin(angle) * Fun.OrbitRadius)
+        orb.Color = Fun.OrbitRainbow
+            and Color3.fromHSV((time * 0.06 + i / 6) % 1, 0.85, 1)
+            or Fun.OrbitColor
+    end
+end))
+task.spawn(function()
+    while Fun.Running do
+        if Fun.FootstepsOn and Settings.SelectedGame then
+            local character = LocalPlayer.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if root and humanoid and humanoid.MoveDirection.Magnitude > 0.2 then
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = { character }
+                params.RespectCanCollide = true
+                local hit = workspace:Raycast(root.Position, Vector3.new(0, -6, 0), params)
+                if hit then
+                    local printPart = new("Part", {
+                        Name = "SunsetRainbowStep", Size = Vector3.new(0.9, 0.05, 0.9),
+                        CFrame = CFrame.new(hit.Position + Vector3.new(0, 0.04, 0)),
+                        Color = Fun.StepRainbow
+                            and Color3.fromHSV((os.clock() * 0.35) % 1, 0.85, 1)
+                            or Fun.StepColor,
+                        Material = Enum.Material.Neon, Transparency = 0.24,
+                        Anchored = true, CanCollide = false, CanTouch = false,
+                        CanQuery = false,
+                    }, workspace)
+                    Fun.Active[printPart] = "footsteps"
+                    local tween = TweenService:Create(printPart, TweenInfo.new(0.85),
+                        { Transparency = 1, Size = Vector3.new(0.2, 0.02, 0.2) })
+                    tween.Completed:Connect(function()
+                        Fun.Active[printPart] = nil
+                        printPart:Destroy()
+                    end)
+                    Debris:AddItem(printPart, 1.2)
+                    tween:Play()
+                end
+            end
+        end
+        task.wait(0.13)
+    end
+end)
+do
+    local s = makeSection(FunTab.Left, "Fake Projectiles")
+    Elements.Label(s, "Visual only - throws glowing projectiles at nearby players.")
+    Elements.Toggle(s, "Throw Fake Projectiles", false, function(on)
+        Fun.Enabled = on
+        if not on then clearFunEffect("projectile") end
+    end)
+    Elements.Slider(s, "Throw Rate", 1, 15, 4, "", function(value) Fun.Rate = value end)
+    Elements.Slider(s, "Target Range", 15, 150, 60, "", function(value) Fun.Range = value end)
+    Elements.ColorPicker(s, "Projectile Color", Fun.Color, function(color) Fun.Color = color end)
+    local orbit = makeSection(VisualsTab.Right, "Orbiting Stars")
+    Elements.Toggle(orbit, "Orbiting Stars", false, function(on)
+        Fun.OrbitOn = on
+        if not on then clearFunEffect("orbit") table.clear(orbitParts) end
+    end)
+    Elements.Slider(orbit, "Orbit Radius", 1, 6, 3, "studs", function(value) Fun.OrbitRadius = value end)
+    Elements.Slider(orbit, "Orbit Speed", 0.5, 6, 2, "", function(value) Fun.OrbitSpeed = value end)
+    Elements.Toggle(orbit, "Rainbow Override", true, function(on) Fun.OrbitRainbow = on end)
+    Elements.ColorPicker(orbit, "Star Color", Fun.OrbitColor, function(color)
+        Fun.OrbitColor = color
+    end)
+    local fireworks = makeSection(FunTab.Right, "Target Fireworks")
+    Elements.Label(fireworks, "Visual only - colorful bursts on nearby players.")
+    Elements.Toggle(fireworks, "Target Fireworks", false, function(on)
+        Fun.FireworksOn = on
+        if not on then clearFunEffect("fireworks") end
+    end)
+    Elements.Toggle(fireworks, "Rainbow Override", true, function(on) Fun.FireworkRainbow = on end)
+    Elements.ColorPicker(fireworks, "Firework Color", Fun.FireworkColor, function(color)
+        Fun.FireworkColor = color
+    end)
+    local steps = makeSection(FunTab.Right, "Rainbow Footsteps")
+    Elements.Toggle(steps, "Rainbow Footsteps", false, function(on)
+        Fun.FootstepsOn = on
+        if not on then clearFunEffect("footsteps") end
+    end)
+    Elements.Toggle(steps, "Rainbow Override", true, function(on) Fun.StepRainbow = on end)
+    Elements.ColorPicker(steps, "Footstep Color", Fun.StepColor, function(color)
+        Fun.StepColor = color
+    end)
+end
+
 -- ============================================================
 -- Dragging + keybinds
 -- ============================================================
@@ -3547,6 +4528,11 @@ makeDraggable(Window, TitleBar)
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
 -- ============================================================
 ENV.SunsetUnload = function()
+    Burrow.Stop()
+    GhostPulse.Stop()
+    Fun.Running = false
+    Fun.Enabled = false
+    clearFunEffect()
     Settings.FlyEnabled = false
 
     Settings.WatermarkOn = false
@@ -3580,20 +4566,34 @@ for _, entry in ipairs(supportedGames) do
     end
 end
 
--- Queue the public loader only when leaving a supported experience. The queued
--- code checks the destination again, so unrelated Roblox games remain untouched.
+-- Queue before travel: some executors stop the old client before OnTeleport fires.
+-- The queued code checks the destination so unrelated games remain untouched.
 if detectedGame then
     local queueTeleport = queue_on_teleport or queueonteleport
         or (syn and syn.queue_on_teleport)
-    local queued = false
-    local loaderUrl = ENV.SunsetLoaderUrl
-        or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/alua"
-    if type(queueTeleport) == "function" then
-        track(LocalPlayer.OnTeleport:Connect(function(state)
-            if state ~= Enum.TeleportState.Started or queued or not AutoReinject.enabled then return end
-            queued = true
-            local code = string.format([[
-                repeat task.wait(0.1) until game:IsLoaded()
+        or (fluxus and fluxus.queue_on_teleport)
+        or ENV.queue_on_teleport or ENV.queueonteleport
+    function AutoReinject.Queue()
+        if not AutoReinject.enabled or AutoReinject.queued then return end
+        if type(queueTeleport) ~= "function" then
+            AutoReinject.Status.Text = "Executor has no teleport queue"
+            return
+        end
+        local loaderUrl = ENV.SunsetLoaderUrl
+            or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/alua"
+        local localReady = false
+        if typeof(readfile) == "function" then
+            local readOk, saved = pcall(readfile, SUNSET_LOCAL_SOURCE)
+            localReady = readOk and type(saved) == "string"
+                and string.find(saved, SUNSET_BUILD, 1, true) ~= nil
+        end
+        local embedded = not localReady and type(ENV.SunsetEmbeddedSource) == "string"
+            and string.find(ENV.SunsetEmbeddedSource, SUNSET_BUILD, 1, true)
+            and ENV.SunsetEmbeddedSource or ""
+        local code = string.format([[
+            repeat task.wait(0.1) until game:IsLoaded()
+            local env = (typeof(getgenv) == "function" and getgenv()) or _G
+            if env.SunsetAutoReinject ~= false then
                 local allowed = {
                     [6872265039] = true, [2619619496] = true,
                     [122446657157717] = true, [9534705677] = true,
@@ -3601,209 +4601,68 @@ if detectedGame then
                 }
                 if allowed[game.PlaceId] or allowed[game.GameId] then
                     local ok, err = pcall(function()
-                        loadstring(game:HttpGet(%q))()
+                        local source
+                        if typeof(readfile) == "function" then
+                            local readOk, saved = pcall(readfile, %q)
+                            if readOk and type(saved) == "string"
+                                and string.find(saved, %q, 1, true) then
+                                source = saved
+                            end
+                        end
+                        if not source then
+                            local embedded = %q
+                            if embedded ~= "" then source = embedded end
+                        end
+                        if not source then source = game:HttpGet(%q) end
+                        if not string.find(source, %q, 1, true) then
+                            error("Sunset loader has an outdated build")
+                        end
+                        env.SunsetEmbeddedSource = source
+                        loadstring(source)()
                     end)
                     if not ok then warn("[Sunset] Auto Reinject failed: " .. tostring(err)) end
                 end
-            ]], loaderUrl)
-            local ok = pcall(queueTeleport, code)
-            if not ok then queued = false end
-        end))
+            end
+        ]], SUNSET_LOCAL_SOURCE, SUNSET_BUILD, embedded, loaderUrl, SUNSET_BUILD)
+        local ok, err = pcall(queueTeleport, code)
+        AutoReinject.queued = ok
+        AutoReinject.Status.Text = ok
+            and (localReady and "Queued current script"
+                or (embedded ~= "" and "Queued embedded current script"
+                    or "Queued build-checked GitHub fallback"))
+            or ("Queue failed: " .. tostring(err):sub(1, 38))
     end
+    AutoReinject.Queue()
+else
+    AutoReinject.Status.Text = "Supported games only"
 end
 
 do
-    local stopped, elapsed = false, 0
-    local frameConnection
-    local tweens = {}
-    local shade = new("TextButton", {
-        Name = "StartupBackdrop", Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(4, 5, 10), BackgroundTransparency = 0.18,
-        BorderSizePixel = 0, Text = "", AutoButtonColor = false,
-        Modal = true, ZIndex = 1000,
-    }, Gui)
-    local intro = new("CanvasGroup", {
-        Name = "SunsetStartup", Size = UDim2.fromOffset(520, 374),
-        Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.fromRGB(16, 18, 26), BorderSizePixel = 0,
-        GroupTransparency = 1, ZIndex = 1001,
-    }, Gui)
-    new("UICorner", { CornerRadius = UDim.new(0, 14) }, intro)
-    border(intro, Color3.fromRGB(82, 53, 68), 1)
-    local introScale = new("UIScale", { Scale = 0.94 }, intro)
-    local function fitIntro()
-        local camera = workspace.CurrentCamera
-        if camera then
-            introScale.Scale = math.min(1, (camera.ViewportSize.X - 24) / 520,
-                (camera.ViewportSize.Y - 24) / 374)
-        end
-    end
-    fitIntro()
-    local fitConnection = RunService.Heartbeat:Connect(fitIntro)
-    local function introText(parent, value, x, y, w, h, size, color, font)
-        return new("TextLabel", {
-            Text = value, Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
-            BackgroundTransparency = 1, Font = font or Enum.Font.Gotham,
-            TextSize = size, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left,
-        }, parent)
-    end
-    local topLine = new("Frame", {
-        Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 3),
-        BorderSizePixel = 0, BackgroundColor3 = T.red,
-    }, intro)
-    new("UIGradient", {
-        Color = ColorSequence.new(Color3.fromRGB(107, 41, 88),
-            Color3.fromRGB(255, 138, 91)),
-    }, topLine)
-    introText(intro, "SUNSET.WTF", 27, 20, 280, 24, 18, T.text, Enum.Font.GothamBold)
-    introText(intro, "BY ZYNX  /  CLIENT INITIALIZATION", 28, 47, 310, 16, 10, T.dim)
-    local support = introText(intro, detectedGame and "SUPPORTED" or "UNSUPPORTED",
-        385, 25, 110, 24, 11, detectedGame and Color3.fromRGB(115, 229, 170)
-            or Color3.fromRGB(255, 121, 121), Enum.Font.GothamBold)
-    support.TextXAlignment = Enum.TextXAlignment.Right
-    local line = new("Frame", {
-        Position = UDim2.fromOffset(27, 77), Size = UDim2.fromOffset(466, 1),
-        BackgroundColor3 = Color3.fromRGB(54, 56, 66), BorderSizePixel = 0,
-    }, intro)
-    local scanner = new("Frame", {
-        Position = UDim2.fromOffset(34, 104), Size = UDim2.fromOffset(178, 178),
-        BackgroundColor3 = Color3.fromRGB(24, 25, 36), BorderSizePixel = 0,
-    }, intro)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, scanner)
-    border(scanner, Color3.fromRGB(92, 55, 77), 1)
-    local orbitGradients = {}
-    for i = 1, 3 do
-        local diameter = 62 + i * 35
-        local circle = new("Frame", {
-            Size = UDim2.fromOffset(diameter, diameter),
-            Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
-            BackgroundTransparency = 1,
-        }, scanner)
-        new("UICorner", { CornerRadius = UDim.new(1, 0) }, circle)
-        local stroke = border(circle, i == 2 and Color3.fromRGB(248, 138, 104) or T.red,
-            i == 2 and 2 or 1)
-        local gradient = new("UIGradient", {
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.35, 0.1),
-                NumberSequenceKeypoint.new(1, 0.92),
-            }),
-            Rotation = i * 100,
-        }, stroke)
-        table.insert(orbitGradients, gradient)
-    end
-    local monogram = introText(scanner, "S", 51, 46, 76, 86, 60, T.text, Enum.Font.GothamBold)
-    monogram.TextXAlignment = Enum.TextXAlignment.Center
-    local sweep = new("Frame", {
-        Size = UDim2.fromOffset(126, 2), Position = UDim2.fromOffset(26, 88),
-        BackgroundColor3 = T.red, BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-    }, scanner)
-    local phaseTitle = introText(intro, "DETECTING EXPERIENCE", 240, 105, 252, 24,
-        14, T.text, Enum.Font.GothamBold)
-    local gameName = introText(intro, detectedGame or "Unknown Roblox game",
-        240, 132, 252, 38, 20, T.red, Enum.Font.GothamBold)
-    gameName.TextWrapped = true
-    local steps = {}
-    local stepNames = { "Detect experience", "Verify game modules", "Start Sunset interface" }
-    for i, title in ipairs(stepNames) do
-        local y = 190 + (i - 1) * 30
-        local step = introText(intro, string.format("0%d  %s", i, title),
-            240, y, 245, 22, 12, T.dim, Enum.Font.Gotham)
-        table.insert(steps, step)
-    end
-    local progressLabel = introText(intro, "INITIALIZING", 27, 309, 230, 16,
-        10, T.dim, Enum.Font.GothamBold)
-    local percent = introText(intro, "0%", 444, 308, 48, 16,
-        10, T.text, Enum.Font.GothamBold)
-    percent.TextXAlignment = Enum.TextXAlignment.Right
-    local segments = {}
-    for i = 1, 24 do
-        local segment = new("Frame", {
-            Position = UDim2.fromOffset(27 + (i - 1) * 20, 336),
-            Size = UDim2.fromOffset(15, 6), BackgroundColor3 = Color3.fromRGB(45, 44, 55),
-            BorderSizePixel = 0,
-        }, intro)
-        table.insert(segments, segment)
-    end
-    introText(intro, "Sunset detects the current game automatically", 27, 351, 460, 15,
-        10, T.dim)
-    local close = new("TextButton", {
-        Position = UDim2.fromOffset(240, 258), Size = UDim2.fromOffset(249, 32),
-        BackgroundColor3 = Color3.fromRGB(72, 37, 48), BorderSizePixel = 0,
-        Text = "CLOSE", Font = Enum.Font.GothamBold, TextSize = 12,
-        TextColor3 = T.text, AutoButtonColor = false, Visible = false,
-    }, intro)
-    new("UICorner", { CornerRadius = UDim.new(0, 6) }, close)
-    local function animate(object, duration, properties)
-        local tween = TweenService:Create(object,
-            TweenInfo.new(duration, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), properties)
-        table.insert(tweens, tween)
-        tween:Play()
-    end
-    local function dispose()
-        if stopped then return end
-        stopped = true
-        if frameConnection then frameConnection:Disconnect() end
-        fitConnection:Disconnect()
-        for _, tween in ipairs(tweens) do tween:Cancel() end
-        shade:Destroy()
-        intro:Destroy()
-    end
-    track({ Disconnect = dispose })
-    close.MouseButton1Click:Connect(function()
-        dispose()
-        loading = false
-        onMenuVisibility()
-    end)
-    animate(intro, 0.4, { GroupTransparency = 0 })
-    frameConnection = RunService.RenderStepped:Connect(function(dt)
-        elapsed += dt
-        for i, gradient in ipairs(orbitGradients) do
-            gradient.Rotation = elapsed * (i % 2 == 0 and -115 or 90) + i * 100
-        end
-        sweep.Rotation = elapsed * 55
-        if not detectedGame then return end
-        local progress = math.clamp(elapsed / 2.6, 0, 1)
-        percent.Text = tostring(math.floor(progress * 100)) .. "%"
-        for i, segment in ipairs(segments) do
-            segment.BackgroundColor3 = i <= math.floor(progress * #segments)
-                and T.red or Color3.fromRGB(45, 44, 55)
-        end
-        for i, step in ipairs(steps) do
-            step.TextColor3 = progress >= (i - 1) / 3 and T.text or T.dim
-        end
-        if progress < 0.33 then progressLabel.Text = "IDENTIFYING GAME"
-        elseif progress < 0.7 then progressLabel.Text = "LOADING MODULES"
-        else progressLabel.Text = "READY TO LAUNCH" end
-    end)
     if detectedGame then
         Settings.SelectedGame = detectedGame
         showGameSections(detectedGame)
+        if RefreshConfigList then RefreshConfigList() end
         Title.Text = "  Sunset.wtf | " .. detectedGame
-        task.spawn(function()
-            task.wait(2.7)
-            if stopped or not Gui.Parent then return end
-            progressLabel.Text = "SUNSET IS READY"
-            animate(intro, 0.35, { GroupTransparency = 1 })
-            animate(shade, 0.35, { BackgroundTransparency = 1 })
-            task.wait(0.38)
-            if stopped or not Gui.Parent then return end
-            dispose()
-            loading = false
-            Window.Visible = true
-        end)
     else
         Zombie.Stop()
         BedWars.Stop()
-        phaseTitle.Text = "THIS GAME IS NOT SUPPORTED"
-        gameName.Text = "No modules loaded"
-        gameName.TextColor3 = Color3.fromRGB(255, 121, 121)
-        steps[1].Text = "Supported: BedWars"
-        steps[2].Text = "Sniper Arena"
-        steps[3].Text = "Survive Zombie Arena"
-        progressLabel.Text = "YOU CAN KEEP PLAYING"
-        percent.Text = ""
-        close.Visible = true
+        showGameSections(nil)
+        Title.Text = "  Sunset.wtf | Unsupported game"
+        local notice = makeSection(SettingsTab.Left, "Unsupported Game")
+        Elements.Label(notice, "Sunset supports BedWars, Sniper Arena, and Survive Zombie Arena.")
+        SettingsTab.Select()
     end
 end
+
+]========]
+local environment = (typeof(getgenv) == "function" and getgenv()) or _G
+environment.SunsetEmbeddedSource = source
+if typeof(writefile) == "function" then
+    pcall(function()
+        if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
+        writefile("SunsetConfigs/SunsetCurrent.lua", source)
+    end)
+end
+local chunk, err = loadstring(source)
+if not chunk then error("Sunset source did not compile: " .. tostring(err)) end
+chunk()
