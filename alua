@@ -10,6 +10,8 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -46,6 +48,12 @@ local T = {
     dim       = Color3.fromRGB(150, 150, 150),
     font      = Enum.Font.Code,
 }
+local BedWars
+local bedWarsHiddenSections = {}
+local sniperOnlySections = {}
+local bedWarsOutlineToggle
+local bedWarsNamesToggle
+local AutoReinject = { enabled = true }
 
 -- ============================================================
 -- Settings (state the features read from)
@@ -56,7 +64,7 @@ local Settings = {
     FlySpeed       = 50,
     EspEnabled     = false,
     EspNames       = true,
-    EspTeamCheck   = false,
+    EspTeamCheck   = true,
     TpTeamCheck    = true,
     AutoTp         = false,
     AutoTpDelay    = 0.5,
@@ -68,8 +76,6 @@ local Settings = {
     WatermarkOn    = true,
     DisableMoveOpen= false,
 }
-local showZombieWindow
-local zombieShowButton
 
 -- ============================================================
 -- Tiny UI helpers
@@ -117,9 +123,8 @@ local Window = new("Frame", {
     BorderSizePixel = 0,
     Active = true,
 }, Gui)
-local ZombieWindow
 local function anyMenuVisible()
-    return Window.Visible or (ZombieWindow and ZombieWindow.Visible) or false
+    return Window.Visible
 end
 border(Window, T.outer, 1)
 local menuScale = new("UIScale", { Scale = 1 }, Window)
@@ -349,6 +354,7 @@ end
 -- Elements
 -- ============================================================
 local Elements = {}
+local ConfigControls = {}
 
 function Elements.Label(parent, text, rightText)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1 }, parent)
@@ -394,13 +400,13 @@ local function keyName(key)
     return key and key.Name:upper() or "NONE"
 end
 
-function Elements.Toggle(parent, text, default, callback, defaultKey)
+function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     local row = new("TextButton", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, parent)
     local box = new("Frame", { Size = UDim2.fromOffset(11, 11), Position = UDim2.fromOffset(0, 2), BackgroundColor3 = T.element, BorderSizePixel = 0 }, row)
     border(box, T.border)
     local l = label(row, text)
     l.Position = UDim2.fromOffset(18, 0)
-    l.Size = UDim2.new(1, -78, 1, 0)
+    l.Size = UDim2.new(1, noBind and -20 or -78, 1, 0)
 
     local bindBtn = new("TextButton", {
         Size = UDim2.fromOffset(56, 14), Position = UDim2.new(1, -56, 0, 1),
@@ -409,8 +415,9 @@ function Elements.Toggle(parent, text, default, callback, defaultKey)
         AutoButtonColor = false,
     }, row)
     border(bindBtn, T.border)
+    bindBtn.Visible = not noBind
 
-    local obj = {}
+    local obj = { _row = row }
     local state = default or false
 
     local function render()
@@ -426,6 +433,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey)
     function obj.Get() return state end
     function obj.GetBind() return Binds[obj] end
     function obj.SetBind(key)
+        if noBind then return false end
         if key == Settings.MenuKey then return false end
         if key then
             for other, assigned in pairs(Binds) do
@@ -439,6 +447,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey)
 
     row.MouseButton1Click:Connect(function() obj.Set(not state) end)
     bindBtn.MouseButton1Click:Connect(function()
+        if noBind then return end
         if listeningFor then listeningFor.SetBind(listeningFor.GetBind()) end
         listeningFor = obj
         bindBtn.Text = "[...]"
@@ -449,6 +458,8 @@ function Elements.Toggle(parent, text, default, callback, defaultKey)
     render()
     obj.SetBind(defaultKey)
     if callback and state then task.spawn(callback, state) end
+    table.insert(ConfigControls, { Kind = "toggle", Get = obj.Get, Set = obj.Set,
+        GetBind = obj.GetBind, SetBind = obj.SetBind, Box = parent.Parent, Row = row })
     return obj
 end
 
@@ -479,35 +490,123 @@ track(UIS.InputBegan:Connect(function(i, gp)
     end
 end))
 
--- RGB color editor: three sliders + live swatch
+-- Circular HSV picker: angle selects hue, radius selects saturation, and the
+-- bar below it sets brightness. Opening the picker never changes the color.
 function Elements.ColorPicker(parent, text, default, callback)
     local color = default or Color3.new(1, 1, 1)
-    local r, g, b = math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5)
-
-    local top = new("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1 }, parent)
-    label(top, text).Size = UDim2.new(1, -30, 1, 0)
-    local swatch = new("Frame", { Size = UDim2.fromOffset(24, 12), Position = UDim2.new(1, -24, 0, 2), BackgroundColor3 = color, BorderSizePixel = 0 }, top)
+    local hue, saturation, value = color:ToHSV()
+    local holder = new("Frame", {
+        Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1,
+        ClipsDescendants = false,
+    }, parent)
+    local top = label(holder, text)
+    top.Size = UDim2.new(1, -32, 0, 16)
+    local swatch = new("TextButton", {
+        Size = UDim2.fromOffset(26, 16), Position = UDim2.new(1, -26, 0, 0),
+        BackgroundColor3 = color, BorderSizePixel = 0, Text = "",
+        AutoButtonColor = false,
+    }, holder)
     swatch:SetAttribute("UIThemeIgnore", true)
     border(swatch, T.border)
-
-    local function apply()
-        color = Color3.fromRGB(r, g, b)
+    local wheel = new("Frame", {
+        Size = UDim2.fromOffset(160, 208), Position = UDim2.new(0.5, -80, 0, 22),
+        BackgroundColor3 = T.panel, BorderSizePixel = 0, Visible = false,
+    }, holder)
+    border(wheel, T.border)
+    new("UICorner", { CornerRadius = UDim.new(0, 7) }, wheel)
+    local disc = new("Frame", {
+        Position = UDim2.fromOffset(4, 4), Size = UDim2.fromOffset(152, 152),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, wheel)
+    local cells = {}
+    local selected = new("Frame", {
+        Size = UDim2.fromOffset(10, 10), AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 4,
+    }, disc)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, selected)
+    border(selected, Color3.new(0, 0, 0), 2)
+    local brightness = new("TextButton", {
+        Position = UDim2.fromOffset(8, 177), Size = UDim2.fromOffset(144, 16),
+        BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+        Text = "", AutoButtonColor = false,
+    }, wheel)
+    border(brightness, T.border)
+    local brightnessGradient = new("UIGradient", {}, brightness)
+    local brightnessMarker = new("Frame", {
+        Size = UDim2.fromOffset(3, 20), AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0, 0.5), BackgroundColor3 = T.text,
+        BorderSizePixel = 0,
+    }, brightness)
+    local brightnessLabel = label(wheel, "BRIGHTNESS", 10, T.dim)
+    brightnessLabel.Position = UDim2.fromOffset(8, 159)
+    brightnessLabel.Size = UDim2.fromOffset(144, 14)
+    local function repaint(notify)
+        color = Color3.fromHSV(hue, saturation, value)
         swatch.BackgroundColor3 = color
-        if callback then task.spawn(callback, color) end
+        local angle = hue * math.pi * 2 - math.pi / 2
+        selected.Position = UDim2.fromOffset(76 + math.cos(angle) * saturation * 72,
+            76 + math.sin(angle) * saturation * 72)
+        brightnessGradient.Color = ColorSequence.new(Color3.fromHSV(hue, saturation, 1), Color3.new(0, 0, 0))
+        brightnessMarker.Position = UDim2.new(1 - value, 0, 0.5, 0)
+        if notify ~= false and callback then task.spawn(callback, color) end
     end
-
-    local sr = Elements.Slider(parent, "R", 0, 255, r, "", function(v) r = v apply() end)
-    local sg = Elements.Slider(parent, "G", 0, 255, g, "", function(v) g = v apply() end)
-    local sb = Elements.Slider(parent, "B", 0, 255, b, "", function(v) b = v apply() end)
-    -- tint each slider's fill to its channel
-    for slider, c in pairs({ [sr] = Color3.fromRGB(220, 60, 60), [sg] = Color3.fromRGB(60, 200, 90), [sb] = Color3.fromRGB(70, 130, 255) }) do
-        for _, d in ipairs(slider:GetDescendants()) do
-            if d:IsA("Frame") and d.BackgroundColor3 == T.red then d.BackgroundColor3 = c d:SetAttribute("UIThemeIgnore", true) end
+    for row = 0, 18 do
+        for column = 0, 18 do
+            local dx, dy = column - 9, row - 9
+            local radius = math.sqrt(dx * dx + dy * dy) / 9
+            if radius <= 1 then
+                local h = (math.atan2(dy, dx) / (math.pi * 2) + 0.25) % 1
+                local s = math.clamp(radius, 0, 1)
+                local cell = new("TextButton", {
+                    Size = UDim2.fromOffset(8, 8),
+                    Position = UDim2.fromOffset(column * 8, row * 8),
+                    BackgroundColor3 = Color3.fromHSV(h, s, 1),
+                    BorderSizePixel = 0, Text = "", AutoButtonColor = false,
+                }, disc)
+                cell:SetAttribute("UIThemeIgnore", true)
+                table.insert(cells, cell)
+                cell.MouseButton1Down:Connect(function()
+                    hue, saturation = h, s
+                    repaint()
+                end)
+            end
         end
     end
-    return { Get = function() return color end }
+    local draggingBrightness = false
+    local function setBrightness()
+        if brightness.AbsoluteSize.X <= 0 then return end
+        value = 1 - math.clamp((UIS:GetMouseLocation().X - brightness.AbsolutePosition.X)
+            / brightness.AbsoluteSize.X, 0, 1)
+        repaint()
+    end
+    brightness.MouseButton1Down:Connect(function()
+        draggingBrightness = true
+        setBrightness()
+    end)
+    track(UIS.InputChanged:Connect(function(input)
+        if draggingBrightness and input.UserInputType == Enum.UserInputType.MouseMovement then
+            setBrightness()
+        end
+    end))
+    track(UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then draggingBrightness = false end
+    end))
+    swatch.MouseButton1Click:Connect(function()
+        wheel.Visible = not wheel.Visible
+        holder.Size = UDim2.new(1, 0, 0, wheel.Visible and 238 or 18)
+    end)
+    local picker = {}
+    function picker.Get() return color end
+    function picker.Set(nextColor)
+        if typeof(nextColor) ~= "Color3" then return end
+        hue, saturation, value = nextColor:ToHSV()
+        repaint()
+    end
+    repaint(false)
+    table.insert(ConfigControls, { Kind = "color", Get = picker.Get, Set = picker.Set,
+        Box = parent.Parent })
+    return picker
 end
-
 -- Numeric fields accept finite numbers, round to the slider step, and clamp.
 local function sliderNumber(raw, low, high, previous, step)
     local number = tonumber(raw)
@@ -560,6 +659,8 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     plus.MouseButton1Click:Connect(function() set(value + (step or 1)) end)
     minus.MouseButton1Click:Connect(function() set(value - (step or 1)) end)
     set(value, true)
+    table.insert(ConfigControls, { Kind = "number", Get = function() return value end,
+        Set = function(nextValue) set(nextValue) end, Box = parent.Parent })
     return holder
 end
 function Elements.Dropdown(parent, text, options, default, callback)
@@ -583,8 +684,19 @@ function Elements.Dropdown(parent, text, options, default, callback)
     new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, list)
 
     local obj = { Value = default or options[1] }
+    local currentOptions = options
+
+    function obj.Set(value)
+        if not table.find(currentOptions, value) then return end
+        obj.Value = value
+        btn.Text = "  " .. value
+        list.Visible = false
+        holder.Size = UDim2.new(1, 0, 0, 36)
+        if callback then task.spawn(callback, value) end
+    end
 
     function obj.SetOptions(newOptions)
+        currentOptions = newOptions
         for _, c in ipairs(list:GetChildren()) do
             if c:IsA("TextButton") then c:Destroy() end
         end
@@ -615,6 +727,8 @@ function Elements.Dropdown(parent, text, options, default, callback)
 
     obj.SetOptions(options)
     btn.MouseButton1Click:Connect(function() list.Visible = not list.Visible holder.Size = UDim2.new(1, 0, 0, list.Visible and 40 + list.Size.Y.Offset or 36) end)
+    table.insert(ConfigControls, { Kind = "choice", Get = function() return obj.Value end,
+        Set = obj.Set, Box = parent.Parent })
     return obj
 end
 
@@ -765,8 +879,8 @@ do
     Core.GameStateRemotes = remoteRoot and remoteRoot:FindFirstChild("GameStateRemotes")
     Core.WaveRemotes = remoteRoot and remoteRoot:FindFirstChild("WaveRemotes")
     Core.UpgradeRemotes = remoteRoot and remoteRoot:FindFirstChild("UpgradeRemotes")
-    Core.GearRemotes = remoteRoot and remoteRoot:FindFirstChild("GearRemotes")
     Core.GunRemotes = remoteRoot and remoteRoot:FindFirstChild("GunRemotes")
+    Core.EventRemotes = remoteRoot and remoteRoot:FindFirstChild("EventRemotes")
     Zombie.Core = Core
 
     local function remote(folder, name) return folder and folder:FindFirstChild(name) end
@@ -916,45 +1030,7 @@ do
         while Zombie.alive do
             if Upgrades.health then Core.fireRemote(healthPurchase) end
             if Upgrades.weapon then Core.fireRemote(weaponPurchase) end
-            task.wait(1)
-        end
-    end)
-
-    local AutoGear = flagModule()
-    Zombie.AutoGear = AutoGear
-    local gearPurchase = remote(Core.GearRemotes, "GearPurchase")
-    local gearModule = Core.findIn(storage, "Data", "GearData")
-    local gearData
-    if gearModule then
-        local ok, result = pcall(require, gearModule)
-        if ok then gearData = result end
-    end
-    local selectedGear, nextFire = {}, {}
-    function AutoGear.GetGearList()
-        if not gearData then return {} end
-        local ok, names = pcall(gearData.GetAllGearNames)
-        if not ok or type(names) ~= "table" then return {} end
-        table.sort(names)
-        return names
-    end
-    function AutoGear.SetSelected(names) selectedGear = names or {} end
-    task.spawn(function()
-        while Zombie.alive do
-            if AutoGear.enabled and gearPurchase then
-                local now = os.clock()
-                for _, name in ipairs(selectedGear) do
-                    if now >= (nextFire[name] or 0) then
-                        local cooldown = 1
-                        if gearData then
-                            local ok, config = pcall(gearData.GetConfig, name)
-                            if ok and config and type(config.Cooldown) == "number" then cooldown = config.Cooldown end
-                        end
-                        Core.fireRemote(gearPurchase, name)
-                        nextFire[name] = now + math.max(cooldown, 0.1)
-                    end
-                end
-            end
-            task.wait(0.1)
+            task.wait(2)
         end
     end)
 
@@ -964,9 +1040,27 @@ do
     KillAura.Status = "Off"
     function KillAura.SetRadius(value) radius = math.clamp(tonumber(value) or 60, 10, 200) end
     function KillAura.SetMaxTargets(value) maxTargets = math.clamp(math.floor(tonumber(value) or 18), 1, 30) end
-    local hookedGun, originalAim, resolvedAim, originalAutoShoot, originalFiring
+    local hookedGun, originalAim, originalAutoShoot, originalFiring
     local aimRecord
-    local targetIndex = 0
+    local function inAimCircle(record)
+        local camera = workspace.CurrentCamera
+        local model = record and record.Model
+        local part = model and (model.PrimaryPart or model:FindFirstChild("Head")
+            or model:FindFirstChild("HumanoidRootPart"))
+        local position = record and (record.CurrentPosition or (part and part.Position))
+        if not camera or not position then return nil end
+        if record.HitboxTop then
+            position = position + Vector3.new(0,
+                (record.HitboxTop - (record.HitboxBottom or 0)) * 0.5, 0)
+        end
+        local screen, visible = camera:WorldToViewportPoint(position)
+        if not visible or screen.Z <= 0 then return nil end
+        local center = camera.ViewportSize * 0.5
+        if (Vector2.new(screen.X, screen.Y) - center).Magnitude > (Settings.AimFovRadius or 160) then
+            return nil
+        end
+        return position
+    end
     local function releaseGun()
         if hookedGun then
             hookedGun.GetAimDirection = originalAim
@@ -977,7 +1071,7 @@ do
                     or hookedGun.ControllerShootHeld == true
             end
         end
-        hookedGun, originalAim, resolvedAim, originalAutoShoot, originalFiring, aimRecord = nil, nil, nil, nil, nil, nil
+        hookedGun, originalAim, originalAutoShoot, originalFiring, aimRecord = nil, nil, nil, nil, nil
     end
     function KillAura.SetEnabled(state)
         KillAura.enabled = state == true
@@ -1018,15 +1112,19 @@ do
                         releaseGun()
                         KillAura.Status = "Gun aiming unavailable"
                     else
-                        local ids = zombieClient:GetNearbyZombieIds(root.Position, radius)
+                        local weaponRange = radius
+                        if config.IsMelee then weaponRange = math.min(radius, 15) end
+                        if config.IsCone then weaponRange = math.min(radius,
+                            tonumber(config.Range or config.MaxRange) or 45) end
+                        local ids = zombieClient:GetNearbyZombieIds(root.Position, weaponRange)
                         local alive = {}
                         for _, id in ipairs(ids or {}) do
                             local record = zombieClient.Zombies and zombieClient.Zombies[id]
                             local model = record and record.Model
-                            local position = record and record.CurrentPosition
+                            local position = inAimCircle(record)
                             if record and position and model and model.Parent and not record.IsDying
                                 and (record.Health == nil or record.Health > 0)
-                                and (position - root.Position).Magnitude <= radius then
+                                and (position - root.Position).Magnitude <= weaponRange then
                                 table.insert(alive, { record = record,
                                     distance = (position - root.Position).Magnitude })
                             end
@@ -1044,29 +1142,40 @@ do
                                 releaseGun()
                                 hookedGun = gunClient
                                 originalAim = rawget(gunClient, "GetAimDirection")
-                                resolvedAim = gunClient.GetAimDirection
                                 originalAutoShoot = gunClient.IsAutoShooting
                                 originalFiring = gunClient.IsFiring
                                 gunClient.GetAimDirection = function(self, ...)
                                     local record = aimRecord
-                                    if record and record.CurrentPosition and not record.IsDying
-                                        and self.EquippedGun then
+                                    if record and not record.IsDying and self.EquippedGun then
                                         local origin = self:GetFireOrigin()
-                                        local target = record.CurrentPosition
-                                        if record.HitboxTop then
-                                            target = target + Vector3.new(0,
-                                                (record.HitboxTop - (record.HitboxBottom or 0)) * 0.5, 0)
+                                        local target = inAimCircle(record)
+                                        local targetPart = record.Model and
+                                            (record.Model.PrimaryPart or record.Model:FindFirstChild("HumanoidRootPart"))
+                                        local speed = tonumber(self.EquippedConfig and
+                                            (self.EquippedConfig.BulletSpeed or self.EquippedConfig.ProjectileSpeed))
+                                        if target and origin and targetPart and speed and speed > 1 then
+                                            local travel = math.clamp((target - origin).Magnitude / speed, 0, 0.5)
+                                            target = target + targetPart.AssemblyLinearVelocity * travel
                                         end
-                                        local delta = origin and (target - origin)
+                                        local delta = origin and target and (target - origin)
                                         if delta and delta.Magnitude > 0.01 then
+                                            if self.EquippedConfig and self.EquippedConfig.IsMelee then
+                                                delta = Vector3.new(delta.X, 0, delta.Z)
+                                                if delta.Magnitude <= 0.01 then return nil end
+                                            end
                                             return delta.Unit
                                         end
                                     end
-                                    return resolvedAim(self, ...)
+                                    return originalAim and originalAim(self, ...) or nil
                                 end
                             end
-                            targetIndex = targetIndex % count + 1
-                            aimRecord = alive[targetIndex].record
+                            local stillValid = false
+                            for i = 1, count do
+                                if alive[i].record == aimRecord then stillValid = true break end
+                            end
+                            if not stillValid then
+                                aimRecord = alive[1].record
+                            end
                             gunClient.IsAutoShooting = true
                             gunClient.IsFiring = true
                             local before = gunClient.LastFireTime or 0
@@ -1074,8 +1183,8 @@ do
                             local shotStarted = (gunClient.LastFireTime or 0) > before
                                 or tick() - (gunClient.LastFireTime or 0) < 0.5
                             local bullets = gunClient.ActiveBullets and #gunClient.ActiveBullets or 0
-                            KillAura.Status = (shotStarted and "Shot" or "Spinning")
-                                .. " | Bullets: " .. bullets .. " | Target: " .. targetIndex .. "/" .. count
+                            KillAura.Status = (shotStarted and "Firing" or "Aiming")
+                                .. " | Bullets: " .. bullets .. " | Targets: " .. count
                         end
                     end
                 end)
@@ -1093,14 +1202,73 @@ do
         releaseGun()
     end)
 
+    local AutoAbility = flagModule()
+    Zombie.AutoAbility = AutoAbility
+    AutoAbility.Status = "Off"
+    local abilityDataModule = Core.findIn(storage, "Data", "WeaponAbilityData")
+    local abilityData
+    if abilityDataModule then
+        local ok, result = pcall(require, abilityDataModule)
+        if ok then abilityData = result end
+    end
+    function AutoAbility.SetEnabled(state)
+        AutoAbility.enabled = state == true
+        if not AutoAbility.enabled then AutoAbility.Status = "Off" end
+    end
+    task.spawn(function()
+        local gunClient, zombieClient, lastLookup, lastRequest = nil, nil, 0, 0
+        while Zombie.alive do
+            if AutoAbility.enabled then
+                if os.clock() - lastLookup > 2 then
+                    gunClient = Core.getService("GunClient", 2) or gunClient
+                    zombieClient = Core.getService("ZombieClient", 2) or zombieClient
+                    lastLookup = os.clock()
+                end
+                local tool = gunClient and gunClient.EquippedGun
+                if tool and abilityData and type(abilityData.Resolve) == "function"
+                    and type(abilityData.ReadProgress) == "function"
+                    and type(gunClient.RequestAbilityShot) == "function" then
+                    local ok, ready = pcall(function()
+                        local definition = abilityData.Resolve(tool)
+                        if not definition then return false end
+                        local _, _, charged = abilityData.ReadProgress(tool, definition)
+                        return not not charged
+                    end)
+                    AutoAbility.Status = ok and (ready and "Ready" or "Charging")
+                        or "Ability data unavailable"
+                    local root = LocalPlayer.Character
+                        and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local nearby = false
+                    if root and zombieClient and type(zombieClient.GetNearbyZombieIds) == "function" then
+                        local found, ids = pcall(zombieClient.GetNearbyZombieIds,
+                            zombieClient, root.Position, 60)
+                        nearby = found and type(ids) == "table" and #ids > 0
+                    end
+                    if ok and ready and nearby and os.clock() - lastRequest > 0.5 then
+                        lastRequest = os.clock()
+                        pcall(gunClient.RequestAbilityShot, gunClient)
+                    end
+                else
+                    AutoAbility.Status = "Equip an ability weapon"
+                end
+            end
+            task.wait(0.2)
+        end
+    end)
+
     local ZombieRadar = flagModule()
     Zombie.ZombieRadar = ZombieRadar
     ZombieRadar.Status = "Off"
     local outlined = {}
+    local radarLabels = {}
     local function clearOutlines()
         for model, highlight in pairs(outlined) do
             highlight:Destroy()
             outlined[model] = nil
+        end
+        for model, label in pairs(radarLabels) do
+            label:Destroy()
+            radarLabels[model] = nil
         end
     end
     function ZombieRadar.SetEnabled(state)
@@ -1140,10 +1308,40 @@ do
                                 highlight.Parent = model
                                 outlined[model] = highlight
                             end
+                            local boss = record.IsBoss == true or model.Name:lower():find("boss", 1, true)
+                            highlight.OutlineColor = boss and Color3.fromRGB(255, 201, 74)
+                                or Color3.fromRGB(255, 90, 75)
                             local part = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
                                 or model:FindFirstChildWhichIsA("BasePart")
                             if root and part then
-                                nearest = math.min(nearest, (part.Position - root.Position).Magnitude)
+                                local distance = (part.Position - root.Position).Magnitude
+                                nearest = math.min(nearest, distance)
+                                local label = radarLabels[model]
+                                if not label or not label.Parent then
+                                    label = Instance.new("BillboardGui")
+                                    label.Name = "SunsetZombieRadar"
+                                    label.Adornee = part
+                                    label.AlwaysOnTop = true
+                                    label.Size = UDim2.fromOffset(160, 34)
+                                    label.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
+                                    label.MaxDistance = 400
+                                    label.Parent = part
+                                    local text = Instance.new("TextLabel")
+                                    text.Name = "Info"
+                                    text.BackgroundTransparency = 1
+                                    text.Size = UDim2.fromScale(1, 1)
+                                    text.Font = Enum.Font.GothamBold
+                                    text.TextSize = 12
+                                    text.TextStrokeTransparency = 0.25
+                                    text.TextColor3 = Color3.fromRGB(255, 103, 84)
+                                    text.Parent = label
+                                    radarLabels[model] = label
+                                end
+                                local health = tonumber(record.Health)
+                                label.Info.TextColor3 = boss and Color3.fromRGB(255, 201, 74)
+                                    or Color3.fromRGB(255, 103, 84)
+                                label.Info.Text = model.Name .. "  " .. math.floor(distance)
+                                    .. " studs" .. (health and ("  " .. math.ceil(health) .. " HP") or "")
                             end
                         end
                     end
@@ -1152,6 +1350,10 @@ do
                     if not seen[model] then
                         highlight:Destroy()
                         outlined[model] = nil
+                        if radarLabels[model] then
+                            radarLabels[model]:Destroy()
+                            radarLabels[model] = nil
+                        end
                     end
                 end
                 ZombieRadar.Status = not zombieClient and "Waiting for zombie data"
@@ -1161,6 +1363,160 @@ do
             task.wait(0.25)
         end
         clearOutlines()
+    end)
+
+    local DropMarkers = flagModule()
+    Zombie.DropMarkers = DropMarkers
+    local markedDrops = {}
+    local eventDrops = {}
+    local function clearDrops()
+        for object, gui in pairs(markedDrops) do
+            gui:Destroy()
+            markedDrops[object] = nil
+        end
+        for anchor, marker in pairs(eventDrops) do
+            marker.Gui:Destroy()
+            anchor:Destroy()
+            eventDrops[anchor] = nil
+        end
+    end
+    function DropMarkers.SetEnabled(state)
+        DropMarkers.enabled = state == true
+        if not DropMarkers.enabled then clearDrops() end
+    end
+    local function dropPart(object)
+        if object:IsA("BasePart") then return object end
+        if object:IsA("Model") then
+            return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return nil
+    end
+    local function dropKind(object)
+        local name = object.Name:lower()
+        if name:find("salvage", 1, true) then return "SALVAGE" end
+        if name:find("shard", 1, true) then return "SHARD" end
+        return nil
+    end
+    local function eventPosition(value)
+        if typeof(value) == "Vector3" then return value end
+        if typeof(value) == "CFrame" then return value.Position end
+        if typeof(value) == "Instance" then
+            local part = dropPart(value)
+            return part and part.Position
+        end
+        if type(value) == "table" then
+            for _, key in ipairs({ "Position", "WorldPosition", "CFrame", "Model", "Part", "Instance" }) do
+                local position = eventPosition(value[key])
+                if position then return position end
+            end
+        end
+        return nil
+    end
+    for _, entry in ipairs({
+        { "SalvageDrop", "SALVAGE" },
+        { "FactionWarShardDrop", "SHARD" },
+        { "FrontierShardDrop", "SHARD" },
+    }) do
+        local signal = remote(Core.EventRemotes, entry[1])
+        if signal and signal:IsA("RemoteEvent") then
+            track(signal.OnClientEvent:Connect(function(...)
+                if not DropMarkers.enabled then return end
+                local position
+                local payload = table.pack(...)
+                for i = 1, payload.n do
+                    position = eventPosition(payload[i])
+                    if position then break end
+                end
+                if not position then return end
+                local anchor = Instance.new("Part")
+                anchor.Name = "SunsetDropPosition"
+                anchor.Size = Vector3.new(0.1, 0.1, 0.1)
+                anchor.Transparency = 1
+                anchor.Anchored = true
+                anchor.CanCollide = false
+                anchor.CanTouch = false
+                anchor.CFrame = CFrame.new(position)
+                anchor.Parent = workspace
+                local gui = Instance.new("BillboardGui")
+                gui.Name = "SunsetDropEvent"
+                gui.Adornee = anchor
+                gui.AlwaysOnTop = true
+                gui.Size = UDim2.fromOffset(120, 26)
+                gui.StudsOffsetWorldSpace = Vector3.new(0, 2, 0)
+                gui.MaxDistance = 600
+                gui.Parent = anchor
+                local label = Instance.new("TextLabel")
+                label.Size = UDim2.fromScale(1, 1)
+                label.BackgroundTransparency = 1
+                label.Font = Enum.Font.GothamBold
+                label.TextSize = 12
+                label.TextStrokeTransparency = 0.2
+                label.TextColor3 = entry[2] == "SHARD"
+                    and Color3.fromRGB(123, 211, 255)
+                    or Color3.fromRGB(255, 207, 112)
+                label.Text = entry[2]
+                label.Parent = gui
+                eventDrops[anchor] = { Gui = gui, Expires = os.clock() + 45 }
+            end))
+        end
+    end
+    task.spawn(function()
+        while Zombie.alive do
+            if DropMarkers.enabled then
+                local seen, count = {}, 0
+                for _, object in ipairs(workspace:GetDescendants()) do
+                    if count >= 80 then break end
+                    local kind = dropKind(object)
+                    if kind and (object:IsA("Model") or object:IsA("BasePart"))
+                        and not (object.Parent and dropKind(object.Parent)) then
+                        local part = dropPart(object)
+                        if part and part:IsDescendantOf(workspace) then
+                            count += 1
+                            seen[object] = true
+                            local gui = markedDrops[object]
+                            if not gui or not gui.Parent then
+                                gui = Instance.new("BillboardGui")
+                                gui.Name = "SunsetDropMarker"
+                                gui.Adornee = part
+                                gui.AlwaysOnTop = true
+                                gui.Size = UDim2.fromOffset(120, 26)
+                                gui.StudsOffsetWorldSpace = Vector3.new(0, 2, 0)
+                                gui.MaxDistance = 600
+                                gui.Parent = part
+                                local text = Instance.new("TextLabel")
+                                text.Name = "Info"
+                                text.Size = UDim2.fromScale(1, 1)
+                                text.BackgroundTransparency = 1
+                                text.Font = Enum.Font.GothamBold
+                                text.TextSize = 12
+                                text.TextStrokeTransparency = 0.2
+                                text.TextColor3 = kind == "SHARD"
+                                    and Color3.fromRGB(123, 211, 255)
+                                    or Color3.fromRGB(255, 207, 112)
+                                text.Parent = gui
+                                markedDrops[object] = gui
+                            end
+                            gui.Info.Text = kind
+                        end
+                    end
+                end
+                for object, gui in pairs(markedDrops) do
+                    if not seen[object] then
+                        gui:Destroy()
+                        markedDrops[object] = nil
+                    end
+                end
+                for anchor, marker in pairs(eventDrops) do
+                    if not anchor.Parent or os.clock() >= marker.Expires then
+                        marker.Gui:Destroy()
+                        anchor:Destroy()
+                        eventDrops[anchor] = nil
+                    end
+                end
+            end
+            task.wait(1.5)
+        end
+        clearDrops()
     end)
 
     local RapidFire = flagModule()
@@ -1201,64 +1557,6 @@ do
         end
         restoreRates()
     end)
-    local Hitscan = flagModule()
-    Zombie.Hitscan = Hitscan
-    local scannedBullets = setmetatable({}, { __mode = "k" })
-    function Hitscan.SetEnabled(state)
-        Hitscan.enabled = state == true
-        if not Hitscan.enabled then
-            table.clear(scannedBullets)
-        end
-    end
-    local gunClientForScan, lastScanLookup = nil, 0
-    local scanParams = RaycastParams.new()
-    scanParams.IgnoreWater = true
-    local function scanBullet(gunClient, bullet, hitRemote)
-        local config = bullet.Config
-        if not config or bullet.Kind or config.IsRocket or config.IsExplosive
-            or typeof(bullet.Origin) ~= "Vector3" or typeof(bullet.Direction) ~= "Vector3"
-            or type(gunClient.CheckBulletHit) ~= "function" then return end
-        local range = math.clamp(tonumber(bullet.MaxRange) or 300, 1, 2000)
-        local step = math.max(4, range / 160)
-        local tagged = CollectionService:GetTagged("BulletCollide")
-        scanParams.IncludeInstances = tagged
-        local previous = bullet.Origin
-        local probe = {
-            Direction = bullet.Direction, Speed = bullet.Speed,
-            Config = config, HitZombies = bullet.HitZombies or {},
-        }
-        for distance = step, range + step, step do
-            probe.Position = bullet.Origin + bullet.Direction * math.min(distance, range)
-            local wall = #tagged > 0 and workspace:Raycast(previous,
-                probe.Position - previous, scanParams) or nil
-            local hit = gunClient:CheckBulletHit(probe, previous)
-            if hit and (not wall or (hit.HitPosition - previous).Magnitude < wall.Distance) then
-                if not probe.HitZombies[hit.ZombieId] then
-                    hitRemote:FireServer(bullet.GunName, hit.ZombieId, hit.HitPosition)
-                    probe.HitZombies[hit.ZombieId] = true
-                end
-                return
-            end
-            if wall then return end
-            previous = probe.Position
-        end
-    end
-    track(RunService.Heartbeat:Connect(function()
-        if not Zombie.alive or not Hitscan.enabled then return end
-        if not gunClientForScan and os.clock() - lastScanLookup > 2 then
-            lastScanLookup = os.clock()
-            gunClientForScan = Core.getService("GunClient", 2)
-        end
-        local hitRemote = Core.GunRemotes and Core.GunRemotes:FindFirstChild("GunHit")
-        if not gunClientForScan or not hitRemote then return end
-        for _, bullet in ipairs(gunClientForScan.ActiveBullets or {}) do
-            if bullet.IsLocal and not scannedBullets[bullet] then
-                scannedBullets[bullet] = true
-                local ok, err = pcall(scanBullet, gunClientForScan, bullet, hitRemote)
-                if not ok then warn("[Sunset Hitscan] " .. tostring(err)) end
-            end
-        end
-    end))
     local BulletNoClip = flagModule()
     Zombie.BulletNoClip = BulletNoClip
     local removedBulletTags = setmetatable({}, { __mode = "k" })
@@ -1291,17 +1589,62 @@ do
         end
         restoreBulletCollisionTags()
     end)
+    local InstantKill = flagModule()
+    Zombie.InstantKill = InstantKill
+    local hitBurstSize = 32
+    local lastHitBurst = {}
+    local gunHitRemote = remote(Core.GunRemotes, "GunHit")
+    local canBurstHits = gunHitRemote and typeof(hookmetamethod) == "function"
+        and typeof(newcclosure) == "function" and typeof(getnamecallmethod) == "function"
+    function InstantKill.SetEnabled(state)
+        InstantKill.enabled = state == true and canBurstHits == true
+        if state and not canBurstHits then
+            warn("[Sunset] Instant Kill needs the GunHit remote and namecall hooks")
+        end
+        if not InstantKill.enabled then table.clear(lastHitBurst) end
+    end
+    function InstantKill.SetBurstSize(value)
+        hitBurstSize = math.clamp(math.floor(tonumber(value) or 32), 2, 64)
+    end
+    if canBurstHits then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            if self == gunHitRemote and getnamecallmethod() == "FireServer"
+                and Zombie.alive and InstantKill.enabled then
+                local args = table.pack(...)
+                local zombieId = args[2]
+                if zombieId and zombieId ~= 0 and args[4] ~= true
+                    and os.clock() - (lastHitBurst[zombieId] or -math.huge) >= 0.35 then
+                    lastHitBurst[zombieId] = os.clock()
+                    local result = oldNamecall(self, ...)
+                    task.spawn(function()
+                        for i = 2, hitBurstSize do
+                            if not Zombie.alive or not InstantKill.enabled then break end
+                            pcall(function()
+                                self:FireServer(table.unpack(args, 1, args.n))
+                            end)
+                            if i % 8 == 0 then task.wait() end
+                        end
+                    end)
+                    return result
+                end
+            end
+            return oldNamecall(self, ...)
+        end))
+    end
     function Zombie.Stop()
         Zombie.alive = false
         for _, module in ipairs({ AutoReplay, AutoNextWave, AutoSkipWave, AutoEquip,
-            AutoGear, KillAura }) do module.SetEnabled(false) end
+            KillAura }) do module.SetEnabled(false) end
         Crosshair.SetEnabled(false)
         Upgrades.SetHealthEnabled(false)
         Upgrades.SetWeaponEnabled(false)
         ZombieRadar.SetEnabled(false)
+        DropMarkers.SetEnabled(false)
+        AutoAbility.SetEnabled(false)
         RapidFire.SetEnabled(false)
-        Hitscan.SetEnabled(false)
         BulletNoClip.SetEnabled(false)
+        InstantKill.SetEnabled(false)
     end
 end
 
@@ -1310,8 +1653,9 @@ end
 -- ============================================================
 local Fly = {}
 do
-    local bv, bg, conn, physicsConn, flightRoot
+    local bv, bg, conn, physicsConn, postPhysicsConn, flightRoot
     local desiredVelocity = Vector3.zero
+    local idlePosition = nil
 
     local function getRoot()
         local char = LocalPlayer.Character
@@ -1323,17 +1667,28 @@ do
         if not root then return end
         Fly.Stop()
         flightRoot = root
+        idlePosition = root.Position
         hum.PlatformStand = true
         root.AssemblyLinearVelocity = Vector3.zero
         root.AssemblyAngularVelocity = Vector3.zero
         bv = new("BodyVelocity", { MaxForce = Vector3.new(1e9, 1e9, 1e9), Velocity = Vector3.zero }, root)
         bg = new("BodyGyro", { MaxTorque = Vector3.new(1e9, 1e9, 1e9), P = 1e4, CFrame = root.CFrame }, root)
 
-        physicsConn = RunService.Stepped:Connect(function()
+        local function enforceFlight()
             if not flightRoot or not flightRoot.Parent then return end
-            flightRoot.AssemblyLinearVelocity = desiredVelocity
+            if desiredVelocity.Magnitude < 0.01 and idlePosition then
+                -- Gun recoil and other scripts can move the root even with zero velocity.
+                -- Keep the position fixed until the player presses a movement key.
+                flightRoot.CFrame = CFrame.new(idlePosition) * flightRoot.CFrame.Rotation
+                flightRoot.AssemblyLinearVelocity = Vector3.zero
+            else
+                idlePosition = flightRoot.Position
+                flightRoot.AssemblyLinearVelocity = desiredVelocity
+            end
             flightRoot.AssemblyAngularVelocity = Vector3.zero
-        end)
+        end
+        physicsConn = RunService.Stepped:Connect(enforceFlight)
+        postPhysicsConn = RunService.Heartbeat:Connect(enforceFlight)
 
         conn = RunService.RenderStepped:Connect(function()
             if not root.Parent then Fly.Stop() return end
@@ -1346,6 +1701,11 @@ do
             if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
             if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis end
             if dir.Magnitude > 0 then dir = dir.Unit end
+            if desiredVelocity.Magnitude < 0.01 and dir.Magnitude > 0 then
+                idlePosition = root.Position
+            elseif desiredVelocity.Magnitude > 0 and dir.Magnitude == 0 then
+                idlePosition = root.Position
+            end
             desiredVelocity = dir * Settings.FlySpeed
             bv.Velocity = desiredVelocity
             bg.CFrame = CFrame.lookAt(root.Position, root.Position + Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z))
@@ -1355,6 +1715,7 @@ do
     function Fly.Stop()
         if conn then conn:Disconnect() conn = nil end
         if physicsConn then physicsConn:Disconnect() physicsConn = nil end
+        if postPhysicsConn then postPhysicsConn:Disconnect() postPhysicsConn = nil end
         if bv then bv:Destroy() bv = nil end
         if bg then bg:Destroy() bg = nil end
         if flightRoot and flightRoot.Parent then
@@ -1362,6 +1723,7 @@ do
             flightRoot.AssemblyAngularVelocity = Vector3.zero
         end
         flightRoot = nil
+        idlePosition = nil
         desiredVelocity = Vector3.zero
         local _, hum = getRoot()
         if hum then hum.PlatformStand = false end
@@ -1632,12 +1994,12 @@ end)
 -- ============================================================
 -- Build pages
 -- ============================================================
+local AimTab = makeTab("Combat")
 local MainTab = makeTab("Movement")
 local PlayerTab = makeTab("Player")
+local MiscTab = makeTab("Misc")
 local VisualsTab = makeTab("Visuals")
-local AimTab = makeTab("Aim")
-local OpTab = makeTab("OP")
-local SettingsTab = makeTab("Settings")
+local SettingsTab = makeTab("Sunset")
 -- ---- Aim
 Settings.AimEnabled = false
 Settings.TriggerEnabled = false
@@ -1646,7 +2008,7 @@ Settings.AimVisibleCheck = true
 Settings.AimAllDirections = false
 Settings.AimRange = 300
 Settings.AimFovEnabled = true
-Settings.AimFovVisible = true
+Settings.AimFovVisible = false
 Settings.AimFovRadius = 160
 Settings.AimPart = "Head"
 Settings.AimMode = "Hold"
@@ -1659,6 +2021,10 @@ Settings.FireInterval = 0.15
 do
     local left = makeSection(AimTab.Left, "Aim")
     local right = makeSection(AimTab.Right, "Checks")
+    table.insert(bedWarsHiddenSections, left.Parent)
+    table.insert(bedWarsHiddenSections, right.Parent)
+    table.insert(sniperOnlySections, left.Parent)
+    table.insert(sniperOnlySections, right.Parent)
     Elements.Toggle(left, "Aim", false, function(v) Settings.AimEnabled = v end)
     Elements.Toggle(left, "Auto Fire", false, function(v) Settings.TriggerEnabled = v end)
     Elements.Dropdown(left, "Use", { "Hold", "Always" }, "Hold", function(v) Settings.AimMode = v end)
@@ -1668,9 +2034,6 @@ do
         function(v) Settings.AimPart = v end)
     Elements.Slider(left, "Smoothness", 0, 100, 30, "", function(v) Settings.AimSmoothTime = v / 250 end)
     Elements.Slider(left, "Range", 25, 1000, 300, "", function(v) Settings.AimRange = v end)
-    Elements.Toggle(right, "FOV Limit", true, function(v) Settings.AimFovEnabled = v end)
-    Elements.Toggle(right, "Show FOV Circle", true, function(v) Settings.AimFovVisible = v end)
-    Elements.Slider(right, "FOV Radius", 30, 500, 160, "px", function(v) Settings.AimFovRadius = v end)
     local status = Elements.Label(left, "Off")
     status.TextWrapped = true
     status.Parent.Size = UDim2.new(1, 0, 0, 44)
@@ -1694,7 +2057,7 @@ do
     }, fovGui)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, fovCircle)
     local fovOutline = new("UIStroke", {
-        Color = T.red, Thickness = 1.5, Transparency = 0.1,
+        Color = Color3.fromRGB(255, 255, 255), Thickness = 1.5, Transparency = 0.1,
     }, fovCircle)
     track({ Disconnect = function() fovGui:Destroy() end })
     Elements.Toggle(right, "Team Check", true, function(v) Settings.AimTeamCheck = v end)
@@ -1838,6 +2201,7 @@ do
     local function updateAim(dt)
         local now = os.clock()
         if releaseAt > 0 and now >= releaseAt then stopFire() end
+        if Settings.SelectedGame ~= "Sniper Arena" then pause("Off") return end
         if not Settings.AimEnabled and not Settings.TriggerEnabled then pause("Off") return end
         if not focused then pause("Paused: game not focused") return end
         if anyMenuVisible() then pause("Close the menus to aim") return end
@@ -1895,9 +2259,10 @@ do
     RunService:BindToRenderStep(binding, Enum.RenderPriority.Last.Value + 1, function(dt)
         local diameter = Settings.AimFovRadius * 2
         fovCircle.Size = UDim2.fromOffset(diameter, diameter)
-        fovGui.Enabled = Settings.AimFovVisible and Settings.AimFovEnabled and not loading
-        fovOutline.Color = T.red
-        aimStatus.Visible = Settings.AimEnabled or Settings.TriggerEnabled
+        fovGui.Enabled = Settings.AimFovVisible and Settings.SelectedGame ~= "BedWars" and not loading
+        fovOutline.Color = Color3.fromRGB(255, 255, 255)
+        aimStatus.Visible = Settings.SelectedGame == "Sniper Arena"
+            and (Settings.AimEnabled or Settings.TriggerEnabled)
         local ok, message = pcall(updateAim, dt)
         if not ok then
             stopFire()
@@ -1924,6 +2289,7 @@ end
 -- ---- Main / Movement
 do
     local s = makeSection(MainTab.Left, "Fly")
+    table.insert(bedWarsHiddenSections, s.Parent)
     Elements.Toggle(s, "Fly", false, function(on)
         Settings.FlyEnabled = on
         if on then Fly.Start() else Fly.Stop() end
@@ -1974,6 +2340,7 @@ end
 -- ---- Main / Speed
 do
     local s = makeSection(MainTab.Right, "Speed")
+    table.insert(bedWarsHiddenSections, s.Parent)
     Settings.WalkSpeedEnabled = false
     Settings.WalkSpeed = 16
     local speedHumanoid, originalSpeed, changeConn
@@ -2016,11 +2383,12 @@ do
     track(RunService.Stepped:Connect(apply))
     track({ Disconnect = function() Settings.WalkSpeedEnabled = false restore() end })
 end
--- ---- Player / Spin
+-- ---- Misc / Spinbot
 do
-    local s = makeSection(PlayerTab.Right, "Spin")
+    local s = makeSection(MiscTab.Left, "Spinbot")
     local enabled = false
     local rate = 360
+    local direction = 1
     local trackedHumanoid, originalAutoRotate, trackedRoot
     local yaw = 0
     local function restoreSpin()
@@ -2029,11 +2397,12 @@ do
         end
         trackedHumanoid, originalAutoRotate, trackedRoot = nil, nil, nil
     end
-    Elements.Toggle(s, "Spin", false, function(on)
+    Elements.Toggle(s, "Spinbot", false, function(on)
         enabled = on
         if not on then restoreSpin() end
     end)
-    Elements.Slider(s, "Spin Speed", 30, 1440, 360, "deg/s", function(value) rate = value end)
+    Elements.Slider(s, "Spin Speed", 30, 10000, 360, "deg/s", function(value) rate = value end)
+    Elements.Toggle(s, "Reverse Spin", false, function(on) direction = on and -1 or 1 end)
     track(RunService.Stepped:Connect(function(_, dt)
         if not enabled then return end
         -- Avoid competing with movement modules that own the character rotation.
@@ -2053,7 +2422,7 @@ do
             yaw = initialYaw
         end
         humanoid.AutoRotate = false
-        yaw = (yaw + math.rad(rate) * math.min(dt, 0.1)) % (math.pi * 2)
+        yaw = (yaw + direction * math.rad(rate) * math.min(dt, 0.1)) % (math.pi * 2)
         root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
     end))
     track({ Disconnect = function() enabled = false restoreSpin() end })
@@ -2136,6 +2505,7 @@ end
 -- ---- Main / Player
 do
     local s = makeSection(PlayerTab.Left, "God Mode")
+    table.insert(bedWarsHiddenSections, s.Parent)
 
     -- God mode: pins health to max every frame, refuses damage states, and re-applies on respawn.
     -- Note: only beats damage that's applied client-side or replicated from your client;
@@ -2194,22 +2564,177 @@ do
     end))
 end
 
+-- ---- Visuals / Atmosphere
+local atmosphereEnabled, atmospherePreset = false, "Sunset"
+local atmosphereNoFog, atmosphereFullBright = false, false
+local atmosphereCustomTime, atmosphereTime = false, 18
+local savedLighting, savedAtmosphere, activeAtmosphere
+local atmospherePresets = {
+    Clear = {
+        ClockTime = 12, Brightness = 3, Ambient = Color3.fromRGB(155, 165, 180),
+        OutdoorAmbient = Color3.fromRGB(190, 200, 215), FogColor = Color3.fromRGB(200, 225, 255),
+        Density = 0, Haze = 0, Glare = 0, Color = Color3.fromRGB(255, 255, 255),
+        Decay = Color3.fromRGB(255, 255, 255),
+    },
+    Sunset = {
+        ClockTime = 18.2, Brightness = 2, Ambient = Color3.fromRGB(112, 77, 105),
+        OutdoorAmbient = Color3.fromRGB(190, 106, 90), FogColor = Color3.fromRGB(255, 153, 118),
+        Density = 0.28, Haze = 1.2, Glare = 0.25, Color = Color3.fromRGB(255, 195, 145),
+        Decay = Color3.fromRGB(255, 116, 95),
+    },
+    Midnight = {
+        ClockTime = 0, Brightness = 1.5, Ambient = Color3.fromRGB(45, 55, 105),
+        OutdoorAmbient = Color3.fromRGB(75, 86, 138), FogColor = Color3.fromRGB(38, 50, 95),
+        Density = 0.22, Haze = 0.8, Glare = 0.05, Color = Color3.fromRGB(145, 160, 255),
+        Decay = Color3.fromRGB(72, 80, 145),
+    },
+    Mist = {
+        ClockTime = 8, Brightness = 2, Ambient = Color3.fromRGB(145, 157, 167),
+        OutdoorAmbient = Color3.fromRGB(175, 190, 197), FogColor = Color3.fromRGB(195, 210, 215),
+        Density = 0.52, Haze = 2.5, Glare = 0, Color = Color3.fromRGB(215, 229, 232),
+        Decay = Color3.fromRGB(170, 195, 200),
+    },
+    Dawn = {
+        ClockTime = 6.4, Brightness = 2.2, Ambient = Color3.fromRGB(110, 121, 166),
+        OutdoorAmbient = Color3.fromRGB(178, 156, 172), FogColor = Color3.fromRGB(246, 188, 164),
+        Density = 0.18, Haze = 0.75, Glare = 0.16, Color = Color3.fromRGB(255, 213, 182),
+        Decay = Color3.fromRGB(195, 150, 190),
+    },
+    Storm = {
+        ClockTime = 15, Brightness = 1.2, Ambient = Color3.fromRGB(68, 80, 102),
+        OutdoorAmbient = Color3.fromRGB(105, 118, 135), FogColor = Color3.fromRGB(93, 110, 129),
+        Density = 0.38, Haze = 1.6, Glare = 0, Color = Color3.fromRGB(174, 191, 210),
+        Decay = Color3.fromRGB(105, 129, 160),
+    },
+    Neon = {
+        ClockTime = 21, Brightness = 2.3, Ambient = Color3.fromRGB(64, 38, 115),
+        OutdoorAmbient = Color3.fromRGB(103, 55, 151), FogColor = Color3.fromRGB(83, 48, 127),
+        Density = 0.25, Haze = 0.7, Glare = 0.5, Color = Color3.fromRGB(210, 118, 255),
+        Decay = Color3.fromRGB(94, 150, 245),
+    },
+    Golden = {
+        ClockTime = 17, Brightness = 2.5, Ambient = Color3.fromRGB(153, 111, 73),
+        OutdoorAmbient = Color3.fromRGB(221, 168, 105), FogColor = Color3.fromRGB(255, 203, 140),
+        Density = 0.13, Haze = 0.65, Glare = 0.3, Color = Color3.fromRGB(255, 227, 174),
+        Decay = Color3.fromRGB(235, 150, 98),
+    },
+}
+local lightingProperties = { "ClockTime", "Brightness", "Ambient", "OutdoorAmbient", "FogColor", "FogEnd" }
+local atmosphereProperties = { "Density", "Haze", "Glare", "Color", "Decay", "Offset" }
+local function restoreAtmosphere()
+    atmosphereEnabled = false
+    if savedLighting then
+        for property, value in pairs(savedLighting) do Lighting[property] = value end
+        savedLighting = nil
+    end
+    if activeAtmosphere then
+        if savedAtmosphere then
+            for property, value in pairs(savedAtmosphere) do activeAtmosphere[property] = value end
+        else
+            activeAtmosphere:Destroy()
+        end
+    end
+    savedAtmosphere, activeAtmosphere = nil, nil
+end
+local function applyAtmosphere()
+    if not atmosphereEnabled then return end
+    local preset = atmospherePresets[atmospherePreset]
+    if not preset then return end
+    for _, property in ipairs(lightingProperties) do
+        if preset[property] ~= nil then Lighting[property] = preset[property] end
+    end
+    Lighting.FogEnd = atmospherePreset == "Mist" and 800 or 100000
+    if activeAtmosphere then
+        for _, property in ipairs(atmosphereProperties) do
+            if preset[property] ~= nil then activeAtmosphere[property] = preset[property] end
+        end
+        activeAtmosphere.Offset = 0
+    end
+    if atmosphereNoFog then
+        Lighting.FogEnd = 100000
+        if activeAtmosphere then activeAtmosphere.Density = 0 end
+    end
+    if atmosphereFullBright then
+        Lighting.Brightness = 4
+        Lighting.Ambient = Color3.fromRGB(235, 235, 235)
+        Lighting.OutdoorAmbient = Color3.fromRGB(235, 235, 235)
+    end
+    if atmosphereCustomTime then Lighting.ClockTime = atmosphereTime end
+end
+local function setAtmosphereEnabled(on)
+    if on == atmosphereEnabled then return end
+    if not on then restoreAtmosphere() return end
+    savedLighting = {}
+    for _, property in ipairs(lightingProperties) do savedLighting[property] = Lighting[property] end
+    activeAtmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+    if activeAtmosphere then
+        savedAtmosphere = {}
+        for _, property in ipairs(atmosphereProperties) do
+            savedAtmosphere[property] = activeAtmosphere[property]
+        end
+    else
+        activeAtmosphere = new("Atmosphere", {}, Lighting)
+    end
+    atmosphereEnabled = true
+    applyAtmosphere()
+end
+
 -- ---- Main / Visuals
 do
     local s = makeSection(VisualsTab.Left, "ESP Boxes")
+    s.Parent.LayoutOrder = 1
     Elements.Toggle(s, "ESP", false, function(on)
         Settings.EspEnabled = on
         if on then ESP.Start() else ESP.Stop() end
     end)
-    Elements.Toggle(s, "Show Names", true, function(on) Settings.EspNames = on end)
-    Elements.Toggle(s, "Team Check", false, function(on) Settings.EspTeamCheck = on end)
-    Elements.Line(s)
     Elements.ColorPicker(s, "Color", Settings.EspBoxColor, function(c) Settings.EspBoxColor = c end)
+    Elements.Line(s)
+    bedWarsOutlineToggle = Elements.Toggle(s, "Player Outlines", false, function(on)
+        if BedWars then BedWars.PlayersOn = on end
+    end)
+    bedWarsOutlineToggle._row.Visible = false
+    Elements.Toggle(s, "Team Check", true, function(on)
+        Settings.EspTeamCheck = on
+        if BedWars then BedWars.TeamCheck = on end
+    end)
+    bedWarsNamesToggle = Elements.Toggle(s, "Show Names", true, function(on) Settings.EspNames = on end)
+    local fov = makeSection(VisualsTab.Right, "FOV Circle")
+    fov.Parent.LayoutOrder = 2
+    table.insert(bedWarsHiddenSections, fov.Parent)
+    Elements.Toggle(fov, "Show FOV Circle", false, function(on) Settings.AimFovVisible = on end)
+    Elements.Slider(fov, "FOV Radius", 30, 500, 160, "", function(value)
+        Settings.AimFovRadius = value
+    end)
+    Elements.Toggle(fov, "Limit Aim to FOV", true, function(on) Settings.AimFovEnabled = on end)
+    local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
+    atmosphere.Parent.LayoutOrder = 3
+    Elements.Toggle(atmosphere, "Enabled", false, setAtmosphereEnabled, nil, true)
+    Elements.Dropdown(atmosphere, "Preset", { "Sunset", "Clear", "Dawn", "Golden", "Midnight", "Mist", "Storm", "Neon" }, "Sunset", function(value)
+        atmospherePreset = value
+        applyAtmosphere()
+    end)
+    Elements.Toggle(atmosphere, "No Fog", false, function(on)
+        atmosphereNoFog = on
+        applyAtmosphere()
+    end)
+    Elements.Toggle(atmosphere, "Full Bright", false, function(on)
+        atmosphereFullBright = on
+        applyAtmosphere()
+    end)
+    Elements.Toggle(atmosphere, "Custom Time", false, function(on)
+        atmosphereCustomTime = on
+        applyAtmosphere()
+    end)
+    Elements.Slider(atmosphere, "Time of Day", 0, 24, 18, "", function(value)
+        atmosphereTime = value
+        applyAtmosphere()
+    end, 0.5)
 end
 
 -- ---- Main / Teleport
 do
-    local s = makeSection(OpTab.Left, "Teleport")
+    local s = makeSection(PlayerTab.Left, "Teleport")
+    table.insert(bedWarsHiddenSections, s.Parent)
 
     local function playerNames()
         local names = {}
@@ -2448,15 +2973,11 @@ do
 end
 
 -- ---- Settings / Main
+local menuKeyControl
 do
     local s = makeSection(SettingsTab.Left, "Main")
-    Elements.Keybind(s, "Menu Key")
+    menuKeyControl = Elements.Keybind(s, "Menu Key")
     Elements.Line(s)
-
-    zombieShowButton = Elements.Button(s, "Show Zombie Survival Arena", function()
-        if showZombieWindow then showZombieWindow() end
-    end)
-    zombieShowButton.Visible = false
 
     Elements.Button(s, "Unload", function() ENV.SunsetUnload() end)
 end
@@ -2509,174 +3030,514 @@ do
         end
     end
     Elements.Dropdown(s, "Preset", { "Red", "Blue", "Purple", "Green", "Amber", "Light" }, "Red", applyPreset)
+    Elements.ColorPicker(s, "Accent Color", T.red, function(color)
+        local previous = T.red
+        T.red = color
+        for _, object in ipairs(Gui:GetDescendants()) do
+            if not object:GetAttribute("UIThemeIgnore") then
+                if object:IsA("GuiObject") and object.BackgroundColor3 == previous then
+                    object.BackgroundColor3 = color
+                end
+                if object:IsA("UIStroke") and object.Color == previous then object.Color = color end
+                if object:IsA("ScrollingFrame") and object.ScrollBarImageColor3 == previous then
+                    object.ScrollBarImageColor3 = color
+                end
+            end
+        end
+    end)
+end
+-- ---- Sunset / Configs
+do
+    local s = makeSection(SettingsTab.Right, "Configs")
+    local nameHolder = Elements.TextBox(s, "Config Name", "default", nil)
+    local nameBox = nameHolder:FindFirstChildOfClass("TextBox")
+    nameBox.Text = "default"
+    local status = Elements.Label(s, "Ready")
+    status.TextColor3 = T.dim
+    local pendingDelete
+    local function configPath()
+        local gameName = (Settings.SelectedGame or "Other"):gsub("[^%w%-_]", "_")
+        local name = nameBox.Text:match("^%s*(.-)%s*$"):gsub("[^%w%-_]", "_"):sub(1, 32)
+        if name == "" then name = "default" end
+        return "SunsetConfigs/" .. gameName .. "_" .. name .. ".json"
+    end
+    local function ensureFolder()
+        if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
+    end
+    Elements.Button(s, "Save Config", function()
+        if typeof(writefile) ~= "function" then status.Text = "File saving unavailable" return end
+        ensureFolder()
+        local saved = {}
+        for i, control in ipairs(ConfigControls) do
+            local value = control.Get()
+            if control.Kind == "color" then
+                value = { math.floor(value.R * 255 + 0.5), math.floor(value.G * 255 + 0.5), math.floor(value.B * 255 + 0.5) }
+            end
+            local bind = control.GetBind and control.GetBind()
+            saved[i] = { Kind = control.Kind, Value = value, Bind = bind and bind.Name or nil }
+        end
+        local path = configPath()
+        local ok = pcall(writefile, path, HttpService:JSONEncode({
+            Version = 1, Game = Settings.SelectedGame, Controls = saved,
+            MenuKey = Settings.MenuKey.Name,
+        }))
+        status.Text = ok and "Saved " .. nameBox.Text or "Could not save config"
+        pendingDelete = nil
+    end)
+    Elements.Button(s, "Load Config", function()
+        if typeof(readfile) ~= "function" then status.Text = "File loading unavailable" return end
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath())) end)
+        if not ok or type(data) ~= "table" or data.Game ~= Settings.SelectedGame
+            or data.Version ~= 1 then
+            status.Text = "Config missing or incompatible"
+            return
+        end
+        for i, item in ipairs(data.Controls or {}) do
+            local control = ConfigControls[i]
+            if control and control.Kind == item.Kind and (not control.Box or control.Box.Visible)
+                and (not control.Row or control.Row.Visible) then
+                local value = item.Value
+                if control.Kind == "color" and type(value) == "table" then
+                    value = Color3.fromRGB(tonumber(value[1]) or 255,
+                        tonumber(value[2]) or 255, tonumber(value[3]) or 255)
+                end
+                control.Set(value)
+                if control.SetBind then
+                    control.SetBind(item.Bind and Enum.KeyCode[item.Bind] or nil)
+                end
+            end
+        end
+        if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
+            menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
+        end
+        status.Text = "Loaded " .. nameBox.Text
+        pendingDelete = nil
+    end)
+    Elements.Button(s, "Delete Config", function()
+        local path = configPath()
+        if pendingDelete ~= path then
+            pendingDelete = path
+            status.Text = "Click Delete again to confirm"
+            return
+        end
+        pendingDelete = nil
+        if typeof(delfile) ~= "function" then status.Text = "File deletion unavailable" return end
+        local ok = pcall(delfile, path)
+        status.Text = ok and "Config deleted" or "Could not delete config"
+    end)
 end
 -- ---- Settings / Credits
 do
     local s = makeSection(SettingsTab.Left, "Credits")
     Elements.Label(s, "Owner: ZYNX")
 end
+do
+    local s = makeSection(SettingsTab.Left, "Arena Travel")
+    Elements.Toggle(s, "Auto Reinject", true, function(on)
+        AutoReinject.enabled = on == true
+    end)
+end
 MainTab.Select()
 
--- Game-specific window uses the same theme and controls as the main menu.
-ZombieWindow = new("Frame", {
-    Name = "ZombieSurvivalArenaWindow", Visible = false,
-    Size = UDim2.fromOffset(560, 480),
-    Position = UDim2.new(0.5, 285, 0.5, 0),
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    BackgroundColor3 = T.bg, BorderSizePixel = 0, Active = true,
-}, Gui)
-border(ZombieWindow, T.outer)
-new("UICorner", { CornerRadius = UDim.new(0, 6) }, ZombieWindow)
-local zombieScale = new("UIScale", { Scale = 1 }, ZombieWindow)
-local function fitZombieWindow()
-    local camera = workspace.CurrentCamera
-    if camera then
-        zombieScale.Scale = math.max(0.2, math.min(1,
-            (camera.ViewportSize.X - 24) / 560, (camera.ViewportSize.Y - 24) / 480))
-    end
+-- Game-specific controls live in the same main window.
+local gameSections = {}
+local function gameSection(gameName, column, title)
+    local content = makeSection(column, title)
+    local box = content.Parent
+    box.Visible = false
+    table.insert(gameSections, { Game = gameName, Box = box })
+    return content
 end
-fitZombieWindow()
-track(RunService.Heartbeat:Connect(fitZombieWindow))
-local zombieTitleBar = new("Frame", {
-    Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = T.bg, BorderSizePixel = 0,
-}, ZombieWindow)
-local zombieTitle = label(zombieTitleBar, "  sunset.wtf | Zombie Survival Arena", 13)
-zombieTitle.Size = UDim2.new(1, -28, 1, 0)
-local hideZombie = new("TextButton", {
-    Position = UDim2.new(1, -25, 0, 2), Size = UDim2.fromOffset(20, 18),
-    BackgroundColor3 = T.element, BorderSizePixel = 0, Text = "−",
-    TextColor3 = T.text, Font = T.font, TextSize = 16,
-}, zombieTitleBar)
-border(hideZombie, T.border)
-hideZombie.MouseButton1Click:Connect(function() ZombieWindow.Visible = false end)
-new("Frame", {
-    Size = UDim2.new(1, -16, 0, 2), Position = UDim2.fromOffset(8, 22),
-    BackgroundColor3 = T.red, BorderSizePixel = 0,
-}, ZombieWindow)
-local zombiePanel = new("Frame", {
-    Size = UDim2.new(1, -16, 1, -38), Position = UDim2.fromOffset(8, 30),
-    BackgroundColor3 = T.panel, BorderSizePixel = 0,
-}, ZombieWindow)
-border(zombiePanel, T.border)
-local zombieTabBar = new("Frame", {
-    Size = UDim2.new(1, -16, 0, 22), Position = UDim2.fromOffset(8, 6),
-    BackgroundTransparency = 1,
-}, zombiePanel)
-new("UIListLayout", {
-    FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6),
-    SortOrder = Enum.SortOrder.LayoutOrder,
-}, zombieTabBar)
-local zombiePages = new("Frame", {
-    Size = UDim2.new(1, -16, 1, -44), Position = UDim2.fromOffset(8, 36),
-    BackgroundTransparency = 1,
-}, zombiePanel)
-local currentZombieTab
-local function makeZombieTab(name)
-    local button = new("TextButton", {
-        Size = UDim2.new(1 / 6, -5, 0, 26), BackgroundColor3 = T.inner,
-        BorderSizePixel = 0, Text = name, Font = T.font, TextSize = 13,
-        TextColor3 = T.dim, AutoButtonColor = false,
-    }, zombieTabBar)
-    local stroke = border(button, T.border)
-    local page = new("Frame", {
-        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false,
-    }, zombiePages)
-    local function column(position)
-        local col = new("ScrollingFrame", {
-            Size = UDim2.new(0.5, -5, 1, 0), Position = position,
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            ScrollBarThickness = 3, ScrollBarImageColor3 = T.red,
-            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            ScrollingDirection = Enum.ScrollingDirection.Y,
-        }, page)
-        new("UIListLayout", {
-            Padding = UDim.new(0, 16), SortOrder = Enum.SortOrder.LayoutOrder,
-        }, col)
-        new("UIPadding", {
-            PaddingTop = UDim.new(0, 12), PaddingBottom = UDim.new(0, 12),
-            PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 6),
-        }, col)
-        return col
+local function showGameSections(gameName)
+    for _, section in ipairs(gameSections) do
+        section.Box.Visible = section.Game == gameName
     end
-    local tab = {
-        Button = button, Stroke = stroke, Page = page,
-        Left = column(UDim2.fromOffset(0, 0)), Right = column(UDim2.new(0.5, 5, 0, 0)),
-    }
-    function tab.Select()
-        if currentZombieTab then
-            currentZombieTab.Page.Visible = false
-            currentZombieTab.Button.TextColor3 = T.dim
-            currentZombieTab.Stroke.Color = T.border
-        end
-        currentZombieTab = tab
-        page.Visible = true
-        button.TextColor3 = T.text
-        stroke.Color = T.red
+    local isBedWars = gameName == "BedWars"
+    for _, box in ipairs(bedWarsHiddenSections) do box.Visible = not isBedWars end
+    for _, box in ipairs(sniperOnlySections) do box.Visible = gameName == "Sniper Arena" end
+    if bedWarsOutlineToggle then bedWarsOutlineToggle._row.Visible = isBedWars end
+    if bedWarsNamesToggle then bedWarsNamesToggle._row.Visible = not isBedWars end
+    if gameName ~= "Sniper Arena" then
+        Settings.AimEnabled = false
+        Settings.TriggerEnabled = false
     end
-    button.MouseButton1Click:Connect(tab.Select)
-    return tab
+    if isBedWars then Settings.AimFovVisible = false end
 end
-local zombieMain = makeZombieTab("Main")
-local zombieWeapons = makeZombieTab("Weapons")
-local zombieArsenal = makeZombieTab("Arsenal")
-local zombieMisc = makeZombieTab("Misc")
-local zombieBullets = makeZombieTab("Bullets")
-local zombieSettings = makeZombieTab("Settings")
 
 do
-    local waves = makeSection(zombieMain.Left, "Waves")
+    local gameName = "Zombie Survival Arena"
+    local waves = gameSection(gameName, MiscTab.Left, "Waves")
     Elements.Toggle(waves, "Auto Next Wave", false, Zombie.AutoNextWave.SetEnabled)
     Elements.Toggle(waves, "Auto Skip Wave", false, Zombie.AutoSkipWave.SetEnabled)
-    local replay = makeSection(zombieMain.Right, "Replay")
+    local replay = gameSection(gameName, MiscTab.Right, "Replay")
     Elements.Toggle(replay, "Auto Replay", false, Zombie.AutoReplay.SetEnabled)
-end
-do
-    local aura = makeSection(zombieWeapons.Left, "Kill Aura")
+
+    local aura = gameSection(gameName, AimTab.Left, "Kill Aura")
     Elements.Toggle(aura, "Kill Aura", false, Zombie.KillAura.SetEnabled)
     Elements.Slider(aura, "Kill Aura Radius", 10, 200, 60, "studs", Zombie.KillAura.SetRadius)
     Elements.Slider(aura, "Target Pool", 1, 30, 18, "", Zombie.KillAura.SetMaxTargets)
-    local guns = makeSection(zombieWeapons.Right, "Weapons")
-    Elements.Toggle(guns, "Rapid Fire", false, Zombie.RapidFire.SetEnabled)
-    Elements.Slider(guns, "Rapid Fire Interval", 0.01, 0.2, 0.02,
+    local guns = gameSection(gameName, MiscTab.Right, "Firing Rate")
+    Elements.Toggle(guns, "Fire Rate", false, Zombie.RapidFire.SetEnabled)
+    Elements.Slider(guns, "Fire Rate Amount", 0.01, 0.2, 0.02,
         "seconds", Zombie.RapidFire.SetInterval, 0.01)
     Elements.Toggle(guns, "Auto Equip Weapon", false, Zombie.AutoEquip.SetEnabled)
-end
-do
-    local bullets = makeSection(zombieBullets.Left, "Bullets")
-    Elements.Toggle(bullets, "Hitscan", false, Zombie.Hitscan.SetEnabled)
-    Elements.Toggle(bullets, "Bullet No Clip", false, Zombie.BulletNoClip.SetEnabled)
-end
-do
-    local gear = makeSection(zombieArsenal.Left, "Gear")
-    Elements.MultiSelect(gear, "Gears to auto-use", Zombie.AutoGear.GetGearList(),
-        Zombie.AutoGear.SetSelected)
-    Elements.Toggle(gear, "Auto Use Gear", false, Zombie.AutoGear.SetEnabled)
-    local upgrades = makeSection(zombieArsenal.Right, "Upgrades")
+    Elements.Toggle(guns, "Hit Burst (experimental)", false, Zombie.InstantKill.SetEnabled)
+    Elements.Slider(guns, "Hits per Hit", 2, 64, 32, "", Zombie.InstantKill.SetBurstSize)
+    Elements.Toggle(guns, "Auto Weapon Ability", false, Zombie.AutoAbility.SetEnabled)
+    local upgrades = gameSection(gameName, PlayerTab.Right, "Upgrades")
     Elements.Toggle(upgrades, "Auto Upgrade Weapon", false, Zombie.Upgrades.SetWeaponEnabled)
     Elements.Toggle(upgrades, "Auto Upgrade Health", false, Zombie.Upgrades.SetHealthEnabled)
-end
-do
-    local visual = makeSection(zombieMisc.Left, "Display")
-    Elements.Toggle(visual, "Hide Built-In Crosshair", false, Zombie.Crosshair.SetEnabled)
-    local radar = makeSection(zombieMisc.Right, "Zombie Radar")
+    local bullets = gameSection(gameName, MiscTab.Left, "Bullets")
+    Elements.Toggle(bullets, "Bullet No Clip", false, Zombie.BulletNoClip.SetEnabled)
+
+    local display = gameSection(gameName, VisualsTab.Right, "Crosshair")
+    display.Parent.LayoutOrder = 1
+    Elements.Toggle(display, "Hide Built-In Crosshair", false, Zombie.Crosshair.SetEnabled)
+    local radar = gameSection(gameName, VisualsTab.Left, "Zombie Radar")
+    radar.Parent.LayoutOrder = 2
     Elements.Toggle(radar, "Zombie Outlines", false, Zombie.ZombieRadar.SetEnabled)
-end
-do
-    local controls = makeSection(zombieSettings.Left, "Window")
-    Elements.Button(controls, "Hide Zombie Survival Arena", function()
-        ZombieWindow.Visible = false
+    Elements.Toggle(radar, "Shard + Salvage Markers", false, Zombie.DropMarkers.SetEnabled)
+    local radarStatus = Elements.Label(radar, "Zombies: --")
+    task.spawn(function()
+        while Zombie.alive and radarStatus.Parent do
+            radarStatus.Text = Zombie.ZombieRadar.Status
+            task.wait(0.5)
+        end
     end)
-    Elements.Label(controls, "Use Settings in the main window to show it again.")
 end
-zombieMain.Select()
-makeDraggable(ZombieWindow, zombieTitleBar)
-track(ZombieWindow:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
-showZombieWindow = function()
-    if Settings.SelectedGame == "Zombie Survival Arena" then
-        ZombieWindow.Visible = true
+-- BedWars starter modules use replicated players and map objects. No lobby
+-- remotes are fired, so the controls remain useful after entering a match.
+BedWars = {
+    PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
+    Running = true, AuraOn = false, ScaffoldOn = false,
+}
+local bedWarsNet = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
+local function bedWarsRemote(name, blockEngine)
+    local root = bedWarsNet and bedWarsNet:FindFirstChild("node_modules")
+    if blockEngine then
+        local games = root and root:FindFirstChild("@easy-games")
+        local engine = games and games:FindFirstChild("block-engine")
+        root = engine and engine:FindFirstChild("node_modules")
+    end
+    local rbxts = root and root:FindFirstChild("@rbxts")
+    local net = rbxts and rbxts:FindFirstChild("net")
+    local out = net and net:FindFirstChild("out")
+    local managed = out and out:FindFirstChild("_NetManaged")
+    return managed and managed:FindFirstChild(name)
+end
+local function bedWarsHeldItem()
+    local character = LocalPlayer.Character
+    local hand = character and character:FindFirstChild("HandInvItem")
+    local item = hand and hand.Value
+    return typeof(item) == "Instance" and item or nil
+end
+local function bedWarsInventory()
+    local character = LocalPlayer.Character
+    local inventoryValue = character and character:FindFirstChild("InventoryFolder")
+    local inventory = inventoryValue and inventoryValue.Value
+    if inventory then return inventory end
+    local folders = game:GetService("ReplicatedStorage"):FindFirstChild("Inventories")
+    return folders and folders:FindFirstChild(LocalPlayer.Name)
+end
+local function bedWarsEquip(item)
+    local equip = bedWarsRemote("SetInvItem", false)
+    if not item or not equip or not equip:IsA("RemoteFunction") then return end
+    local now = os.clock()
+    if (BedWars.LastEquipTime or 0) + 0.25 > now then return end
+    BedWars.LastEquipTime = now
+    pcall(function() equip:InvokeServer({ hand = item }) end)
+end
+local function bedWarsAttackRange()
+    local ts = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
+    local combat = ts and ts:FindFirstChild("combat")
+    local module = combat and combat:FindFirstChild("combat-constant")
+    if module then
+        local ok, data = pcall(require, module)
+        local value = ok and data.CombatConstant and data.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE
+        if type(value) == "number" then return value end
+    end
+    return 14.4
+end
+local function bedWarsMeleeItem(item)
+    if not item then return false end
+    local ts = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
+    local games = ts and ts:FindFirstChild("games")
+    local bedwars = games and games:FindFirstChild("bedwars")
+    local swords = bedwars and bedwars:FindFirstChild("bedwars-swords")
+    if swords then
+        local ok, data = pcall(require, swords)
+        if ok and type(data.BedwarsMelees) == "table" then
+            if table.find(data.BedwarsMelees, item.Name) then return true end
+        end
+    end
+    local name = string.lower(item.Name)
+    return string.find(name, "sword", 1, true) ~= nil
+        or string.find(name, "blade", 1, true) ~= nil
+        or string.find(name, "scythe", 1, true) ~= nil
+end
+local function bedWarsBestSword()
+    local inventory = bedWarsInventory()
+    if not inventory then return nil end
+    local best, rank = nil, 0
+    local priority = { wood = 1, stone = 2, iron = 3, diamond = 4, emerald = 5 }
+    for _, item in ipairs(inventory:GetChildren()) do
+        if bedWarsMeleeItem(item) then
+            local tier = 1
+            for material, score in pairs(priority) do
+                if string.find(string.lower(item.Name), material, 1, true) then
+                    tier = score
+                    break
+                end
+            end
+            if tier > rank then best, rank = item, tier end
+        end
+    end
+    return best
+end
+local bedWarsWoolColors = {
+    red = true, blue = true, green = true, yellow = true, orange = true,
+    purple = true, pink = true, cyan = true, white = true, black = true,
+    gray = true, grey = true, brown = true, lime = true,
+}
+local function bedWarsWoolItem(item)
+    if not item then return false end
+    local name = string.lower(item.Name)
+    if string.find(name, "wool", 1, true) then return true end
+    local color = name:match("^wood_(%a+)$")
+    return color ~= nil and bedWarsWoolColors[color] == true
+end
+local function bedWarsFindWool()
+    local inventory = bedWarsInventory()
+    if not inventory then return nil end
+    for _, item in ipairs(inventory:GetChildren()) do
+        if bedWarsWoolItem(item) then return item end
+    end
+    return nil
+end
+local function bedWarsEnemy(player)
+    if player == LocalPlayer then return false end
+    if LocalPlayer.Team and player.Team then return player.Team ~= LocalPlayer.Team end
+    if not LocalPlayer.Neutral and not player.Neutral then
+        return player.TeamColor ~= LocalPlayer.TeamColor
+    end
+    return player.Character and teamRelation(player.Character) == "enemy"
+end
+local function bedWarsAuraStep()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local weapon = bedWarsHeldItem()
+    local remote = bedWarsRemote("SwordHit", false)
+    if not root or not humanoid or humanoid.Health <= 0
+        or not remote or not remote:IsA("RemoteEvent") then return end
+    if not bedWarsMeleeItem(weapon) then
+        -- BedWars keeps swords in InventoryFolder even while another item is held.
+        -- Equip once, then let the next tick attack with the actual hand item.
+        if BedWars.ScaffoldOn and os.clock() - (BedWars.BridgingNeeded or -1e9) < 0.4 then return end
+        local sword = bedWarsBestSword()
+        bedWarsEquip(sword)
+        return
+    end
+    local range = bedWarsAttackRange()
+    local closest, closestRoot, distance = nil, nil, range
+    for _, player in ipairs(Players:GetPlayers()) do
+        if bedWarsEnemy(player) then
+            local target = player.Character
+            local targetHumanoid = target and target:FindFirstChildOfClass("Humanoid")
+            local targetRoot = target and target:FindFirstChild("HumanoidRootPart")
+            if targetHumanoid and targetHumanoid.Health > 0 and targetRoot
+                and not target:FindFirstChildOfClass("ForceField") then
+                local d = (root.Position - targetRoot.Position).Magnitude
+                if d < distance then
+                    closest, closestRoot, distance = target, targetRoot, d
+                end
+            end
+        end
+    end
+    if closest then
+        pcall(function()
+            remote:FireServer({
+                weapon = weapon,
+                entityInstance = closest,
+                chargedAttack = { chargeRatio = 0 },
+                validate = {
+                    selfPosition = { value = root.Position },
+                    targetPosition = { value = closestRoot.Position },
+                },
+            })
+        end)
     end
 end
+local function bedWarsScaffoldStep()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local item = bedWarsHeldItem()
+    local remote = bedWarsRemote("PlaceBlock", true)
+    if not root or not humanoid or humanoid.Health <= 0
+        or humanoid.MoveDirection.Magnitude < 0.05
+        or not remote or not remote:IsA("RemoteFunction") then return end
+    -- Look one cell ahead so the request reaches the server before the player steps off.
+    local ahead = root.Position + humanoid.MoveDirection.Unit * 3.5
+    local feetY = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
+    local grid = Vector3.new(math.round(ahead.X / 3), math.round((feetY - 1.5) / 3), math.round(ahead.Z / 3))
+    local center = grid * 3
+    local overlap = OverlapParams.new()
+    overlap.FilterType = Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances = { character }
+    for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center), Vector3.new(2.6, 2.6, 2.6), overlap)) do
+        if part.CanCollide then return end
+    end
+    -- A normal floor or an existing bridge below the next step needs no block.
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.FilterDescendantsInstances = { character }
+    ray.RespectCanCollide = true
+    if workspace:Raycast(Vector3.new(ahead.X, feetY + 0.5, ahead.Z), Vector3.new(0, -8, 0), ray) then
+        return
+    end
+    BedWars.BridgingNeeded = os.clock()
+    if not bedWarsWoolItem(item) then
+        bedWarsEquip(bedWarsFindWool())
+        return
+    end
+    local key = tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
+    BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
+    local now = os.clock()
+    if (BedWars.ScaffoldAttempts[key] or 0) + 0.3 > now
+        or (BedWars.ScaffoldPending or 0) >= 3 then return end
+    BedWars.ScaffoldAttempts[key] = now
+    BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
+    task.spawn(function()
+        if BedWars.Running and BedWars.ScaffoldOn then
+            pcall(function()
+                remote:InvokeServer({ blockType = item.Name, position = grid })
+            end)
+        end
+        BedWars.ScaffoldPending = math.max(0, (BedWars.ScaffoldPending or 1) - 1)
+    end)
+end
+local bedWarsMarks = { Players = {}, Beds = {}, Generators = {} }
+local function clearBedWarsMarks(kind)
+    for target, mark in pairs(bedWarsMarks[kind]) do
+        mark:Destroy()
+        bedWarsMarks[kind][target] = nil
+    end
+end
+local function setBedWarsMark(kind, target, color)
+    local mark = bedWarsMarks[kind][target]
+    if not mark then
+        mark = new("Highlight", {
+            Name = "SunsetBedWars" .. kind, Adornee = target,
+            DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+            FillTransparency = 0.78, OutlineTransparency = 0,
+        }, workspace)
+        bedWarsMarks[kind][target] = mark
+    end
+    mark.FillColor = color
+    mark.OutlineColor = color
+end
+local function refreshBedWarsPlayers()
+    local seen = {}
+    if BedWars.PlayersOn then
+        for _, player in ipairs(Players:GetPlayers()) do
+            local model = player.Character
+            local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+            local teammate = BedWars.TeamCheck and model
+                and teamRelation(model) == "friendly"
+            if player ~= LocalPlayer and model and humanoid and humanoid.Health > 0
+                and not teammate then
+                seen[model] = true
+                setBedWarsMark("Players", model, Settings.EspBoxColor)
+            end
+        end
+    end
+    for model, mark in pairs(bedWarsMarks.Players) do
+        if not seen[model] or not model.Parent then
+            mark:Destroy()
+            bedWarsMarks.Players[model] = nil
+        end
+    end
+end
+local function refreshBedWarsMap()
+    if not BedWars.BedsOn then clearBedWarsMarks("Beds") end
+    if not BedWars.GeneratorsOn then clearBedWarsMarks("Generators") end
+    if not BedWars.BedsOn and not BedWars.GeneratorsOn then return end
+    local seenBeds, seenGenerators = {}, {}
+    local count = 0
+    for _, node in ipairs(workspace:GetDescendants()) do
+        if node:IsA("BasePart") or node:IsA("Model") then
+            local name = string.lower(node.Name)
+            local parent = node.Parent
+            local parentName = parent and string.lower(parent.Name) or ""
+            if BedWars.BedsOn and name == "bed" and parentName ~= "bed" then
+                seenBeds[node] = true
+                setBedWarsMark("Beds", node, Color3.fromRGB(255, 204, 82))
+                count += 1
+            elseif BedWars.GeneratorsOn and string.find(name, "generator", 1, true)
+                and not string.find(parentName, "generator", 1, true) then
+                seenGenerators[node] = true
+                setBedWarsMark("Generators", node, Color3.fromRGB(82, 220, 255))
+                count += 1
+            end
+            if count >= 80 then break end
+        end
+    end
+    for target, mark in pairs(bedWarsMarks.Beds) do
+        if not seenBeds[target] or not target.Parent then
+            mark:Destroy()
+            bedWarsMarks.Beds[target] = nil
+        end
+    end
+    for target, mark in pairs(bedWarsMarks.Generators) do
+        if not seenGenerators[target] or not target.Parent then
+            mark:Destroy()
+            bedWarsMarks.Generators[target] = nil
+        end
+    end
+end
+function BedWars.Stop()
+    BedWars.Running = false
+    BedWars.AuraOn = false
+    BedWars.ScaffoldOn = false
+    for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
+end
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" then
+            refreshBedWarsPlayers()
+            refreshBedWarsMap()
+        end
+        task.wait(2)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.AuraOn then
+            bedWarsAuraStep()
+        end
+        task.wait(0.3)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.ScaffoldOn then
+            bedWarsScaffoldStep()
+        end
+        task.wait(0.05)
+    end
+end)
 
+do
+    local gameName = "BedWars"
+    local combatSection = gameSection(gameName, AimTab.Left, "Combat")
+    Elements.Toggle(combatSection, "Kill Aura", false, function(on) BedWars.AuraOn = on end)
+    local movementSection = gameSection(gameName, MainTab.Left, "Bridging")
+    Elements.Toggle(movementSection, "Scaffold", false, function(on) BedWars.ScaffoldOn = on end)
+    local mapSection = gameSection(gameName, VisualsTab.Right, "BedWars Map")
+    Elements.Toggle(mapSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
+    Elements.Toggle(mapSection, "Generator Outline", false, function(on) BedWars.GeneratorsOn = on end)
+end
 -- ============================================================
 -- Dragging + keybinds
 -- ============================================================
@@ -2690,6 +3551,8 @@ ENV.SunsetUnload = function()
 
     Settings.WatermarkOn = false
     Zombie.Stop()
+    BedWars.Stop()
+    restoreAtmosphere()
     pcall(Fly.Stop)
     pcall(ESP.Destroy)
     for _, c in ipairs(Connections) do
@@ -2702,192 +3565,245 @@ end
 
 print("Sunset.wtf loaded. RightShift to open/close.")
 
--- Game picker and animated intro.
+-- The Roblox experience is detected automatically. Match subplaces share the
+-- same universe ID, so entering a BedWars round keeps the BedWars modules.
+local supportedGames = {
+    { Name = "BedWars", Place = 6872265039, Universe = 2619619496 },
+    { Name = "Sniper Arena", Place = 122446657157717, Universe = 9534705677 },
+    { Name = "Zombie Survival Arena", Place = 114204398207377, Universe = 9348272796 },
+}
+local detectedGame
+for _, entry in ipairs(supportedGames) do
+    if game.PlaceId == entry.Place or game.GameId == entry.Universe then
+        detectedGame = entry.Name
+        break
+    end
+end
+
+-- Queue the public loader only when leaving a supported experience. The queued
+-- code checks the destination again, so unrelated Roblox games remain untouched.
+if detectedGame then
+    local queueTeleport = queue_on_teleport or queueonteleport
+        or (syn and syn.queue_on_teleport)
+    local queued = false
+    local loaderUrl = ENV.SunsetLoaderUrl
+        or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/alua"
+    if type(queueTeleport) == "function" then
+        track(LocalPlayer.OnTeleport:Connect(function(state)
+            if state ~= Enum.TeleportState.Started or queued or not AutoReinject.enabled then return end
+            queued = true
+            local code = string.format([[
+                repeat task.wait(0.1) until game:IsLoaded()
+                local allowed = {
+                    [6872265039] = true, [2619619496] = true,
+                    [122446657157717] = true, [9534705677] = true,
+                    [114204398207377] = true, [9348272796] = true,
+                }
+                if allowed[game.PlaceId] or allowed[game.GameId] then
+                    local ok, err = pcall(function()
+                        loadstring(game:HttpGet(%q))()
+                    end)
+                    if not ok then warn("[Sunset] Auto Reinject failed: " .. tostring(err)) end
+                end
+            ]], loaderUrl)
+            local ok = pcall(queueTeleport, code)
+            if not ok then queued = false end
+        end))
+    end
+end
+
 do
-    local stopped, selected, elapsed = false, false, 0
-    local animations, frameConnection = {}, nil
+    local stopped, elapsed = false, 0
+    local frameConnection
+    local tweens = {}
     local shade = new("TextButton", {
         Name = "StartupBackdrop", Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(4, 5, 9), BackgroundTransparency = 0.3,
-        BorderSizePixel = 0, Text = "", AutoButtonColor = false, Modal = true, ZIndex = 1000,
+        BackgroundColor3 = Color3.fromRGB(4, 5, 10), BackgroundTransparency = 0.18,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false,
+        Modal = true, ZIndex = 1000,
     }, Gui)
-    local picker = new("CanvasGroup", {
-        Size = UDim2.fromOffset(400, 390), Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(16, 17, 23),
-        BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 1001,
+    local intro = new("CanvasGroup", {
+        Name = "SunsetStartup", Size = UDim2.fromOffset(520, 374),
+        Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.fromRGB(16, 18, 26), BorderSizePixel = 0,
+        GroupTransparency = 1, ZIndex = 1001,
     }, Gui)
-    new("UICorner", { CornerRadius = UDim.new(0, 14) }, picker)
-    border(picker, Color3.fromRGB(66, 39, 48), 1)
-    local pickerScale = new("UIScale", { Scale = 0.94 }, picker)
-    local function text(parent, value, x, y, w, h, size, color, font)
+    new("UICorner", { CornerRadius = UDim.new(0, 14) }, intro)
+    border(intro, Color3.fromRGB(82, 53, 68), 1)
+    local introScale = new("UIScale", { Scale = 0.94 }, intro)
+    local function fitIntro()
+        local camera = workspace.CurrentCamera
+        if camera then
+            introScale.Scale = math.min(1, (camera.ViewportSize.X - 24) / 520,
+                (camera.ViewportSize.Y - 24) / 374)
+        end
+    end
+    fitIntro()
+    local fitConnection = RunService.Heartbeat:Connect(fitIntro)
+    local function introText(parent, value, x, y, w, h, size, color, font)
         return new("TextLabel", {
             Text = value, Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(w, h),
             BackgroundTransparency = 1, Font = font or Enum.Font.Gotham,
             TextSize = size, TextColor3 = color, TextXAlignment = Enum.TextXAlignment.Left,
         }, parent)
     end
-    text(picker, "SUNSET.WTF", 26, 22, 348, 22, 15, T.red, Enum.Font.GothamBold)
-    text(picker, "Choose your game", 26, 57, 348, 32, 24, T.text, Enum.Font.GothamBold)
-    local gameButton = new("TextButton", {
-        Position = UDim2.fromOffset(26, 110), Size = UDim2.fromOffset(348, 72),
-        BackgroundColor3 = Color3.fromRGB(35, 23, 30), BorderSizePixel = 0,
-        Text = "", AutoButtonColor = false,
-    }, picker)
-    new("UICorner", { CornerRadius = UDim.new(0, 9) }, gameButton)
-    local gameBorder = border(gameButton, T.red, 1)
-    local reticle = new("Frame", {
-        Position = UDim2.fromOffset(19, 21), Size = UDim2.fromOffset(30, 30),
-        BackgroundTransparency = 1,
-    }, gameButton)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, reticle)
-    border(reticle, T.red, 2)
-    new("Frame", { Size = UDim2.fromOffset(40, 2), Position = UDim2.fromOffset(-5, 14), BackgroundColor3 = T.red, BorderSizePixel = 0 }, reticle)
-    new("Frame", { Size = UDim2.fromOffset(2, 40), Position = UDim2.fromOffset(14, -5), BackgroundColor3 = T.red, BorderSizePixel = 0 }, reticle)
-    text(gameButton, "Sniper Duels", 70, 23, 240, 26, 18, T.text, Enum.Font.GothamBold)
-    local zombieButton = new("TextButton", {
-        Position = UDim2.fromOffset(26, 196), Size = UDim2.fromOffset(348, 72),
-        BackgroundColor3 = Color3.fromRGB(35, 23, 30), BorderSizePixel = 0,
-        Text = "Zombie Survival Arena", Font = Enum.Font.GothamBold,
-        TextSize = 18, TextColor3 = T.text, AutoButtonColor = false,
-    }, picker)
-    new("UICorner", { CornerRadius = UDim.new(0, 9) }, zombieButton)
-    border(zombieButton, T.red)
-    local otherButton = new("TextButton", {
-        Position = UDim2.fromOffset(26, 282), Size = UDim2.fromOffset(348, 44),
-        BackgroundColor3 = Color3.fromRGB(26, 28, 36), BorderSizePixel = 0,
-        Text = "My game's not on here", Font = Enum.Font.Gotham, TextSize = 14,
-        TextColor3 = T.dim, AutoButtonColor = false,
-    }, picker)
-    new("UICorner", { CornerRadius = UDim.new(0, 8) }, otherButton)
-    text(picker, "BY ZYNX", 26, 350, 348, 18, 10, T.dim)
-    local intro = new("CanvasGroup", {
-        Size = UDim2.fromOffset(400, 330), Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = Color3.fromRGB(12, 13, 19),
-        BorderSizePixel = 0, GroupTransparency = 1, Visible = false, ZIndex = 1002,
-    }, Gui)
-    new("UICorner", { CornerRadius = UDim.new(0, 16) }, intro)
-    local edge = border(intro, T.red, 1)
-    local introScale = new("UIScale", { Scale = 0.94 }, intro)
+    local topLine = new("Frame", {
+        Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 3),
+        BorderSizePixel = 0, BackgroundColor3 = T.red,
+    }, intro)
+    new("UIGradient", {
+        Color = ColorSequence.new(Color3.fromRGB(107, 41, 88),
+            Color3.fromRGB(255, 138, 91)),
+    }, topLine)
+    introText(intro, "SUNSET.WTF", 27, 20, 280, 24, 18, T.text, Enum.Font.GothamBold)
+    introText(intro, "BY ZYNX  /  CLIENT INITIALIZATION", 28, 47, 310, 16, 10, T.dim)
+    local support = introText(intro, detectedGame and "SUPPORTED" or "UNSUPPORTED",
+        385, 25, 110, 24, 11, detectedGame and Color3.fromRGB(115, 229, 170)
+            or Color3.fromRGB(255, 121, 121), Enum.Font.GothamBold)
+    support.TextXAlignment = Enum.TextXAlignment.Right
+    local line = new("Frame", {
+        Position = UDim2.fromOffset(27, 77), Size = UDim2.fromOffset(466, 1),
+        BackgroundColor3 = Color3.fromRGB(54, 56, 66), BorderSizePixel = 0,
+    }, intro)
+    local scanner = new("Frame", {
+        Position = UDim2.fromOffset(34, 104), Size = UDim2.fromOffset(178, 178),
+        BackgroundColor3 = Color3.fromRGB(24, 25, 36), BorderSizePixel = 0,
+    }, intro)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, scanner)
+    border(scanner, Color3.fromRGB(92, 55, 77), 1)
     local orbitGradients = {}
     for i = 1, 3 do
-        local diameter = 84 + i*22
+        local diameter = 62 + i * 35
         local circle = new("Frame", {
             Size = UDim2.fromOffset(diameter, diameter),
-            Position = UDim2.fromOffset(200, 108), AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.5), AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundTransparency = 1,
-        }, intro)
+        }, scanner)
         new("UICorner", { CornerRadius = UDim.new(1, 0) }, circle)
-        local line = border(circle, i == 2 and Color3.fromRGB(250, 153, 114) or T.red, i == 2 and 2 or 1)
+        local stroke = border(circle, i == 2 and Color3.fromRGB(248, 138, 104) or T.red,
+            i == 2 and 2 or 1)
         local gradient = new("UIGradient", {
             Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.98),
-                NumberSequenceKeypoint.new(0.5, 0.08),
-                NumberSequenceKeypoint.new(1, 0.98),
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.35, 0.1),
+                NumberSequenceKeypoint.new(1, 0.92),
             }),
-            Rotation = i*75,
-        }, line)
+            Rotation = i * 100,
+        }, stroke)
         table.insert(orbitGradients, gradient)
     end
-    local monogram = text(intro, "S", 160, 74, 80, 68, 54, T.text, Enum.Font.GothamBold)
+    local monogram = introText(scanner, "S", 51, 46, 76, 86, 60, T.text, Enum.Font.GothamBold)
     monogram.TextXAlignment = Enum.TextXAlignment.Center
-    local brand = text(intro, "SUNSET.WTF", 30, 192, 340, 36, 27, T.text, Enum.Font.GothamBold)
-    brand.TextXAlignment = Enum.TextXAlignment.Center
-    local shine = new("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, T.red),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 228, 211)),
-            ColorSequenceKeypoint.new(1, T.red),
-        }),
-    }, brand)
-    local gameText = text(intro, "", 30, 236, 340, 18, 12, T.dim)
-    gameText.TextXAlignment = Enum.TextXAlignment.Center
-    local bar = new("Frame", {
-        Position = UDim2.fromOffset(34, 277), Size = UDim2.fromOffset(332, 3),
-        BackgroundColor3 = Color3.fromRGB(38, 30, 38), BorderSizePixel = 0,
-    }, intro)
-    local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.red, BorderSizePixel = 0 }, bar)
-    local percent = text(intro, "0%", 34, 292, 332, 16, 10, T.dim)
-    percent.TextXAlignment = Enum.TextXAlignment.Right
-    local particles = {}
-    for i = 1, 12 do
-        local dot = new("Frame", {
-            Size = UDim2.fromOffset(i%3 == 0 and 3 or 2, i%3 == 0 and 3 or 2),
-            BackgroundColor3 = T.red, BackgroundTransparency = 0.65, BorderSizePixel = 0,
-        }, intro)
-        new("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
-        table.insert(particles, dot)
+    local sweep = new("Frame", {
+        Size = UDim2.fromOffset(126, 2), Position = UDim2.fromOffset(26, 88),
+        BackgroundColor3 = T.red, BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+    }, scanner)
+    local phaseTitle = introText(intro, "DETECTING EXPERIENCE", 240, 105, 252, 24,
+        14, T.text, Enum.Font.GothamBold)
+    local gameName = introText(intro, detectedGame or "Unknown Roblox game",
+        240, 132, 252, 38, 20, T.red, Enum.Font.GothamBold)
+    gameName.TextWrapped = true
+    local steps = {}
+    local stepNames = { "Detect experience", "Verify game modules", "Start Sunset interface" }
+    for i, title in ipairs(stepNames) do
+        local y = 190 + (i - 1) * 30
+        local step = introText(intro, string.format("0%d  %s", i, title),
+            240, y, 245, 22, 12, T.dim, Enum.Font.Gotham)
+        table.insert(steps, step)
     end
+    local progressLabel = introText(intro, "INITIALIZING", 27, 309, 230, 16,
+        10, T.dim, Enum.Font.GothamBold)
+    local percent = introText(intro, "0%", 444, 308, 48, 16,
+        10, T.text, Enum.Font.GothamBold)
+    percent.TextXAlignment = Enum.TextXAlignment.Right
+    local segments = {}
+    for i = 1, 24 do
+        local segment = new("Frame", {
+            Position = UDim2.fromOffset(27 + (i - 1) * 20, 336),
+            Size = UDim2.fromOffset(15, 6), BackgroundColor3 = Color3.fromRGB(45, 44, 55),
+            BorderSizePixel = 0,
+        }, intro)
+        table.insert(segments, segment)
+    end
+    introText(intro, "Sunset detects the current game automatically", 27, 351, 460, 15,
+        10, T.dim)
+    local close = new("TextButton", {
+        Position = UDim2.fromOffset(240, 258), Size = UDim2.fromOffset(249, 32),
+        BackgroundColor3 = Color3.fromRGB(72, 37, 48), BorderSizePixel = 0,
+        Text = "CLOSE", Font = Enum.Font.GothamBold, TextSize = 12,
+        TextColor3 = T.text, AutoButtonColor = false, Visible = false,
+    }, intro)
+    new("UICorner", { CornerRadius = UDim.new(0, 6) }, close)
     local function animate(object, duration, properties)
-        local tween = TweenService:Create(object, TweenInfo.new(duration, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), properties)
-        table.insert(animations, tween)
+        local tween = TweenService:Create(object,
+            TweenInfo.new(duration, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), properties)
+        table.insert(tweens, tween)
         tween:Play()
     end
     local function dispose()
         if stopped then return end
         stopped = true
         if frameConnection then frameConnection:Disconnect() end
-        for _, tween in ipairs(animations) do tween:Cancel() end
+        fitConnection:Disconnect()
+        for _, tween in ipairs(tweens) do tween:Cancel() end
         shade:Destroy()
-        picker:Destroy()
         intro:Destroy()
     end
     track({ Disconnect = dispose })
-    local function selectGame(name)
-        if selected or stopped then return end
-        selected = true
-        Settings.SelectedGame = name
-        zombieShowButton.Visible = name == "Zombie Survival Arena"
-        gameText.Text = name == "Other" and "Your game  /  ZYNX" or name .. "  /  ZYNX"
-        animate(picker, 0.2, { GroupTransparency = 1 })
+    close.MouseButton1Click:Connect(function()
+        dispose()
+        loading = false
+        onMenuVisibility()
+    end)
+    animate(intro, 0.4, { GroupTransparency = 0 })
+    frameConnection = RunService.RenderStepped:Connect(function(dt)
+        elapsed += dt
+        for i, gradient in ipairs(orbitGradients) do
+            gradient.Rotation = elapsed * (i % 2 == 0 and -115 or 90) + i * 100
+        end
+        sweep.Rotation = elapsed * 55
+        if not detectedGame then return end
+        local progress = math.clamp(elapsed / 2.6, 0, 1)
+        percent.Text = tostring(math.floor(progress * 100)) .. "%"
+        for i, segment in ipairs(segments) do
+            segment.BackgroundColor3 = i <= math.floor(progress * #segments)
+                and T.red or Color3.fromRGB(45, 44, 55)
+        end
+        for i, step in ipairs(steps) do
+            step.TextColor3 = progress >= (i - 1) / 3 and T.text or T.dim
+        end
+        if progress < 0.33 then progressLabel.Text = "IDENTIFYING GAME"
+        elseif progress < 0.7 then progressLabel.Text = "LOADING MODULES"
+        else progressLabel.Text = "READY TO LAUNCH" end
+    end)
+    if detectedGame then
+        Settings.SelectedGame = detectedGame
+        showGameSections(detectedGame)
+        Title.Text = "  Sunset.wtf | " .. detectedGame
         task.spawn(function()
-            task.wait(0.22)
+            task.wait(2.7)
             if stopped or not Gui.Parent then return end
-            picker.Visible = false
-            intro.Visible = true
-            animate(intro, 0.35, { GroupTransparency = 0 })
-            animate(introScale, 0.5, { Scale = 1 })
-            frameConnection = RunService.RenderStepped:Connect(function(dt)
-                elapsed += dt
-                local progress = math.clamp(elapsed/2.4, 0, 1)
-                fill.Size = UDim2.fromScale(1-(1-progress)^2, 1)
-                percent.Text = tostring(math.floor((1-(1-progress)^2)*100)) .. "%"
-                shine.Offset = Vector2.new(math.sin(elapsed*2)*0.8, 0)
-                edge.Transparency = 0.25 + 0.15*math.sin(elapsed*3)
-                for i, gradient in ipairs(orbitGradients) do gradient.Rotation = elapsed*(i%2 == 0 and -100 or 75)+i*75 end
-                for i, dot in ipairs(particles) do
-                    local angle = i*math.pi/6 + elapsed*0.2
-                    local radius = 85 + (i%3)*9
-                    dot.Position = UDim2.fromOffset(200+math.cos(angle)*radius,108+math.sin(angle)*radius)
-                end
-            end)
-            task.wait(2.4)
-            if stopped or not Gui.Parent then return end
-            gameText.Text = "WELCOME TO SUNSET"
-            task.wait(0.22)
-            if stopped or not Gui.Parent then return end
-            animate(intro, 0.3, { GroupTransparency = 1 })
-            animate(introScale, 0.3, { Scale = 1.05 })
-            animate(shade, 0.3, { BackgroundTransparency = 1 })
-            task.wait(0.32)
+            progressLabel.Text = "SUNSET IS READY"
+            animate(intro, 0.35, { GroupTransparency = 1 })
+            animate(shade, 0.35, { BackgroundTransparency = 1 })
+            task.wait(0.38)
             if stopped or not Gui.Parent then return end
             dispose()
             loading = false
-            if name == "Zombie Survival Arena" then
-                Window.Position = UDim2.new(0.5, -285, 0.5, 0)
-                ZombieWindow.Visible = true
-            end
             Window.Visible = true
         end)
+    else
+        Zombie.Stop()
+        BedWars.Stop()
+        phaseTitle.Text = "THIS GAME IS NOT SUPPORTED"
+        gameName.Text = "No modules loaded"
+        gameName.TextColor3 = Color3.fromRGB(255, 121, 121)
+        steps[1].Text = "Supported: BedWars"
+        steps[2].Text = "Sniper Arena"
+        steps[3].Text = "Survive Zombie Arena"
+        progressLabel.Text = "YOU CAN KEEP PLAYING"
+        percent.Text = ""
+        close.Visible = true
     end
-    gameButton.MouseButton1Click:Connect(function() selectGame("Sniper Duels") end)
-    zombieButton.MouseButton1Click:Connect(function() selectGame("Zombie Survival Arena") end)
-    otherButton.MouseButton1Click:Connect(function() selectGame("Other") end)
-    gameButton.MouseEnter:Connect(function() if not selected then animate(gameButton, 0.15, { BackgroundColor3 = Color3.fromRGB(53, 28, 37) }) end end)
-    gameButton.MouseLeave:Connect(function() if not selected then animate(gameButton, 0.15, { BackgroundColor3 = Color3.fromRGB(35, 23, 30) }) end end)
-    zombieButton.MouseEnter:Connect(function() if not selected then animate(zombieButton, 0.15, { BackgroundColor3 = Color3.fromRGB(53, 28, 37) }) end end)
-    zombieButton.MouseLeave:Connect(function() if not selected then animate(zombieButton, 0.15, { BackgroundColor3 = Color3.fromRGB(35, 23, 30) }) end end)
-    otherButton.MouseEnter:Connect(function() if not selected then animate(otherButton, 0.15, { TextColor3 = T.text }) end end)
-    otherButton.MouseLeave:Connect(function() if not selected then animate(otherButton, 0.15, { TextColor3 = T.dim }) end end)
-    animate(picker, 0.3, { GroupTransparency = 0 })
-    animate(pickerScale, 0.4, { Scale = 1 })
 end
