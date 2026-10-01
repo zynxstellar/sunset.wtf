@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-ore-pickup-8bd3"
+local SUNSET_BUILD = "20261001-bedwars-ui-93f2"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -132,8 +132,9 @@ local Window = new("Frame", {
     BorderSizePixel = 0,
     Active = true,
 }, Gui)
+local BedWarsUI
 local function anyMenuVisible()
-    return Window.Visible
+    return Window.Visible or (BedWarsUI and BedWarsUI.Visible) or false
 end
 border(Window, T.outer, 1)
 local menuScale = new("UIScale", { Scale = 1 }, Window)
@@ -157,7 +158,11 @@ local listeningFor = nil
 -- The menu is available as soon as its window is created.
 track(UIS.InputBegan:Connect(function(i, gp)
     if not listeningFor and i.KeyCode == Settings.MenuKey and not UIS:GetFocusedTextBox() then
-        Window.Visible = not Window.Visible
+        if Settings.SelectedGame == "BedWars" and BedWarsUI then
+            BedWarsUI.Visible = not BedWarsUI.Visible
+        else
+            Window.Visible = not Window.Visible
+        end
     end
 end))
 
@@ -2441,7 +2446,7 @@ do
         if not enabled then return end
         -- Avoid competing with movement modules that own the character rotation.
         if Settings.FlyEnabled or Settings.AutoTp
-            or (BedWars and (BedWars.FlipOn or BedWars.LieOn)) then restoreSpin() return end
+            or (BedWars and BedWars.FlipOn) then restoreSpin() return end
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -4220,7 +4225,6 @@ function BedWars.Stop()
     BedWars.FakeLagOn = false
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
-    BedWars.LieOn = false
     BedWars.LastSafeCFrame = nil
     stopBedWarsFakeLag()
     stopBedWarsSprint()
@@ -4392,200 +4396,8 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
-local CustomAnimation = { Enabled = false, AnimationId = "", Loop = false, Generation = 0 }
-local customAnimationToggle
-function CustomAnimation.Stop()
-    CustomAnimation.Generation += 1
-    if CustomAnimation.Track then
-        pcall(function() CustomAnimation.Track:Stop(0.15) end)
-        pcall(function() CustomAnimation.Track:Destroy() end)
-        CustomAnimation.Track = nil
-    end
-    if CustomAnimation.Animation then
-        CustomAnimation.Animation:Destroy()
-        CustomAnimation.Animation = nil
-    end
-end
-local function playCustomAnimation()
-    CustomAnimation.Stop()
-    if not CustomAnimation.Enabled then return end
-    local id = CustomAnimation.AnimationId
-    if not id:match("^%d+$") then return end
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return end
-    local generation = CustomAnimation.Generation
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-        or humanoid:WaitForChild("Animator", 2)
-    if generation ~= CustomAnimation.Generation or not CustomAnimation.Enabled or not animator then return end
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://" .. id
-    local ok, animationTrack = pcall(function()
-        return animator:LoadAnimation(animation)
-    end)
-    if not ok or not animationTrack then
-        animation:Destroy()
-        return
-    end
-    CustomAnimation.Animation, CustomAnimation.Track = animation, animationTrack
-    animationTrack.Priority = Enum.AnimationPriority.Action4
-    animationTrack.Looped = CustomAnimation.Loop
-    local played = pcall(function() animationTrack:Play(0.15) end)
-    if not played then CustomAnimation.Stop() end
-end
-track(LocalPlayer.CharacterAdded:Connect(function()
-    if not CustomAnimation.Enabled then return end
-    task.wait(0.5)
-    if CustomAnimation.Enabled then playCustomAnimation() end
-end))
-
-local LieDown = { Enabled = false, AnimationId = "112195772277805", Generation = 0 }
-function LieDown.Stop()
-    LieDown.Generation += 1
-    if LieDown.Track then
-        pcall(function() LieDown.Track:Stop(0.15) end)
-        pcall(function() LieDown.Track:Destroy() end)
-        LieDown.Track = nil
-    end
-    if LieDown.Animation then LieDown.Animation:Destroy() LieDown.Animation = nil end
-    if LieDown.Root and LieDown.Root.Parent then
-        LieDown.Root.CFrame = CFrame.new(LieDown.Root.Position)
-            * CFrame.Angles(0, LieDown.Yaw or 0, 0)
-        LieDown.Root.AssemblyAngularVelocity = Vector3.zero
-    end
-    if LieDown.Humanoid and LieDown.Humanoid.Parent then
-        LieDown.Humanoid.AutoRotate = LieDown.OriginalAutoRotate
-    end
-    LieDown.Root, LieDown.Humanoid = nil, nil
-    LieDown.Yaw, LieDown.OriginalAutoRotate = nil, nil
-end
-local function bedWarsLiePose(character)
-    local root = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then return end
-    LieDown.Root, LieDown.Humanoid = root, humanoid
-    LieDown.OriginalAutoRotate = humanoid.AutoRotate
-    local _, yaw = root.CFrame:ToOrientation()
-    LieDown.Yaw = yaw
-end
-track(RunService.Heartbeat:Connect(function()
-    if not LieDown.Enabled or Settings.SelectedGame ~= "BedWars" then return end
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid or humanoid.Health <= 0 or root.Anchored then return end
-    if root ~= LieDown.Root then bedWarsLiePose(character) end
-    humanoid.AutoRotate = false
-    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, LieDown.Yaw or 0, 0)
-        * CFrame.Angles(math.rad(90), 0, 0)
-    root.AssemblyAngularVelocity = Vector3.zero
-end))
-local function startBedWarsLieDown()
-    LieDown.Stop()
-    if not LieDown.Enabled or Settings.SelectedGame ~= "BedWars" then return end
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return end
-    bedWarsLiePose(character)
-    local generation = LieDown.Generation
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-        or humanoid:WaitForChild("Animator", 2)
-    if generation ~= LieDown.Generation or not LieDown.Enabled then return end
-    if not animator then return end
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://" .. LieDown.AnimationId
-    local ok, animationTrack = pcall(function()
-        return animator:LoadAnimation(animation)
-    end)
-    if not ok or not animationTrack then
-        animation:Destroy()
-        return
-    end
-    LieDown.Animation, LieDown.Track = animation, animationTrack
-    animationTrack.Priority = Enum.AnimationPriority.Action4
-    animationTrack.Looped = true
-    local played = pcall(function() animationTrack:Play(0.15) end)
-    if not played then
-        pcall(function() animationTrack:Destroy() end)
-        animation:Destroy()
-        LieDown.Track, LieDown.Animation = nil, nil
-    end
-end
-track(LocalPlayer.CharacterAdded:Connect(function()
-    if not LieDown.Enabled then return end
-    task.wait(0.5)
-    if LieDown.Enabled then startBedWarsLieDown() end
-end))
-
 do
     local gameName = "BedWars"
-    local lieSection = gameSection(gameName, PlayerTab.Left, "Lie Down")
-    local lieToggle = Elements.Toggle(lieSection, "Lie Down", false, function(on)
-        LieDown.Enabled = on
-        BedWars.LieOn = on
-        if on and flipToggle and flipToggle.Get() then flipToggle.Set(false) end
-        if on and spinToggle and spinToggle.Get() then spinToggle.Set(false) end
-        if on and customAnimationToggle and customAnimationToggle.Get() then
-            customAnimationToggle.Set(false)
-        end
-        if on then startBedWarsLieDown() else LieDown.Stop() end
-    end)
-    local lieInput = Elements.TextBox(lieSection, "Animation ID", "112195772277805", function(value)
-        LieDown.AnimationId = tostring(value):match("%d+") or "112195772277805"
-        if LieDown.Enabled then startBedWarsLieDown() end
-    end)
-    local lieBox = lieInput:FindFirstChildOfClass("TextBox")
-    lieBox.Text = LieDown.AnimationId
-    table.insert(ConfigControls, {
-        Kind = "text", Key = configKey(lieSection, "Animation ID"),
-        Get = function() return lieBox.Text end,
-        Set = function(value)
-            lieBox.Text = tostring(value or "")
-            LieDown.AnimationId = lieBox.Text:match("%d+") or "112195772277805"
-            if LieDown.Enabled then startBedWarsLieDown() end
-        end,
-        Box = lieSection.Parent, Row = lieInput,
-    })
-    local animationSection = makeSection(PlayerTab.Right, "Custom Animation")
-    local animationInput = Elements.TextBox(animationSection, "Animation ID", "Enter an ID", function(value)
-        CustomAnimation.AnimationId = tostring(value):match("^%s*(%d+)%s*$") or ""
-        if CustomAnimation.AnimationId ~= "" then
-            if customAnimationToggle.Get() then playCustomAnimation()
-            else customAnimationToggle.Set(true) end
-        else
-            customAnimationToggle.Set(false)
-        end
-    end)
-    local animationBox = animationInput:FindFirstChildOfClass("TextBox")
-    table.insert(ConfigControls, {
-        Kind = "text", Key = configKey(animationSection, "Animation ID"),
-        Get = function() return animationBox.Text end,
-        Set = function(value)
-            animationBox.Text = tostring(value or "")
-            CustomAnimation.AnimationId = animationBox.Text:match("^%s*(%d+)%s*$") or ""
-            if CustomAnimation.Enabled then playCustomAnimation() end
-        end,
-        Box = animationSection.Parent, Row = animationInput,
-    })
-    customAnimationToggle = Elements.Toggle(animationSection, "Play Animation", false, function(on)
-        CustomAnimation.Enabled = on
-        if on then
-            if lieToggle.Get() then lieToggle.Set(false) end
-            playCustomAnimation()
-        else
-            CustomAnimation.Stop()
-        end
-    end)
-    Elements.Toggle(animationSection, "Loop Animation", false, function(on)
-        CustomAnimation.Loop = on
-        if CustomAnimation.Track then CustomAnimation.Track.Looped = on end
-    end)
-    Elements.Button(animationSection, "Play 94292601332790", function()
-        animationBox.Text = "94292601332790"
-        CustomAnimation.AnimationId = animationBox.Text
-        if customAnimationToggle.Get() then playCustomAnimation()
-        else customAnimationToggle.Set(true) end
-    end)
     Flip = { Stop = function() end }
     local flipHumanoid, flipRoot, originalAutoRotate, flipYaw
     function Flip.Stop()
@@ -4603,7 +4415,6 @@ do
     local flipSection = gameSection(gameName, FunTab.Left, "Flip")
     flipToggle = Elements.Toggle(flipSection, "Upside Down", false, function(on)
         if on then
-            if lieToggle.Get() then lieToggle.Set(false) end
             if spinToggle and spinToggle.Get() then spinToggle.Set(false) end
             BedWars.FlipOn = true
         else
@@ -4877,14 +4688,330 @@ end
 -- ============================================================
 makeDraggable(Window, TitleBar)
 
+-- BedWars uses a compact module board. It drives the same controls as the
+-- classic menu, so keybinds, callbacks, and saved configurations stay shared.
+local function buildBedWarsUI()
+    local accent = Color3.fromRGB(75, 220, 182)
+    local dark = Color3.fromRGB(13, 17, 22)
+    local columnColor = Color3.fromRGB(20, 26, 32)
+    local cardColor = Color3.fromRGB(29, 36, 43)
+    local muted = Color3.fromRGB(135, 149, 158)
+    BedWarsUI = new("Frame", {
+        Name = "BedWarsBoard", Visible = false, Active = true,
+        Size = UDim2.fromOffset(1500, 630),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = dark, BorderSizePixel = 0,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 10) }, BedWarsUI)
+    border(BedWarsUI, Color3.fromRGB(54, 71, 75))
+    local boardScale = new("UIScale", { Scale = 1 }, BedWarsUI)
+    local function fitBoard()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        boardScale.Scale = math.max(0.32, math.min(1,
+            (camera.ViewportSize.X - 32) / 1500,
+            (camera.ViewportSize.Y - 32) / 630))
+    end
+    fitBoard()
+    track(RunService.Heartbeat:Connect(fitBoard))
+
+    local header = new("Frame", {
+        Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
+    }, BedWarsUI)
+    local title = label(header, "SUNSET.WTF", 22, Color3.fromRGB(238, 250, 247))
+    title.Font = Enum.Font.GothamBold
+    title.Position = UDim2.fromOffset(22, 12)
+    title.Size = UDim2.fromOffset(230, 27)
+    local subtitle = label(header, "BEDWARS  /  MODULES", 11, accent)
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.Position = UDim2.fromOffset(24, 42)
+    subtitle.Size = UDim2.fromOffset(235, 17)
+    local searchFrame = new("Frame", {
+        Position = UDim2.new(1, -397, 0, 17),
+        Size = UDim2.fromOffset(340, 36),
+        BackgroundColor3 = columnColor, BorderSizePixel = 0,
+    }, header)
+    new("UICorner", { CornerRadius = UDim.new(0, 7) }, searchFrame)
+    border(searchFrame, Color3.fromRGB(54, 67, 72))
+    local searchIcon = label(searchFrame, "⌕", 22, accent)
+    searchIcon.Position = UDim2.fromOffset(11, 5)
+    searchIcon.Size = UDim2.fromOffset(21, 25)
+    local searchBox = new("TextBox", {
+        Position = UDim2.fromOffset(36, 3),
+        Size = UDim2.new(1, -45, 1, -6),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Font = Enum.Font.Gotham, TextSize = 14,
+        TextColor3 = Color3.fromRGB(235, 245, 242),
+        PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
+        ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
+    }, searchFrame)
+    local closeButton = new("TextButton", {
+        Position = UDim2.new(1, -48, 0, 17),
+        Size = UDim2.fromOffset(32, 36),
+        BackgroundColor3 = columnColor, BorderSizePixel = 0,
+        Font = Enum.Font.GothamBold, TextSize = 18,
+        Text = "×", TextColor3 = muted, AutoButtonColor = false,
+    }, header)
+    new("UICorner", { CornerRadius = UDim.new(0, 6) }, closeButton)
+    closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
+    new("Frame", {
+        Position = UDim2.fromOffset(20, 69),
+        Size = UDim2.new(1, -40, 0, 1),
+        BackgroundColor3 = Color3.fromRGB(48, 62, 67), BorderSizePixel = 0,
+    }, BedWarsUI)
+
+    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Sunset" }
+    local columns = {}
+    for index, name in ipairs(categoryOrder) do
+        local col = new("Frame", {
+            Name = name, Position = UDim2.fromOffset(20 + (index - 1) * 210, 83),
+            Size = UDim2.fromOffset(200, 513),
+            BackgroundColor3 = columnColor, BorderSizePixel = 0,
+        }, BedWarsUI)
+        new("UICorner", { CornerRadius = UDim.new(0, 8) }, col)
+        border(col, Color3.fromRGB(44, 57, 62))
+        local heading = label(col, string.upper(name), 14, Color3.fromRGB(236, 247, 244))
+        heading.Font = Enum.Font.GothamBold
+        heading.Position = UDim2.fromOffset(13, 12)
+        heading.Size = UDim2.fromOffset(145, 20)
+        local count = label(col, "0", 11, muted, Enum.TextXAlignment.Right)
+        count.Position = UDim2.new(1, -43, 0, 13)
+        count.Size = UDim2.fromOffset(30, 18)
+        new("Frame", {
+            Position = UDim2.fromOffset(13, 39),
+            Size = UDim2.new(1, -26, 0, 2),
+            BackgroundColor3 = accent, BorderSizePixel = 0,
+        }, col)
+        local list = new("ScrollingFrame", {
+            Position = UDim2.fromOffset(9, 51),
+            Size = UDim2.new(1, -18, 1, -60),
+            BackgroundTransparency = 1, BorderSizePixel = 0,
+            ScrollBarThickness = 2, ScrollBarImageColor3 = accent,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+        }, col)
+        new("UIListLayout", { Padding = UDim.new(0, 7),
+            SortOrder = Enum.SortOrder.LayoutOrder }, list)
+        new("UIPadding", { PaddingBottom = UDim.new(0, 8) }, list)
+        columns[name] = { List = list, Count = count }
+    end
+    local footer = label(BedWarsUI,
+        "LEFT CLICK  TOGGLE     •     RIGHT CLICK  SETTINGS     •     RIGHT SHIFT  CLOSE",
+        11, muted)
+    footer.Font = Enum.Font.Gotham
+    footer.Position = UDim2.fromOffset(22, 605)
+    footer.Size = UDim2.new(1, -44, 0, 17)
+
+    local shade = new("TextButton", {
+        Name = "SettingsShade", Visible = false,
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.35, BorderSizePixel = 0, Text = "",
+        AutoButtonColor = false, ZIndex = 20,
+    }, BedWarsUI)
+    local settingsPane = new("Frame", {
+        Position = UDim2.new(1, -446, 0, 80),
+        Size = UDim2.fromOffset(426, 516),
+        BackgroundColor3 = dark, BorderSizePixel = 0, ZIndex = 21,
+    }, shade)
+    new("UICorner", { CornerRadius = UDim.new(0, 9) }, settingsPane)
+    border(settingsPane, accent)
+    local settingsTitle = label(settingsPane, "SETTINGS", 17,
+        Color3.fromRGB(235, 247, 243))
+    settingsTitle.Font = Enum.Font.GothamBold
+    settingsTitle.Position = UDim2.fromOffset(19, 16)
+    settingsTitle.Size = UDim2.fromOffset(335, 24)
+    settingsTitle.ZIndex = 22
+    local settingsHint = label(settingsPane, "Change options below", 11, muted)
+    settingsHint.Font = Enum.Font.Gotham
+    settingsHint.Position = UDim2.fromOffset(20, 42)
+    settingsHint.Size = UDim2.fromOffset(330, 18)
+    settingsHint.ZIndex = 22
+    local settingsClose = new("TextButton", {
+        Position = UDim2.new(1, -42, 0, 15),
+        Size = UDim2.fromOffset(25, 27), BackgroundTransparency = 1,
+        BorderSizePixel = 0, Text = "×", Font = Enum.Font.GothamBold,
+        TextSize = 20, TextColor3 = muted, ZIndex = 22,
+    }, settingsPane)
+    local settingsBody = new("ScrollingFrame", {
+        Position = UDim2.fromOffset(17, 76),
+        Size = UDim2.new(1, -34, 1, -94),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+        ScrollBarThickness = 3, ScrollBarImageColor3 = accent,
+        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ZIndex = 22,
+    }, settingsPane)
+    new("UIListLayout", { Padding = UDim.new(0, 10),
+        SortOrder = Enum.SortOrder.LayoutOrder }, settingsBody)
+    local activeBox, homeParent
+    local function closeSettings()
+        if activeBox and homeParent then activeBox.Parent = homeParent end
+        activeBox, homeParent = nil, nil
+        shade.Visible = false
+    end
+    local function openSettings(box, name)
+        if not box then return end
+        closeSettings()
+        activeBox, homeParent = box, box.Parent
+        box.Parent = settingsBody
+        box.Visible = true
+        settingsTitle.Text = string.upper(name)
+        settingsBody.CanvasPosition = Vector2.zero
+        shade.Visible = true
+    end
+    shade.MouseButton1Click:Connect(closeSettings)
+    settingsClose.MouseButton1Click:Connect(closeSettings)
+    track(BedWarsUI:GetPropertyChangedSignal("Visible"):Connect(function()
+        if not BedWarsUI.Visible then closeSettings() end
+        onMenuVisibility()
+    end))
+
+    local function findControl(tab, gameName, section, toggle)
+        local key = tab .. "/" .. gameName .. "/" .. section .. "/" .. toggle
+        for _, control in ipairs(ConfigControls) do
+            if control.Kind == "toggle" and control.Key == key then return control end
+        end
+        return nil
+    end
+    local function findSection(tabName, gameName, sectionName)
+        local tab = Tabs[tabName]
+        if not tab then return nil end
+        for _, column in ipairs({ tab.Left, tab.Right }) do
+            for _, box in ipairs(column:GetChildren()) do
+                if box:IsA("Frame")
+                    and (box:GetAttribute("SunsetGame") or "All") == gameName then
+                    local titleLabel = box:FindFirstChildOfClass("TextLabel")
+                    if titleLabel and titleLabel.Text == sectionName then return box end
+                end
+            end
+        end
+        return nil
+    end
+    local specs = {
+        { "Combat", "Kill Aura", "Combat", "BedWars", "Combat", "Kill Aura" },
+        { "Combat", "Projectile Aura", "Combat", "BedWars", "Combat", "Projectile Aura" },
+        { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
+        { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
+        { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
+        { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
+        { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
+        { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
+        { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
+        { "Visuals", "Player Outlines", "Visuals", "All", "ESP Boxes", "Player Outlines" },
+        { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
+        { "Visuals", "Bed Outline", "Visuals", "BedWars", "BedWars Map", "Bed Outline" },
+        { "Visuals", "Generator Outline", "Visuals", "BedWars", "BedWars Map", "Generator Outline" },
+        { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
+        { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
+        { "Misc", "Fake Lag", "Misc", "BedWars", "Fake Lag", "Fake Lag" },
+        { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
+        { "Misc", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
+        { "Fun", "Upside Down", "Fun", "BedWars", "Flip", "Upside Down" },
+        { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
+        { "Fun", "Rainbow Footsteps", "Fun", "All", "Rainbow Footsteps", "Rainbow Footsteps" },
+        { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+        { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
+        { "Sunset", "Colors", "Sunset", "All", "Colors" },
+        { "Sunset", "Configs", "Sunset", "All", "Configs" },
+        { "Sunset", "Menu Key", "Sunset", "All", "Main" },
+    }
+    local cards = {}
+    for index, spec in ipairs(specs) do
+        local category, name, tabName, gameName, sectionName, toggleName =
+            spec[1], spec[2], spec[3], spec[4], spec[5], spec[6]
+        local control = toggleName and findControl(tabName, gameName, sectionName, toggleName)
+        local box = control and control.Box or findSection(tabName, gameName, sectionName)
+        if box and (not toggleName or control) then
+            local card = new("TextButton", {
+                Name = name, Size = UDim2.new(1, -3, 0, 42),
+                BackgroundColor3 = cardColor, BorderSizePixel = 0,
+                Text = "", AutoButtonColor = false, LayoutOrder = index,
+            }, columns[category].List)
+            new("UICorner", { CornerRadius = UDim.new(0, 6) }, card)
+            local cardStroke = border(card, Color3.fromRGB(45, 59, 64))
+            local activeStripe = new("Frame", {
+                Position = UDim2.fromOffset(0, 7), Size = UDim2.fromOffset(3, 28),
+                BackgroundColor3 = accent, BorderSizePixel = 0, Visible = false,
+            }, card)
+            local nameLabel = label(card, name, 12, Color3.fromRGB(231, 242, 239))
+            nameLabel.Font = Enum.Font.Gotham
+            nameLabel.Position = UDim2.fromOffset(12, 6)
+            nameLabel.Size = UDim2.new(1, -53, 0, 18)
+            nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            local stateLabel = label(card, control and "OFF" or "OPEN", 10, muted)
+            stateLabel.Font = Enum.Font.GothamBold
+            stateLabel.Position = UDim2.fromOffset(12, 24)
+            stateLabel.Size = UDim2.fromOffset(65, 13)
+            local options = new("TextButton", {
+                Position = UDim2.new(1, -35, 0, 6),
+                Size = UDim2.fromOffset(28, 29),
+                BackgroundColor3 = Color3.fromRGB(39, 49, 55),
+                BorderSizePixel = 0, Text = "···",
+                Font = Enum.Font.GothamBold, TextSize = 15,
+                TextColor3 = muted, AutoButtonColor = false,
+            }, card)
+            new("UICorner", { CornerRadius = UDim.new(0, 5) }, options)
+            options.MouseButton1Click:Connect(function() openSettings(box, name) end)
+            card.MouseButton2Click:Connect(function() openSettings(box, name) end)
+            card.MouseButton1Click:Connect(function()
+                if control then control.Set(not control.Get())
+                else openSettings(box, name) end
+            end)
+            card.MouseEnter:Connect(function() cardStroke.Color = accent end)
+            card.MouseLeave:Connect(function()
+                cardStroke.Color = Color3.fromRGB(45, 59, 64)
+            end)
+            local searchText = string.lower(category .. " " .. name .. " " .. sectionName)
+            for _, descendant in ipairs(box:GetDescendants()) do
+                if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+                    searchText ..= " " .. string.lower(descendant.Text)
+                end
+            end
+            table.insert(cards, { Category = category, Card = card, Control = control,
+                Stripe = activeStripe, State = stateLabel, Search = searchText })
+        end
+    end
+    local function refreshSearch()
+        local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
+        local counts = {}
+        for _, entry in ipairs(cards) do
+            local show = query == "" or string.find(entry.Search, query, 1, true) ~= nil
+            entry.Card.Visible = show
+            if show then counts[entry.Category] = (counts[entry.Category] or 0) + 1 end
+        end
+        for name, column in pairs(columns) do
+            column.Count.Text = tostring(counts[name] or 0)
+        end
+    end
+    searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
+    refreshSearch()
+    task.spawn(function()
+        while BedWarsUI.Parent do
+            if BedWarsUI.Visible then
+                for _, entry in ipairs(cards) do
+                    local active = entry.Control and entry.Control.Get() or false
+                    entry.Stripe.Visible = active
+                    entry.State.Text = entry.Control and (active and "ON" or "OFF") or "OPEN"
+                    entry.State.TextColor3 = active and accent or muted
+                end
+            end
+            task.wait(0.15)
+        end
+    end)
+    local dragHandle = new("Frame", {
+        Name = "DragHandle", Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.fromOffset(285, 69),
+        BackgroundTransparency = 1, Active = true,
+    }, header)
+    makeDraggable(BedWarsUI, dragHandle)
+end
+buildBedWarsUI()
+
 -- ============================================================
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
 -- ============================================================
 ENV.SunsetUnload = function()
-    CustomAnimation.Enabled = false
-    CustomAnimation.Stop()
-    LieDown.Enabled = false
-    LieDown.Stop()
     GhostPulse.Stop()
     Fun.Running = false
     Fun.Enabled = false
@@ -5000,6 +5127,11 @@ do
         showGameSections(detectedGame)
         if RefreshConfigList then RefreshConfigList() end
         Title.Text = "  Sunset.wtf | " .. detectedGame
+        if detectedGame == "BedWars" then
+            BedWarsUI.Visible = true
+            Window.Visible = false
+            onMenuVisibility()
+        end
     else
         Zombie.Stop()
         BedWars.Stop()
