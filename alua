@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-ui-refresh-d812"
+local SUNSET_BUILD = "20261001-menu-reveal-f218"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4707,15 +4707,17 @@ local function buildBedWarsUI()
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
     local boardScale = new("UIScale", { Scale = 1 }, BedWarsUI)
+    local openingScale = new("NumberValue", { Value = 1 }, BedWarsUI)
     local function fitBoard()
         local camera = workspace.CurrentCamera
         if not camera then return end
-        boardScale.Scale = math.max(0.32, math.min(1,
+        boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
             (camera.ViewportSize.X - 32) / 1500,
             (camera.ViewportSize.Y - 32) / 650))
     end
     fitBoard()
     track(RunService.Heartbeat:Connect(fitBoard))
+    track(openingScale:GetPropertyChangedSignal("Value"):Connect(fitBoard))
 
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
@@ -4901,8 +4903,49 @@ local function buildBedWarsUI()
             if activeHolder == holder then column.Reflow() end
         end)
     end
+    local openingTween
+    local panelTweens = {}
+    local panelDestinations = {}
     track(BedWarsUI:GetPropertyChangedSignal("Visible"):Connect(function()
-        if not BedWarsUI.Visible then closeSettings() end
+        if openingTween then openingTween:Cancel() end
+        for _, tween in pairs(panelTweens) do tween:Cancel() end
+        table.clear(panelTweens)
+        if BedWarsUI.Visible then
+            openingScale.Value = 0.88
+            openingTween = TweenService:Create(openingScale,
+                TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                { Value = 1 })
+            openingTween:Play()
+            for index, name in ipairs(categoryOrder) do
+                local panel = columns[name].Frame
+                local destination = panel.Position
+                panelDestinations[name] = destination
+                panel.Position = destination + UDim2.fromOffset(0, -16)
+                local tween = TweenService:Create(panel,
+                    TweenInfo.new(0.28, Enum.EasingStyle.Quad,
+                        Enum.EasingDirection.Out, 0, false, (index - 1) * 0.035),
+                    { Position = destination })
+                panelTweens[name] = tween
+                local completedConnection
+                completedConnection = tween.Completed:Connect(function(state)
+                    if state == Enum.PlaybackState.Completed
+                        and panelTweens[name] == tween then
+                        panelTweens[name] = nil
+                        panelDestinations[name] = nil
+                    end
+                    completedConnection:Disconnect()
+                    tween:Destroy()
+                end)
+                tween:Play()
+            end
+        else
+            openingScale.Value = 1
+            for name, destination in pairs(panelDestinations) do
+                columns[name].Frame.Position = destination
+            end
+            table.clear(panelDestinations)
+            closeSettings()
+        end
         onMenuVisibility()
     end))
 
