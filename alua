@@ -9,6 +9,7 @@ local source = [========[
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local ContextActionService = game:GetService("ContextActionService")
 local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
@@ -18,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-sprint-controller-g456"
+local SUNSET_BUILD = "20261001-module-panels-k915"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -55,7 +56,6 @@ local T = {
 local BedWars
 local bedWarsHiddenSections = {}
 local sniperOnlySections = {}
-local bedWarsOutlineToggle
 local bedWarsNamesToggle
 local flyToggle
 local spinToggle
@@ -84,6 +84,7 @@ local Settings = {
     EspBoxColor    = Color3.fromRGB(255, 255, 255),
     AimFovColor    = Color3.fromRGB(255, 255, 255),
     WatermarkOn    = true,
+    ModuleListOn   = true,
     DisableMoveOpen= false,
 }
 
@@ -422,7 +423,13 @@ local Binds = {}          -- { [toggleObj] = Enum.KeyCode }
 -- listeningFor is shared with the early menu listener.
 
 local function keyName(key)
-    return key and key.Name:upper() or "NONE"
+    if not key then return "[NONE]" end
+    local symbols = {
+        LeftBracket = "[", RightBracket = "]", Semicolon = ";",
+        Quote = "'", Comma = ",", Period = ".", Slash = "/",
+        BackSlash = "\\", Equals = "=", Minus = "-", Backquote = "`",
+    }
+    return symbols[key.Name] or ("[" .. key.Name:upper() .. "]")
 end
 
 function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
@@ -436,10 +443,11 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     local bindBtn = new("TextButton", {
         Size = UDim2.fromOffset(56, 14), Position = UDim2.new(1, -56, 0, 1),
         BackgroundColor3 = T.element, BorderSizePixel = 0,
-        Text = "[" .. keyName(defaultKey) .. "]", Font = T.font, TextSize = 11, TextColor3 = T.dim,
+        Text = keyName(defaultKey), Font = T.font, TextSize = 11, TextColor3 = T.dim,
         AutoButtonColor = false,
     }, row)
     border(bindBtn, T.border)
+    new("UICorner", { CornerRadius = UDim.new(0, 6) }, bindBtn)
     bindBtn.Visible = not noBind
 
     local obj = { _row = row }
@@ -466,7 +474,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
             end
         end
         Binds[obj] = key
-        bindBtn.Text = "[" .. keyName(key) .. "]"
+        bindBtn.Text = keyName(key)
         bindBtn.TextColor3 = key and T.text or T.dim
     end
 
@@ -833,9 +841,10 @@ function Elements.Keybind(parent, text)
     local button = new("TextButton", {
         Size = UDim2.fromOffset(102, 22), Position = UDim2.new(1, -102, 0, 0),
         BackgroundColor3 = T.element, BorderSizePixel = 0, Font = T.font,
-        TextSize = 12, TextColor3 = T.text, Text = "[" .. keyName(Settings.MenuKey) .. "]",
+        TextSize = 12, TextColor3 = T.text, Text = keyName(Settings.MenuKey),
     }, row)
     border(button, T.border)
+    new("UICorner", { CornerRadius = UDim.new(0, 7) }, button)
     local object = {}
     function object.GetBind() return Settings.MenuKey end
     function object.SetBind(key)
@@ -844,7 +853,7 @@ function Elements.Keybind(parent, text)
             if assigned == key then toggle.SetBind(nil) end
         end
         Settings.MenuKey = key
-        button.Text = "[" .. keyName(key) .. "]"
+        button.Text = keyName(key)
         button.TextColor3 = T.text
         return true
     end
@@ -1391,7 +1400,7 @@ do
                     or ("Zombies: " .. count .. (nearest < math.huge
                         and ("  |  Nearest: " .. math.floor(nearest) .. " studs") or ""))
             end
-            task.wait(0.25)
+            task.wait(0.1)
         end
         clearOutlines()
     end)
@@ -2521,6 +2530,7 @@ end
 -- ---- Player / Third Person
 do
     local s = makeSection(PlayerTab.Right, "Third Person")
+    table.insert(bedWarsHiddenSections, s.Parent)
     local enabled = false
     local distance = 10
     local snapshot
@@ -2802,13 +2812,8 @@ do
     end)
     Elements.ColorPicker(s, "Color", Settings.EspBoxColor, function(c) Settings.EspBoxColor = c end)
     Elements.Line(s)
-    bedWarsOutlineToggle = Elements.Toggle(s, "Player Outlines", false, function(on)
-        if BedWars then BedWars.PlayersOn = on end
-    end)
-    bedWarsOutlineToggle._row.Visible = false
     Elements.Toggle(s, "Team Check", true, function(on)
         Settings.EspTeamCheck = on
-        if BedWars then BedWars.TeamCheck = on end
     end)
     bedWarsNamesToggle = Elements.Toggle(s, "Show Names", true, function(on) Settings.EspNames = on end)
     local fov = makeSection(VisualsTab.Right, "FOV Circle")
@@ -3253,8 +3258,23 @@ do
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
         end
+        local legacyKeys = {
+            ["Combat/BedWars/Combat/Kill Aura"] = "Combat/BedWars/Kill Aura/Kill Aura",
+            ["Combat/BedWars/Combat/Target Priority"] = "Combat/BedWars/Kill Aura/Target Priority",
+            ["Combat/BedWars/Combat/Wall Check"] = "Combat/BedWars/Kill Aura/Wall Check",
+            ["Combat/BedWars/Combat/Projectile Aura"] = "Combat/BedWars/Projectile Aura/Projectile Aura",
+            ["Combat/BedWars/Combat/Projectile Range"] = "Combat/BedWars/Projectile Aura/Projectile Range",
+            ["Visuals/All/ESP Boxes/Player Outlines"] = "Visuals/BedWars/Player Outlines/Player Outlines",
+            ["Visuals/BedWars/BedWars Map/Bed Outline"] = "Visuals/BedWars/Bed Outline/Bed Outline",
+            ["Visuals/BedWars/BedWars Map/Bed Color"] = "Visuals/BedWars/Bed Outline/Bed Color",
+            ["Visuals/BedWars/BedWars Map/Generator Outline"] = "Visuals/BedWars/Generator Outline/Generator Outline",
+            ["Visuals/BedWars/BedWars Map/Generator Color"] = "Visuals/BedWars/Generator Outline/Generator Color",
+            ["Fun/All/Rainbow Footsteps/Rainbow Footsteps"] = "Fun/All/Colored Footsteps/Colored Footsteps",
+        }
         for i, item in ipairs(data.Controls or {}) do
-            local control = item.Key and byKey[item.Key] or ConfigControls[i]
+            local key = item.Key and (legacyKeys[item.Key] or item.Key)
+            local control = key and byKey[key]
+                or (not item.Key and ConfigControls[i])
             if control and control.Kind == item.Kind and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
@@ -3327,7 +3347,6 @@ local function showGameSections(gameName)
         end
     end
     for _, box in ipairs(sniperOnlySections) do box.Visible = gameName == "Sniper Arena" end
-    if bedWarsOutlineToggle then bedWarsOutlineToggle._row.Visible = isBedWars end
     if bedWarsNamesToggle then bedWarsNamesToggle._row.Visible = not isBedWars end
     if gameName ~= "Sniper Arena" then
         Settings.AimEnabled = false
@@ -3375,22 +3394,22 @@ end
 BedWars = {
     PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
-    SprintOn = false, AntiVoidOn = false, FakeLagOn = false,
+    SprintOn = false, AntiVoidOn = false,
     PickupOn = false, PickupRange = 8, AutoOreOn = false,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
+    UseTeamBedColors = true,
     GeneratorColor = Color3.fromRGB(82, 220, 255),
-    WallCheck = true,
+    WallCheck = true, ProjectileWallCheck = true,
 }
-local fakeLagRoot, fakeLagHumanoid, fakeLagSpeed, fakeLagStarted
-local function stopBedWarsFakeLag()
-    if fakeLagHumanoid and fakeLagHumanoid.Parent
-        and fakeLagSpeed and fakeLagHumanoid.WalkSpeed == 0 then
-        fakeLagHumanoid.WalkSpeed = fakeLagSpeed
-    end
-    fakeLagRoot, fakeLagHumanoid, fakeLagSpeed, fakeLagStarted = nil, nil, nil, nil
-end
 local sprintController
+local sprintActionName = "SunsetAlwaysSprint"
+local function bindBedWarsSprintKey()
+    ContextActionService:UnbindAction(sprintActionName)
+    ContextActionService:BindActionAtPriority(sprintActionName, function()
+        return Enum.ContextActionResult.Sink
+    end, false, 5000, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonL3)
+end
 local sprintWalkSpeed, sprintRunSpeed = 14, 20
 do
     local sprintFolder = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
@@ -3430,6 +3449,7 @@ local function bedWarsSprintController()
     return sprintController
 end
 local function stopBedWarsSprint()
+    ContextActionService:UnbindAction(sprintActionName)
     local controller = sprintController
     if controller then
         local stop = controller.stopSprinting or controller.stopSprint
@@ -3451,6 +3471,18 @@ local function stopBedWarsSprint()
     BedWars.SprintBaseSpeed = nil
     BedWars.SprintFallbackSpeed = nil
 end
+track(LocalPlayer:GetAttributeChangedSignal("Sprinting"):Connect(function()
+    if not BedWars.SprintOn or Settings.SelectedGame ~= "BedWars"
+        or LocalPlayer:GetAttribute("Sprinting") ~= false then return end
+    task.defer(function()
+        if not BedWars.SprintOn or Settings.SelectedGame ~= "BedWars" then return end
+        local controller = bedWarsSprintController()
+        if controller and controller.blockSprint ~= true
+            and type(controller.startSprinting) == "function" then
+            pcall(controller.startSprinting, controller)
+        end
+    end)
+end))
 local bedWarsNet = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
 local function bedWarsRemote(name, blockEngine)
     local root = bedWarsNet and bedWarsNet:FindFirstChild("node_modules")
@@ -3617,8 +3649,8 @@ local function bedWarsHostileNpc(model)
         or name:find("guardian", 1, true) ~= nil
         or name:find("monster", 1, true) ~= nil
 end
-local function bedWarsVisible(character, target, origin, targetRoot)
-    if not BedWars.WallCheck then return true end
+local function bedWarsVisible(character, target, origin, targetRoot, checkWalls)
+    if not checkWalls then return true end
     local ray = RaycastParams.new()
     ray.FilterType = Enum.RaycastFilterType.Exclude
     ray.FilterDescendantsInstances = { character }
@@ -3668,7 +3700,9 @@ local function bedWarsAuraStep()
         local targetRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
         if not targetHumanoid or targetHumanoid.Health <= 0 or not targetRoot
             or target:FindFirstChildOfClass("ForceField") then return end
-        if not bedWarsVisible(character, target, root.Position + Vector3.new(0, 1.5, 0), targetRoot) then return end
+        if not bedWarsVisible(character, target,
+            root.Position + Vector3.new(0, 1.5, 0), targetRoot,
+            BedWars.WallCheck) then return end
         local d = (root.Position - targetRoot.Position).Magnitude
         if d <= range then
             targets[#targets + 1] = {
@@ -3811,7 +3845,8 @@ local function bedWarsProjectileTarget(character, root, range, origin)
     -- takes precedence over Projectile Aura for the nearest enemy.
     if not nearest or nearestDistance > range
         or nearestDistance <= bedWarsAttackRange() then return nil end
-    if not bedWarsVisible(character, nearest.model, origin, nearest.root) then return nil end
+    if not bedWarsVisible(character, nearest.model, origin, nearest.root,
+        BedWars.ProjectileWallCheck) then return nil end
     return nearest
 end
 local function bedWarsProjectileVelocity(origin, target, speed, gravity)
@@ -4077,7 +4112,8 @@ local function bedWarsIsIronOre(node)
     if not node:IsA("BasePart") then return false end
     local name = string.lower(node.Name)
     if name ~= "iron_block" and name ~= "iron_ore"
-        and name ~= "iron_ore_block" and name ~= "ironore" then return false end
+        and name ~= "iron_ore_block" and name ~= "iron_ore_mesh_block"
+        and name ~= "ironore" then return false end
     -- Item drops and decorative ore displays use similar names but are not blocks.
     if CollectionService:HasTag(node, "ItemDrop") then return false end
     return node:IsDescendantOf(workspace)
@@ -4153,6 +4189,67 @@ local function bedWarsAutoOreStep()
 end
 
 local bedWarsMarks = { Players = {}, Beds = {}, Generators = {} }
+local bedCandidates, generatorCandidates = {}, {}
+local function indexBedWarsMapNode(node)
+    if node:IsA("BasePart") and node.Name:lower() == "bed" then
+        bedCandidates[node] = true
+    elseif (node:IsA("BasePart") or node:IsA("Model"))
+        and node.Name:lower():find("generator", 1, true) then
+        generatorCandidates[node] = true
+    end
+end
+for _, node in ipairs(workspace:GetDescendants()) do indexBedWarsMapNode(node) end
+track(workspace.DescendantAdded:Connect(indexBedWarsMapNode))
+track(workspace.DescendantRemoving:Connect(function(node)
+    bedCandidates[node] = nil
+    generatorCandidates[node] = nil
+end))
+local function bedWarsTeamColor(bed)
+    local teams = game:GetService("Teams"):GetTeams()
+    local function resolve(value)
+        if typeof(value) == "Color3" then return value end
+        if typeof(value) == "BrickColor" then return value.Color end
+        if typeof(value) == "Instance" and value:IsA("Team") then
+            return value.TeamColor.Color
+        end
+        if value == nil then return nil end
+        local token = tostring(value):lower()
+        for _, team in ipairs(teams) do
+            local teamId = team:GetAttribute("TeamId")
+            if token == team.Name:lower()
+                or token == tostring(team.TeamColor.Number)
+                or token == team.TeamColor.Name:lower()
+                or (teamId ~= nil and token == tostring(teamId)) then
+                return team.TeamColor.Color
+            end
+        end
+        return nil
+    end
+    local node = bed
+    while node and node ~= workspace do
+        for _, field in ipairs({ "Team", "TeamId", "TeamID", "TeamColor", "TeamName", "OwnerTeam" }) do
+            local color = resolve(node:GetAttribute(field))
+            if color then return color end
+            local child = node:FindFirstChild(field)
+            if child and child:IsA("ValueBase") then
+                color = resolve(child.Value)
+                if color then return color end
+            end
+        end
+        if node ~= bed then
+            local name = node.Name:lower()
+            for _, team in ipairs(teams) do
+                if name:find(team.Name:lower(), 1, true) then
+                    return team.TeamColor.Color
+                end
+            end
+        end
+        node = node.Parent
+    end
+    local _, saturation, brightness = bed.Color:ToHSV()
+    if saturation > 0.3 and brightness > 0.25 then return bed.Color end
+    return BedWars.BedColor
+end
 local function clearBedWarsMarks(kind)
     for target, mark in pairs(bedWarsMarks[kind]) do
         mark:Destroy()
@@ -4202,23 +4299,27 @@ local function refreshBedWarsMap()
     if not BedWars.BedsOn and not BedWars.GeneratorsOn then return end
     local seenBeds, seenGenerators = {}, {}
     local count = 0
-    for _, node in ipairs(workspace:GetDescendants()) do
-        if node:IsA("BasePart") or node:IsA("Model") then
-            local name = string.lower(node.Name)
-            local parent = node.Parent
-            local parentName = parent and string.lower(parent.Name) or ""
-            if BedWars.BedsOn and node:IsA("BasePart")
-                and name == "bed" and node.Transparency < 0.95 then
+    if BedWars.BedsOn then
+        for node in pairs(bedCandidates) do
+            if node:IsDescendantOf(workspace) and node.Transparency < 0.95 then
                 seenBeds[node] = true
-                setBedWarsMark("Beds", node, BedWars.BedColor)
+                setBedWarsMark("Beds", node, BedWars.UseTeamBedColors
+                    and bedWarsTeamColor(node) or BedWars.BedColor)
                 count += 1
-            elseif BedWars.GeneratorsOn and string.find(name, "generator", 1, true)
-                and not string.find(parentName, "generator", 1, true) then
+                if count >= 80 then break end
+            end
+        end
+    end
+    if BedWars.GeneratorsOn then
+        for node in pairs(generatorCandidates) do
+            local parent = node.Parent
+            if node:IsDescendantOf(workspace) and parent
+                and not parent.Name:lower():find("generator", 1, true) then
                 seenGenerators[node] = true
                 setBedWarsMark("Generators", node, BedWars.GeneratorColor)
                 count += 1
+                if count >= 80 then break end
             end
-            if count >= 80 then break end
         end
     end
     for target, mark in pairs(bedWarsMarks.Beds) do
@@ -4242,11 +4343,9 @@ function BedWars.Stop()
     BedWars.ScaffoldOn = false
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
-    BedWars.FakeLagOn = false
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
     BedWars.LastSafeCFrame = nil
-    stopBedWarsFakeLag()
     stopBedWarsSprint()
     for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
 end
@@ -4255,7 +4354,7 @@ task.spawn(function()
         if Settings.SelectedGame == "BedWars" then
             pcall(refreshBedWarsPlayers)
         end
-        task.wait(0.25)
+        task.wait(0.1)
     end
 end)
 task.spawn(function()
@@ -4263,7 +4362,7 @@ task.spawn(function()
         if Settings.SelectedGame == "BedWars" then
             pcall(refreshBedWarsMap)
         end
-        task.wait(2)
+        task.wait(0.1)
     end
 end)
 task.spawn(function()
@@ -4349,31 +4448,6 @@ track(RunService.Heartbeat:Connect(function()
         root.AssemblyAngularVelocity = Vector3.zero
     end
 end))
-track(RunService.PreSimulation:Connect(function()
-    if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
-        or not BedWars.FakeLagOn then
-        if fakeLagRoot then stopBedWarsFakeLag() end
-        return
-    end
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if root ~= fakeLagRoot then
-        stopBedWarsFakeLag()
-        fakeLagRoot, fakeLagHumanoid, fakeLagStarted = root, humanoid, os.clock()
-    end
-    if not root or not humanoid or humanoid.Health <= 0 then return end
-    local hold = BedWars.FakeLagHold or 0.3
-    if (os.clock() - fakeLagStarted) % (hold + 0.1) < hold then
-        if humanoid.WalkSpeed > 0 then fakeLagSpeed = humanoid.WalkSpeed end
-        humanoid.WalkSpeed = 0
-        local velocity = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = Vector3.new(0, velocity.Y, 0)
-    elseif fakeLagSpeed then
-        if humanoid.WalkSpeed == 0 then humanoid.WalkSpeed = fakeLagSpeed end
-        fakeLagSpeed = nil
-    end
-end))
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.SprintOn then
@@ -4397,14 +4471,12 @@ task.spawn(function()
                         end
                     end
                     if controller.sprinting == true
-                        and type(controller.setSpeed) == "function"
-                        and not (BedWars.FakeLagOn and humanoid.WalkSpeed == 0) then
+                        and type(controller.setSpeed) == "function" then
                         pcall(controller.setSpeed, controller, sprintRunSpeed)
                     end
                 end
                 if (not controller or controller.sprinting ~= true)
-                    and (not controller or controller.blockSprint ~= true)
-                    and not (BedWars.FakeLagOn and humanoid.WalkSpeed == 0) then
+                    and (not controller or controller.blockSprint ~= true) then
                     LocalPlayer:SetAttribute("Sprinting", true)
                     humanoid.WalkSpeed = sprintRunSpeed
                     BedWars.SprintFallbackSpeed = sprintRunSpeed
@@ -4417,8 +4489,7 @@ end)
 track(RunService.Heartbeat:Connect(function()
     if Settings.SelectedGame ~= "BedWars" or not BedWars.SprintOn then return end
     local humanoid = BedWars.SprintHumanoid
-    if not humanoid or not humanoid.Parent or humanoid.Health <= 0
-        or (BedWars.FakeLagOn and humanoid.WalkSpeed == 0) then return end
+    if not humanoid or not humanoid.Parent or humanoid.Health <= 0 then return end
     local controller = sprintController
     if controller and controller.blockSprint == true then return end
     local expected = sprintRunSpeed
@@ -4482,7 +4553,7 @@ do
     local sprintSection = gameSection(gameName, MainTab.Right, "Sprint")
     Elements.Toggle(sprintSection, "Always Sprint", false, function(on)
         BedWars.SprintOn = on
-        if not on then stopBedWarsSprint() end
+        if on then bindBedWarsSprintKey() else stopBedWarsSprint() end
     end)
     local antiVoidSection = gameSection(gameName, MainTab.Right, "Anti Void")
     Elements.Toggle(antiVoidSection, "Anti Void", false, function(on)
@@ -4490,22 +4561,26 @@ do
         BedWars.LastSafeCFrame = nil
         BedWars.SafeRoot = nil
     end)
-    local combatSection = gameSection(gameName, AimTab.Left, "Combat")
-    Elements.Toggle(combatSection, "Kill Aura", false, function(on)
+    local killAuraSection = gameSection(gameName, AimTab.Left, "Kill Aura")
+    Elements.Toggle(killAuraSection, "Kill Aura", false, function(on)
         BedWars.AuraOn = on
         if not on then BedWars.AuraStatus = "Off" end
     end)
-    Elements.Dropdown(combatSection, "Target Priority",
+    Elements.Dropdown(killAuraSection, "Target Priority",
         { "Anything", "Lower HP", "Higher HP", "More Gear" }, "Lower HP", function(value)
             BedWars.AuraPriority = value
     end)
-    Elements.Toggle(combatSection, "Wall Check", true, function(on)
+    Elements.Toggle(killAuraSection, "Wall Check", true, function(on)
         BedWars.WallCheck = on
     end)
-    Elements.Toggle(combatSection, "Projectile Aura", false, function(on)
+    local projectileSection = gameSection(gameName, AimTab.Right, "Projectile Aura")
+    Elements.Toggle(projectileSection, "Projectile Aura", false, function(on)
         BedWars.ProjectilesOn = on
     end)
-    Elements.Slider(combatSection, "Projectile Range", 12, 100, 60, "studs", function(value)
+    Elements.Toggle(projectileSection, "Wall Check", true, function(on)
+        BedWars.ProjectileWallCheck = on
+    end, nil, true)
+    Elements.Slider(projectileSection, "Projectile Range", 12, 100, 60, "studs", function(value)
         BedWars.ProjectileRange = value
     end)
     local scaffoldSection = gameSection(gameName, MiscTab.Left, "Scaffold")
@@ -4515,14 +4590,6 @@ do
             BedWars.BridgingNeeded = nil
             bedWarsReleaseScaffoldItem()
         end
-    end)
-    local fakeLagSection = gameSection(gameName, MiscTab.Right, "Fake Lag")
-    Elements.Toggle(fakeLagSection, "Fake Lag", false, function(on)
-        BedWars.FakeLagOn = on
-        if not on then stopBedWarsFakeLag() end
-    end)
-    Elements.Slider(fakeLagSection, "Lag Hold", 50, 900, 300, "ms", function(value)
-        BedWars.FakeLagHold = value / 1000
     end)
     local pickupSection = gameSection(gameName, PlayerTab.Right, "Pickup Range")
     Elements.Toggle(pickupSection, "Pickup Range", false, function(on)
@@ -4535,15 +4602,32 @@ do
     Elements.Toggle(oreSection, "Iron Ore", false, function(on)
         BedWars.AutoOreOn = on
     end)
-    local mapSection = gameSection(gameName, VisualsTab.Right, "BedWars Map")
-    Elements.Toggle(mapSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
-    Elements.ColorPicker(mapSection, "Bed Color", BedWars.BedColor, function(color)
+    local bedSection = gameSection(gameName, VisualsTab.Right, "Bed Outline")
+    Elements.Toggle(bedSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
+    Elements.Toggle(bedSection, "Team Bed Colors", true, function(on)
+        BedWars.UseTeamBedColors = on
+    end, nil, true)
+    Elements.ColorPicker(bedSection, "Bed Color", BedWars.BedColor, function(color)
         BedWars.BedColor = color
     end)
-    Elements.Toggle(mapSection, "Generator Outline", false, function(on) BedWars.GeneratorsOn = on end)
-    Elements.ColorPicker(mapSection, "Generator Color", BedWars.GeneratorColor, function(color)
+    local generatorSection = gameSection(gameName, VisualsTab.Right, "Generator Outline")
+    Elements.Toggle(generatorSection, "Generator Outline", false, function(on)
+        BedWars.GeneratorsOn = on
+    end)
+    Elements.ColorPicker(generatorSection, "Generator Color", BedWars.GeneratorColor, function(color)
         BedWars.GeneratorColor = color
     end)
+    local outlineSection = gameSection(gameName, VisualsTab.Left, "Player Outlines")
+    Elements.Toggle(outlineSection, "Player Outlines", false, function(on)
+        BedWars.PlayersOn = on
+    end)
+    Elements.Toggle(outlineSection, "Team Check", true, function(on)
+        BedWars.TeamCheck = on
+    end, nil, true)
+    local listSection = gameSection(gameName, SettingsTab.Left, "Module List")
+    Elements.Toggle(listSection, "Module List", true, function(on)
+        Settings.ModuleListOn = on
+    end, nil, true)
 end
 -- Client-only visual projectiles. These never call a game combat remote.
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
@@ -4781,9 +4865,17 @@ local function buildBedWarsUI()
     }, header)
     new("UICorner", { CornerRadius = UDim.new(0, 11) }, searchFrame)
     border(searchFrame, Color3.fromRGB(121, 78, 78))
-    local searchIcon = label(searchFrame, "⌕", 22, gold)
-    searchIcon.Position = UDim2.fromOffset(11, 5)
-    searchIcon.Size = UDim2.fromOffset(21, 25)
+    local searchRing = new("Frame", {
+        Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchRing)
+    border(searchRing, gold, 2)
+    local searchHandle = new("Frame", {
+        Position = UDim2.fromOffset(23, 22), Size = UDim2.fromOffset(9, 2),
+        Rotation = 45, BackgroundColor3 = gold, BorderSizePixel = 0,
+    }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchHandle)
     local searchBox = new("TextBox", {
         Position = UDim2.fromOffset(36, 3),
         Size = UDim2.new(1, -45, 1, -6),
@@ -4928,6 +5020,35 @@ local function buildBedWarsUI()
                 end
             end
         end
+        for _, row in ipairs(activeContent:GetChildren()) do
+            if row:IsA("Frame") and row.Size.Y.Offset == 38 then
+                local top = row:FindFirstChildOfClass("Frame")
+                local number = top and top:FindFirstChildOfClass("TextBox")
+                local bar = row:FindFirstChildOfClass("TextButton")
+                if number and bar then
+                    row.Size = UDim2.new(1, 0, 0, 60)
+                    top.Size = UDim2.new(1, 0, 0, 44)
+                    local title = top:FindFirstChildOfClass("TextLabel")
+                    if title then
+                        title.Size = UDim2.new(1, 0, 0, 18)
+                        title.TextTruncate = Enum.TextTruncate.AtEnd
+                    end
+                    number.Position = UDim2.fromOffset(0, 20)
+                    number.Size = UDim2.fromOffset(70, 20)
+                    new("UICorner", { CornerRadius = UDim.new(0, 6) }, number)
+                    for _, button in ipairs(top:GetChildren()) do
+                        if button:IsA("TextButton") then
+                            button.Position = button.Text == "+"
+                                and UDim2.new(1, -43, 0, 20)
+                                or UDim2.new(1, -20, 0, 20)
+                            button.Size = UDim2.fromOffset(18, 20)
+                        end
+                    end
+                    bar.Position = UDim2.fromOffset(0, 48)
+                    new("UICorner", { CornerRadius = UDim.new(0, 5) }, bar)
+                end
+            end
+        end
         for _, descendant in ipairs(activeContent:GetDescendants()) do
             if descendant:IsA("TextLabel") or descendant:IsA("TextButton")
                 or descendant:IsA("TextBox") then
@@ -5010,28 +5131,27 @@ local function buildBedWarsUI()
         return nil
     end
     local specs = {
-        { "Combat", "Kill Aura", "Combat", "BedWars", "Combat", "Kill Aura" },
-        { "Combat", "Projectile Aura", "Combat", "BedWars", "Combat", "Projectile Aura" },
+        { "Combat", "Kill Aura", "Combat", "BedWars", "Kill Aura", "Kill Aura" },
+        { "Combat", "Projectile Aura", "Combat", "BedWars", "Projectile Aura", "Projectile Aura" },
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
-        { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
-        { "Visuals", "Player Outlines", "Visuals", "All", "ESP Boxes", "Player Outlines" },
-        { "Visuals", "Bed Outline", "Visuals", "BedWars", "BedWars Map", "Bed Outline" },
-        { "Visuals", "Generator Outline", "Visuals", "BedWars", "BedWars Map", "Generator Outline" },
+        { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
+        { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
+        { "Visuals", "Generator Outline", "Visuals", "BedWars", "Generator Outline", "Generator Outline" },
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
-        { "Misc", "Fake Lag", "Misc", "BedWars", "Fake Lag", "Fake Lag" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
         { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
         { "Fun", "Upside Down", "Fun", "BedWars", "Flip", "Upside Down" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
+        { "Sunset", "Module List", "Sunset", "BedWars", "Module List", "Module List" },
         { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
         { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
         { "Sunset", "Colors", "Sunset", "All", "Colors" },
@@ -5133,8 +5253,44 @@ local function buildBedWarsUI()
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
     refreshSearch()
+    local moduleList = new("Frame", {
+        Name = "BedWarsModuleList", Visible = false,
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -14, 0, 46),
+        Size = UDim2.fromOffset(205, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, Gui)
+    new("UIListLayout", {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 4),
+    }, moduleList)
+    for index, entry in ipairs(cards) do
+        if entry.Control and entry.Category ~= "Sunset" then
+            local row = new("Frame", {
+                Visible = false, Size = UDim2.new(1, 0, 0, 25),
+                LayoutOrder = index, BackgroundColor3 = columnColor,
+                BorderSizePixel = 0,
+            }, moduleList)
+            new("UICorner", { CornerRadius = UDim.new(0, 7) }, row)
+            border(row, Color3.fromRGB(112, 73, 78))
+            new("Frame", {
+                Position = UDim2.fromOffset(0, 4),
+                Size = UDim2.fromOffset(3, 17),
+                BackgroundColor3 = accent, BorderSizePixel = 0,
+            }, row)
+            local textLabel = label(row, entry.Name.Text, 13,
+                Color3.fromRGB(255, 237, 230))
+            textLabel.Font = Enum.Font.GothamMedium
+            textLabel.Position = UDim2.fromOffset(11, 3)
+            textLabel.Size = UDim2.new(1, -17, 1, -6)
+            textLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            entry.ModuleRow = row
+        end
+    end
     task.spawn(function()
         while BedWarsUI.Parent do
+            local anyActive = false
             if BedWarsUI.Visible then
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
@@ -5146,6 +5302,15 @@ local function buildBedWarsUI()
                     entry.Options.TextColor3 = active and dark or muted
                 end
             end
+            for _, entry in ipairs(cards) do
+                if entry.ModuleRow then
+                    local active = entry.Control.Get() == true
+                    entry.ModuleRow.Visible = active
+                    anyActive = anyActive or active
+                end
+            end
+            moduleList.Visible = Settings.SelectedGame == "BedWars"
+                and Settings.ModuleListOn and not BedWarsUI.Visible and anyActive
             task.wait(0.15)
         end
     end)
