@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-bedwars-lie-flip-scaffold-6b35"
+local SUNSET_BUILD = "20261001-bedwars-lie-animation-a84e"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4211,7 +4211,7 @@ task.spawn(function()
     end
 end)
 
-local LieDown = { Enabled = false, AnimationId = "4686925579", Generation = 0 }
+local LieDown = { Enabled = false, AnimationId = "112195772277805", Generation = 0 }
 function LieDown.Stop()
     LieDown.Generation += 1
     if LieDown.Track then
@@ -4298,17 +4298,18 @@ do
         if on and flipToggle and flipToggle.Get() then flipToggle.Set(false) end
         if on then startBedWarsLieDown() else LieDown.Stop() end
     end)
-    local lieInput = Elements.TextBox(lieSection, "Animation ID", "4686925579", function(value)
-        LieDown.AnimationId = tostring(value):match("%d+") or "4686925579"
+    local lieInput = Elements.TextBox(lieSection, "Animation ID", "112195772277805", function(value)
+        LieDown.AnimationId = tostring(value):match("%d+") or "112195772277805"
         if LieDown.Enabled then startBedWarsLieDown() end
     end)
     local lieBox = lieInput:FindFirstChildOfClass("TextBox")
+    lieBox.Text = LieDown.AnimationId
     table.insert(ConfigControls, {
         Kind = "text", Key = configKey(lieSection, "Animation ID"),
         Get = function() return lieBox.Text end,
         Set = function(value)
             lieBox.Text = tostring(value or "")
-            LieDown.AnimationId = lieBox.Text:match("%d+") or "4686925579"
+            LieDown.AnimationId = lieBox.Text:match("%d+") or "112195772277805"
             if LieDown.Enabled then startBedWarsLieDown() end
         end,
         Box = lieSection.Parent, Row = lieInput,
