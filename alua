@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-sunset-panels-a184"
+local SUNSET_BUILD = "20261001-inline-sunset-b629"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -2021,7 +2021,9 @@ task.spawn(function()
         frames += 1
         if os.clock() - last >= 1 then
             local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
-            Watermark.Text = string.format("sunset.wtf | v1.0 | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
+            Watermark.Text = Settings.SelectedGame == "BedWars"
+                and string.format("SUNSET.WTF  •  %s  •  %d FPS  •  %d MS", LocalPlayer.Name, frames, ping)
+                or string.format("sunset.wtf | v1.0 | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
             frames, last = 0, os.clock()
         end
         Watermark.Visible = Settings.WatermarkOn
@@ -4672,8 +4674,8 @@ do
     Elements.ColorPicker(orbit, "Star Color", Fun.OrbitColor, function(color)
         Fun.OrbitColor = color
     end)
-    local steps = makeSection(FunTab.Right, "Rainbow Footsteps")
-    Elements.Toggle(steps, "Rainbow Footsteps", false, function(on)
+    local steps = makeSection(FunTab.Right, "Colored Footsteps")
+    Elements.Toggle(steps, "Colored Footsteps", false, function(on)
         Fun.FootstepsOn = on
         if not on then clearFunEffect("footsteps") end
     end)
@@ -4700,8 +4702,8 @@ local function buildBedWarsUI()
     BedWarsUI = new("Frame", {
         Name = "BedWarsBoard", Visible = false, Active = true,
         Size = UDim2.fromOffset(1500, 650),
-        Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0, 12),
+        AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
     local boardScale = new("UIScale", { Scale = 1 }, BedWarsUI)
@@ -4736,7 +4738,7 @@ local function buildBedWarsUI()
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 7) }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(0, 11) }, searchFrame)
     border(searchFrame, Color3.fromRGB(121, 78, 78))
     local searchIcon = label(searchFrame, "⌕", 22, gold)
     searchIcon.Position = UDim2.fromOffset(11, 5)
@@ -4745,7 +4747,7 @@ local function buildBedWarsUI()
         Position = UDim2.fromOffset(36, 3),
         Size = UDim2.new(1, -45, 1, -6),
         BackgroundTransparency = 1, BorderSizePixel = 0,
-        Font = Enum.Font.Gotham, TextSize = 14,
+        Font = Enum.Font.GothamMedium, TextSize = 15,
         TextColor3 = Color3.fromRGB(255, 239, 232),
         PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
@@ -4757,19 +4759,19 @@ local function buildBedWarsUI()
         Font = Enum.Font.GothamBold, TextSize = 18,
         Text = "×", TextColor3 = muted, AutoButtonColor = false,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 6) }, closeButton)
+    new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
     closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
     local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Sunset" }
     local columns = {}
     for index, name in ipairs(categoryOrder) do
-        local x = name == "Sunset" and 20 or 20 + (index - 1) * 215
-        local y = name == "Sunset" and 330 or 85
+        local x = 20 + (index - 1) * 215
+        local y = 74
         local col = new("Frame", {
             Name = name, Position = UDim2.fromOffset(x, y),
             Size = UDim2.fromOffset(200, 250), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
         }, BedWarsUI)
-        new("UICorner", { CornerRadius = UDim.new(0, 8) }, col)
+        new("UICorner", { CornerRadius = UDim.new(0, 12) }, col)
         border(col, Color3.fromRGB(112, 73, 78))
         new("UIGradient", { Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 35, 45)),
@@ -4780,9 +4782,10 @@ local function buildBedWarsUI()
         heading.Font = Enum.Font.GothamBold
         heading.Position = UDim2.fromOffset(13, 12)
         heading.Size = UDim2.fromOffset(128, 20)
-        local count = label(col, "0", 11, muted, Enum.TextXAlignment.Right)
-        count.Position = UDim2.new(1, -60, 0, 13)
-        count.Size = UDim2.fromOffset(25, 18)
+        local count = label(col, "0", 17, gold, Enum.TextXAlignment.Right)
+        count.Font = Enum.Font.GothamBold
+        count.Position = UDim2.new(1, -67, 0, 8)
+        count.Size = UDim2.fromOffset(34, 25)
         local collapse = new("TextButton", {
             Position = UDim2.new(1, -31, 0, 8),
             Size = UDim2.fromOffset(23, 25), BackgroundTransparency = 1,
@@ -4812,96 +4815,72 @@ local function buildBedWarsUI()
         }, col)
         makeDraggable(col, dragHandle)
         columns[name] = { Frame = col, List = list, Count = count,
-            Collapsed = false, VisibleCount = 0 }
+            Collapsed = false, VisibleCount = 0, OpenHolder = nil }
+        local function reflow()
+            local column = columns[name]
+            local extra = column.OpenHolder and column.OpenHolder.Visible
+                and column.OpenHolder.AbsoluteSize.Y + 7 or 0
+            column.Frame.Size = UDim2.fromOffset(200,
+                column.Collapsed and 44
+                    or math.min(540, 65 + column.VisibleCount * 36 + extra))
+        end
+        columns[name].Reflow = reflow
         collapse.MouseButton1Click:Connect(function()
             local column = columns[name]
             column.Collapsed = not column.Collapsed
             column.List.Visible = not column.Collapsed
             collapse.Text = column.Collapsed and "⌄" or "⌃"
-            column.Frame.Size = UDim2.fromOffset(200,
-                column.Collapsed and 44
-                    or math.min(430, 65 + column.VisibleCount * 32))
+            reflow()
         end)
     end
 
-    local settingsPane = new("Frame", {
-        Name = "ModuleSettings", Visible = false,
-        Position = UDim2.fromOffset(1050, 110),
-        Size = UDim2.fromOffset(380, 460), Active = true,
-        BackgroundColor3 = dark, BorderSizePixel = 0, ZIndex = 21,
-    }, BedWarsUI)
-    new("UICorner", { CornerRadius = UDim.new(0, 9) }, settingsPane)
-    border(settingsPane, accent)
-    new("UIGradient", { Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(61, 35, 46)),
-        ColorSequenceKeypoint.new(1, dark),
-    }), Rotation = 90 }, settingsPane)
-    local settingsTitle = label(settingsPane, "SETTINGS", 17,
-        Color3.fromRGB(235, 247, 243))
-    settingsTitle.Font = Enum.Font.GothamBold
-    settingsTitle.Position = UDim2.fromOffset(19, 16)
-    settingsTitle.Size = UDim2.fromOffset(290, 24)
-    settingsTitle.ZIndex = 22
-    local settingsHint = label(settingsPane, "Change options below", 11, muted)
-    settingsHint.Font = Enum.Font.Gotham
-    settingsHint.Position = UDim2.fromOffset(20, 42)
-    settingsHint.Size = UDim2.fromOffset(290, 18)
-    settingsHint.ZIndex = 22
-    local settingsClose = new("TextButton", {
-        Position = UDim2.new(1, -42, 0, 15),
-        Size = UDim2.fromOffset(25, 27), BackgroundTransparency = 1,
-        BorderSizePixel = 0, Text = "×", Font = Enum.Font.GothamBold,
-        TextSize = 20, TextColor3 = muted, ZIndex = 22,
-    }, settingsPane)
-    local settingsBody = new("ScrollingFrame", {
-        Position = UDim2.fromOffset(17, 76),
-        Size = UDim2.new(1, -34, 1, -94),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-        ScrollBarThickness = 3, ScrollBarImageColor3 = accent,
-        CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollingDirection = Enum.ScrollingDirection.Y,
-        ZIndex = 22,
-    }, settingsPane)
-    new("UIListLayout", { Padding = UDim.new(0, 10),
-        SortOrder = Enum.SortOrder.LayoutOrder }, settingsBody)
-    local settingsDrag = new("Frame", {
-        Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(315, 68),
-        BackgroundTransparency = 1, Active = true, ZIndex = 23,
-    }, settingsPane)
-    makeDraggable(settingsPane, settingsDrag)
-    local activeBox, homeParent
+    local activeContent, homeParent, homePosition, homeSize, activeHolder, activeColumn
     local function closeSettings()
-        if activeBox and homeParent then activeBox.Parent = homeParent end
-        activeBox, homeParent = nil, nil
-        settingsPane.Visible = false
-    end
-    local function openSettings(box, name, sourceCard)
-        if not box then return end
-        closeSettings()
-        activeBox, homeParent = box, box.Parent
-        box.Parent = settingsBody
-        box.Visible = true
-        settingsTitle.Text = string.upper(name)
-        settingsBody.CanvasPosition = Vector2.zero
-        if sourceCard then
-            local scale = boardScale.Scale
-            local anchor = (sourceCard.AbsolutePosition - BedWarsUI.AbsolutePosition) / scale
-            local x = anchor.X + 200
-            if x + 380 > 1490 then x = anchor.X - 390 end
-            settingsPane.Position = UDim2.fromOffset(math.clamp(x, 4, 1110),
-                math.clamp(anchor.Y, 75, 600))
+        local previousColumn = activeColumn
+        if activeContent and homeParent then
+            activeContent.Parent = homeParent
+            activeContent.Position = homePosition
+            activeContent.Size = homeSize
         end
-        settingsPane.Visible = true
+        if activeHolder then activeHolder.Visible = false end
+        if previousColumn then previousColumn.OpenHolder = nil end
+        activeContent, homeParent, homePosition, homeSize = nil, nil, nil, nil
+        activeHolder, activeColumn = nil, nil
+        if previousColumn then previousColumn.Reflow() end
+    end
+    local function openSettings(box, holder, column)
+        if not box or not holder then return end
+        if activeHolder == holder then closeSettings() return end
+        closeSettings()
+        for _, child in ipairs(box:GetChildren()) do
+            if child:IsA("Frame") and child.AutomaticSize == Enum.AutomaticSize.Y then
+                activeContent = child
+                break
+            end
+        end
+        if not activeContent then return end
+        homeParent, homePosition, homeSize = activeContent.Parent,
+            activeContent.Position, activeContent.Size
+        activeContent.Parent = holder
+        activeContent.Position = UDim2.fromOffset(7, 7)
+        activeContent.Size = UDim2.new(1, -14, 0, 0)
+        activeHolder, activeColumn = holder, column
+        column.OpenHolder = holder
+        holder.Visible = true
+        for _, descendant in ipairs(activeContent:GetDescendants()) do
+            if descendant:IsA("TextLabel") or descendant:IsA("TextButton")
+                or descendant:IsA("TextBox") then
+                descendant.Font = Enum.Font.GothamMedium
+                descendant.TextSize = math.max(descendant.TextSize, 13)
+                if descendant:IsA("TextBox") then
+                    descendant.TextSize = math.max(descendant.TextSize, 15)
+                end
+            end
+        end
         task.defer(function()
-            if activeBox ~= box then return end
-            local height = math.clamp(box.AbsoluteSize.Y + 95, 150, 460)
-            settingsPane.Size = UDim2.fromOffset(380, height)
-            local position = settingsPane.Position
-            settingsPane.Position = UDim2.fromOffset(position.X.Offset,
-                math.clamp(position.Y.Offset, 75, 642 - height))
+            if activeHolder == holder then column.Reflow() end
         end)
     end
-    settingsClose.MouseButton1Click:Connect(closeSettings)
     track(BedWarsUI:GetPropertyChangedSignal("Visible"):Connect(function()
         if not BedWarsUI.Visible then closeSettings() end
         onMenuVisibility()
@@ -4931,29 +4910,29 @@ local function buildBedWarsUI()
     local specs = {
         { "Combat", "Kill Aura", "Combat", "BedWars", "Combat", "Kill Aura" },
         { "Combat", "Projectile Aura", "Combat", "BedWars", "Combat", "Projectile Aura" },
-        { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
-        { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
-        { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
+        { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
+        { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
+        { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
         { "Visuals", "Player Outlines", "Visuals", "All", "ESP Boxes", "Player Outlines" },
-        { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "BedWars Map", "Bed Outline" },
         { "Visuals", "Generator Outline", "Visuals", "BedWars", "BedWars Map", "Generator Outline" },
+        { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
-        { "Misc", "Fake Lag", "Misc", "BedWars", "Fake Lag", "Fake Lag" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
-        { "Misc", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
-        { "Fun", "Upside Down", "Fun", "BedWars", "Flip", "Upside Down" },
+        { "Misc", "Fake Lag", "Misc", "BedWars", "Fake Lag", "Fake Lag" },
+        { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
-        { "Fun", "Rainbow Footsteps", "Fun", "All", "Rainbow Footsteps", "Rainbow Footsteps" },
+        { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
+        { "Fun", "Upside Down", "Fun", "BedWars", "Flip", "Upside Down" },
+        { "Sunset", "Configs", "Sunset", "All", "Configs" },
         { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
         { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
         { "Sunset", "Colors", "Sunset", "All", "Colors" },
-        { "Sunset", "Configs", "Sunset", "All", "Configs" },
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
     local cards = {}
@@ -4964,10 +4943,22 @@ local function buildBedWarsUI()
         local box = control and control.Box or findSection(tabName, gameName, sectionName)
         if box and (not toggleName or control) then
             local card = new("TextButton", {
-                Name = name, Size = UDim2.new(1, -3, 0, 31),
+                Name = name, Size = UDim2.new(1, -3, 0, 35),
                 BackgroundColor3 = columnColor, BorderSizePixel = 0,
-                Text = "", AutoButtonColor = false, LayoutOrder = index,
+                Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
+            new("UICorner", { CornerRadius = UDim.new(0, 7) }, card)
+            local holder = new("Frame", {
+                Name = name .. "Settings", Visible = false,
+                Size = UDim2.new(1, -3, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundColor3 = dark, BorderSizePixel = 0,
+                LayoutOrder = index * 2 + 1,
+            }, columns[category].List)
+            new("UICorner", { CornerRadius = UDim.new(0, 9) }, holder)
+            track(holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+                if holder.Visible then columns[category].Reflow() end
+            end))
             local activeGradient = new("UIGradient", {
                 Enabled = false, Rotation = 0,
                 Color = ColorSequence.new({
@@ -4975,21 +4966,25 @@ local function buildBedWarsUI()
                     ColorSequenceKeypoint.new(1, Color3.fromRGB(231, 91, 120)),
                 }),
             }, card)
-            local nameLabel = label(card, name, 12, Color3.fromRGB(255, 237, 230))
-            nameLabel.Font = Enum.Font.Gotham
+            local nameLabel = label(card, name, 14, Color3.fromRGB(255, 237, 230))
+            nameLabel.Font = Enum.Font.GothamMedium
             nameLabel.Position = UDim2.fromOffset(10, 7)
-            nameLabel.Size = UDim2.new(1, -45, 0, 18)
+            nameLabel.Size = UDim2.new(1, -45, 0, 21)
             nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
             local options = new("TextButton", {
-                Position = UDim2.new(1, -31, 0, 2),
+                Position = UDim2.new(1, -31, 0, 4),
                 Size = UDim2.fromOffset(27, 27),
                 BackgroundTransparency = 1,
                 BorderSizePixel = 0, Text = "···",
                 Font = Enum.Font.GothamBold, TextSize = 15,
                 TextColor3 = muted, AutoButtonColor = false,
             }, card)
-            options.MouseButton1Click:Connect(function() openSettings(box, name, card) end)
-            card.MouseButton2Click:Connect(function() openSettings(box, name, card) end)
+            options.MouseButton1Click:Connect(function()
+                openSettings(box, holder, columns[category])
+            end)
+            card.MouseButton2Click:Connect(function()
+                openSettings(box, holder, columns[category])
+            end)
             card.MouseButton1Click:Connect(function()
                 local mouse = UIS:GetMouseLocation()
                 local optionPosition, optionSize = options.AbsolutePosition, options.AbsoluteSize
@@ -4998,7 +4993,7 @@ local function buildBedWarsUI()
                     return
                 end
                 if control then control.Set(not control.Get())
-                else openSettings(box, name, card) end
+                else openSettings(box, holder, columns[category]) end
             end)
             local hovered = false
             card.MouseEnter:Connect(function()
@@ -5014,11 +5009,12 @@ local function buildBedWarsUI()
                 end
             end
             table.insert(cards, { Category = category, Card = card, Control = control,
-                Name = nameLabel, Options = options, Search = searchText,
+                Name = nameLabel, Options = options, Holder = holder, Search = searchText,
                 Hovered = function() return hovered end, Gradient = activeGradient })
         end
     end
     local function refreshSearch()
+        closeSettings()
         local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
         local counts = {}
         for _, entry in ipairs(cards) do
@@ -5029,9 +5025,7 @@ local function buildBedWarsUI()
         for name, column in pairs(columns) do
             column.Count.Text = tostring(counts[name] or 0)
             column.VisibleCount = counts[name] or 0
-            local height = column.Collapsed and 44
-                or math.min(430, 65 + column.VisibleCount * 32)
-            column.Frame.Size = UDim2.fromOffset(200, height)
+            column.Reflow()
         end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
@@ -5181,6 +5175,20 @@ do
         if RefreshConfigList then RefreshConfigList() end
         Title.Text = "  Sunset.wtf | " .. detectedGame
         if detectedGame == "BedWars" then
+            Watermark.BackgroundTransparency = 1
+            Watermark.Size = UDim2.fromOffset(380, 24)
+            Watermark.Position = UDim2.new(1, -15, 0, 8)
+            Watermark.AnchorPoint = Vector2.new(1, 0)
+            Watermark.TextXAlignment = Enum.TextXAlignment.Right
+            Watermark.Font = Enum.Font.GothamMedium
+            Watermark.TextSize = 15
+            Watermark.TextColor3 = Color3.fromRGB(255, 221, 199)
+            Watermark.TextStrokeColor3 = Color3.fromRGB(34, 20, 27)
+            Watermark.TextStrokeTransparency = 0.55
+            for _, child in ipairs(Watermark:GetChildren()) do
+                if child:IsA("UIStroke") then child.Enabled = false end
+                if child:IsA("Frame") then child.Visible = false end
+            end
             BedWarsUI.Visible = true
             Window.Visible = false
             onMenuVisibility()
