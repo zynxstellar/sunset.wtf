@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-clean-ui-sprint-6c34"
+local SUNSET_BUILD = "20261001-custom-animation-87d2"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4209,6 +4209,53 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
+local CustomAnimation = { Enabled = false, AnimationId = "", Loop = false, Generation = 0 }
+local customAnimationToggle
+function CustomAnimation.Stop()
+    CustomAnimation.Generation += 1
+    if CustomAnimation.Track then
+        pcall(function() CustomAnimation.Track:Stop(0.15) end)
+        pcall(function() CustomAnimation.Track:Destroy() end)
+        CustomAnimation.Track = nil
+    end
+    if CustomAnimation.Animation then
+        CustomAnimation.Animation:Destroy()
+        CustomAnimation.Animation = nil
+    end
+end
+local function playCustomAnimation()
+    CustomAnimation.Stop()
+    if not CustomAnimation.Enabled then return end
+    local id = CustomAnimation.AnimationId
+    if not id:match("^%d+$") then return end
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    local generation = CustomAnimation.Generation
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+        or humanoid:WaitForChild("Animator", 2)
+    if generation ~= CustomAnimation.Generation or not CustomAnimation.Enabled or not animator then return end
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://" .. id
+    local ok, animationTrack = pcall(function()
+        return animator:LoadAnimation(animation)
+    end)
+    if not ok or not animationTrack then
+        animation:Destroy()
+        return
+    end
+    CustomAnimation.Animation, CustomAnimation.Track = animation, animationTrack
+    animationTrack.Priority = Enum.AnimationPriority.Action4
+    animationTrack.Looped = CustomAnimation.Loop
+    local played = pcall(function() animationTrack:Play(0.15) end)
+    if not played then CustomAnimation.Stop() end
+end
+track(LocalPlayer.CharacterAdded:Connect(function()
+    if not CustomAnimation.Enabled then return end
+    task.wait(0.5)
+    if CustomAnimation.Enabled then playCustomAnimation() end
+end))
+
 local LieDown = { Enabled = false, AnimationId = "112195772277805", Generation = 0 }
 function LieDown.Stop()
     LieDown.Generation += 1
@@ -4294,6 +4341,9 @@ do
     local lieToggle = Elements.Toggle(lieSection, "Lie Down", false, function(on)
         LieDown.Enabled = on
         if on and flipToggle and flipToggle.Get() then flipToggle.Set(false) end
+        if on and customAnimationToggle and customAnimationToggle.Get() then
+            customAnimationToggle.Set(false)
+        end
         if on then startBedWarsLieDown() else LieDown.Stop() end
     end)
     local lieInput = Elements.TextBox(lieSection, "Animation ID", "112195772277805", function(value)
@@ -4312,6 +4362,40 @@ do
         end,
         Box = lieSection.Parent, Row = lieInput,
     })
+    local animationSection = makeSection(PlayerTab.Right, "Custom Animation")
+    local animationInput = Elements.TextBox(animationSection, "Animation ID", "Enter an ID", function(value)
+        CustomAnimation.AnimationId = tostring(value):match("^%s*(%d+)%s*$") or ""
+        if CustomAnimation.AnimationId ~= "" then
+            if customAnimationToggle.Get() then playCustomAnimation()
+            else customAnimationToggle.Set(true) end
+        else
+            customAnimationToggle.Set(false)
+        end
+    end)
+    local animationBox = animationInput:FindFirstChildOfClass("TextBox")
+    table.insert(ConfigControls, {
+        Kind = "text", Key = configKey(animationSection, "Animation ID"),
+        Get = function() return animationBox.Text end,
+        Set = function(value)
+            animationBox.Text = tostring(value or "")
+            CustomAnimation.AnimationId = animationBox.Text:match("^%s*(%d+)%s*$") or ""
+            if CustomAnimation.Enabled then playCustomAnimation() end
+        end,
+        Box = animationSection.Parent, Row = animationInput,
+    })
+    customAnimationToggle = Elements.Toggle(animationSection, "Play Animation", false, function(on)
+        CustomAnimation.Enabled = on
+        if on then
+            if lieToggle.Get() then lieToggle.Set(false) end
+            playCustomAnimation()
+        else
+            CustomAnimation.Stop()
+        end
+    end)
+    Elements.Toggle(animationSection, "Loop Animation", false, function(on)
+        CustomAnimation.Loop = on
+        if CustomAnimation.Track then CustomAnimation.Track.Looped = on end
+    end)
     Flip = { Stop = function() end }
     local flipHumanoid, flipRoot, originalAutoRotate, flipYaw
     function Flip.Stop()
@@ -4588,6 +4672,8 @@ makeDraggable(Window, TitleBar)
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
 -- ============================================================
 ENV.SunsetUnload = function()
+    CustomAnimation.Enabled = false
+    CustomAnimation.Stop()
     LieDown.Enabled = false
     LieDown.Stop()
     GhostPulse.Stop()
