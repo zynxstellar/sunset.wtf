@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20260930-bedwars-items-no-fly-82d4"
+local SUNSET_BUILD = "20261001-bedwars-nearest-projectile-63a1"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -2458,198 +2458,6 @@ do
     track({ Disconnect = function() enabled = false restoreSpin() end })
 end
 
--- ---- Misc / Burrow
-local Burrow = { Depth = 4, Generation = 0,
-    Speed = 24, Color = Color3.fromRGB(220, 95, 75), Effects = {} }
-do
-    local s = makeSection(MiscTab.Right, "Burrow")
-    local status = Elements.Label(s, "Sink below the floor, then rise back up.")
-    local toggle
-    local function ring(position)
-        for i = 1, 12 do
-            local angle = i * math.pi / 6
-            local spark = new("Part", {
-                Name = "SunsetBurrowSpark", Shape = Enum.PartType.Ball,
-                Size = Vector3.new(0.25, 0.25, 0.25), Position = position,
-                Color = Burrow.Color, Material = Enum.Material.Neon,
-                Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
-            }, workspace)
-            Burrow.Effects[spark] = true
-            local target = position + Vector3.new(math.cos(angle) * 2.3, 0.1,
-                math.sin(angle) * 2.3)
-            local tween = TweenService:Create(spark, TweenInfo.new(0.45),
-                { Position = target, Transparency = 1 })
-            tween.Completed:Connect(function()
-                Burrow.Effects[spark] = nil
-                spark:Destroy()
-            end)
-            Debris:AddItem(spark, 0.8)
-            tween:Play()
-        end
-    end
-    local function cancelTween()
-        if Burrow.Tween then
-            Burrow.Tween:Cancel()
-            Burrow.Tween = nil
-        end
-    end
-    local function stopMotion()
-        if Burrow.Velocity then Burrow.Velocity:Destroy() Burrow.Velocity = nil end
-        Burrow.HoldY = nil
-    end
-    local function restore()
-        cancelTween()
-        stopMotion()
-        local root, humanoid = Burrow.Root, Burrow.Humanoid
-        if root and root.Parent then
-            local position = root.Position
-            root.CFrame = Burrow.ExitCFrame or (CFrame.new(position.X,
-                Burrow.Origin.Position.Y, position.Z) * Burrow.Origin.Rotation)
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.Anchored = Burrow.WasAnchored
-        end
-        for part, collision in pairs(Burrow.Collisions or {}) do
-            if part.Parent then part.CanCollide = collision end
-        end
-        if humanoid and humanoid.Parent then
-            humanoid.PlatformStand = Burrow.WasPlatformStand
-            humanoid.AutoRotate = Burrow.WasAutoRotate
-        end
-        Burrow.Root, Burrow.Humanoid, Burrow.Origin, Burrow.Collisions = nil, nil, nil, nil
-        Burrow.ExitCFrame = nil
-    end
-    function Burrow.Stop()
-        Burrow.Generation += 1
-        restore()
-        for spark in pairs(Burrow.Effects) do spark:Destroy() end
-        table.clear(Burrow.Effects)
-        status.Text = "Ready"
-    end
-    local function setBurrow(on)
-        Burrow.Generation += 1
-        local generation = Burrow.Generation
-        cancelTween()
-        stopMotion()
-        if on then
-            if Settings.FlyEnabled then
-                status.Text = "Turn Fly off first"
-                if toggle then toggle.Set(false) end
-                return
-            end
-            local character = LocalPlayer.Character
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if not root or not humanoid or humanoid.Health <= 0 then
-                status.Text = "Waiting for character"
-                if toggle then toggle.Set(false) end
-                return
-            end
-            if Burrow.Root ~= root then
-                restore()
-                Burrow.Root, Burrow.Humanoid = root, humanoid
-                Burrow.Origin = root.CFrame
-                Burrow.WasAnchored = root.Anchored
-                Burrow.WasPlatformStand = humanoid.PlatformStand
-                Burrow.WasAutoRotate = humanoid.AutoRotate
-                Burrow.Collisions = {}
-                for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        Burrow.Collisions[part] = part.CanCollide
-                        part.CanCollide = false
-                    end
-                end
-                root.Anchored = true
-                humanoid.PlatformStand = true
-                humanoid.AutoRotate = false
-                ring(Burrow.Origin.Position - Vector3.new(0,
-                    humanoid.HipHeight + root.Size.Y / 2, 0))
-            end
-            root.Anchored = true
-            status.Text = "Burrowing..."
-            local target = CFrame.new(root.Position.X,
-                Burrow.Origin.Position.Y - Burrow.Depth, root.Position.Z)
-                * Burrow.Origin.Rotation
-            Burrow.Tween = TweenService:Create(root,
-                TweenInfo.new(0.55, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
-                { CFrame = target })
-            Burrow.Tween:Play()
-            Burrow.Tween.Completed:Wait()
-            if generation == Burrow.Generation then
-                Burrow.Tween = nil
-                Burrow.HoldY = root.Position.Y
-                Burrow.Velocity = new("BodyVelocity", {
-                    MaxForce = Vector3.new(1e6, 1e6, 1e6), P = 1e4,
-                    Velocity = Vector3.zero,
-                }, root)
-                root.Anchored = false
-                status.Text = "Underground - WASD to move"
-            end
-        elseif Burrow.Root and Burrow.Root.Parent then
-            status.Text = "Rising..."
-            local current = Burrow.Root.Position
-            Burrow.ExitCFrame = CFrame.new(current.X, Burrow.Origin.Position.Y,
-                current.Z) * Burrow.Origin.Rotation
-            ring(Burrow.ExitCFrame.Position - Vector3.new(0,
-                Burrow.Humanoid.HipHeight + Burrow.Root.Size.Y / 2, 0))
-            Burrow.Root.Anchored = true
-            Burrow.Tween = TweenService:Create(Burrow.Root,
-                TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
-                { CFrame = Burrow.ExitCFrame })
-            Burrow.Tween:Play()
-            Burrow.Tween.Completed:Wait()
-            if generation == Burrow.Generation then
-                restore()
-                status.Text = "Ready"
-            end
-        else
-            restore()
-            status.Text = "Ready"
-        end
-    end
-    toggle = Elements.Toggle(s, "Burrow Animation", false, setBurrow)
-    Elements.Slider(s, "Burrow Depth", 2, 7, 4, "studs", function(value)
-        Burrow.Depth = value
-        if toggle.Get() then task.spawn(setBurrow, true) end
-    end)
-    Elements.Slider(s, "Burrow Speed", 8, 60, 24, "", function(value)
-        Burrow.Speed = value
-    end)
-    Elements.ColorPicker(s, "Burrow Color", Burrow.Color, function(color)
-        Burrow.Color = color
-    end)
-    track(LocalPlayer.CharacterAdded:Connect(function()
-        if toggle.Get() then
-            task.wait(0.4)
-            Burrow.Stop()
-            task.spawn(setBurrow, true)
-        end
-    end))
-    track(RunService.Heartbeat:Connect(function()
-        local root, velocity = Burrow.Root, Burrow.Velocity
-        if not root or not root.Parent or not velocity or not velocity.Parent then return end
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        local look = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
-        local right = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
-        if look.Magnitude < 0.01 or right.Magnitude < 0.01 then return end
-        local forwardInput = (UIS:IsKeyDown(Enum.KeyCode.W) and 1 or 0)
-            - (UIS:IsKeyDown(Enum.KeyCode.S) and 1 or 0)
-        local sideInput = (UIS:IsKeyDown(Enum.KeyCode.D) and 1 or 0)
-            - (UIS:IsKeyDown(Enum.KeyCode.A) and 1 or 0)
-        local movement = look.Unit * forwardInput + right.Unit * sideInput
-        if movement.Magnitude > 1 then movement = movement.Unit end
-        local y = math.clamp(((Burrow.HoldY or root.Position.Y) - root.Position.Y) * 12,
-            -30, 30)
-        velocity.Velocity = movement * Burrow.Speed + Vector3.new(0, y, 0)
-        for _, part in ipairs(root.Parent:GetDescendants()) do
-            if part:IsA("BasePart") then
-                if Burrow.Collisions[part] == nil then Burrow.Collisions[part] = part.CanCollide end
-                part.CanCollide = false
-            end
-        end
-    end))
-end
-
 -- ---- Misc / Ghost Pulse
 local GhostPulse = { Enabled = false, Speed = 2,
     Color = Color3.fromRGB(170, 105, 255), Rainbow = true }
@@ -3541,7 +3349,7 @@ end
 BedWars = {
     PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
-    SprintOn = false,
+    SprintOn = false, AntiVoidOn = false,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
     GeneratorColor = Color3.fromRGB(82, 220, 255),
@@ -3579,7 +3387,18 @@ local function stopBedWarsSprint()
     if controller then
         local stop = controller.stopSprinting or controller.stopSprint
         if type(stop) == "function" then pcall(stop, controller) end
+        if type(controller.setSprinting) == "function" then
+            pcall(controller.setSprinting, controller, false)
+        end
     end
+    local humanoid = BedWars.SprintHumanoid
+    if humanoid and humanoid.Parent and BedWars.SprintFallbackSpeed
+        and math.abs(humanoid.WalkSpeed - BedWars.SprintFallbackSpeed) < 0.1 then
+        humanoid.WalkSpeed = BedWars.SprintBaseSpeed
+    end
+    BedWars.SprintHumanoid = nil
+    BedWars.SprintBaseSpeed = nil
+    BedWars.SprintFallbackSpeed = nil
 end
 local bedWarsNet = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
 local function bedWarsRemote(name, blockEngine)
@@ -3918,50 +3737,28 @@ local function bedWarsOffensiveProjectile(name)
         or name:find("orb", 1, true)
 end
 local function bedWarsProjectileTarget(character, root, range, origin)
-    local targets, seen = {}, {}
-    local function consider(model)
-        if not model or model == character or seen[model] then return end
-        seen[model] = true
-        local owner = Players:GetPlayerFromCharacter(model)
-        if owner and not bedWarsEnemy(owner) then return end
-        if not owner and not bedWarsHostileNpc(model) then return end
-        local humanoid = model:FindFirstChildOfClass("Humanoid")
-        local targetRoot = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-        if not humanoid or humanoid.Health <= 0 or not targetRoot
-            or model:FindFirstChildOfClass("ForceField") then return end
-        local distance = (root.Position - targetRoot.Position).Magnitude
-        if distance > range or distance <= bedWarsAttackRange() then return end
-        if not bedWarsVisible(character, model, origin, targetRoot) then return end
-        targets[#targets + 1] = {
-            model = model, root = targetRoot, distance = distance,
-            health = humanoid.Health, gear = bedWarsGearScore(owner, model),
-        }
-    end
+    local nearest, nearestDistance
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then consider(player.Character) end
-    end
-    local overlap = OverlapParams.new()
-    overlap.FilterType = Enum.RaycastFilterType.Exclude
-    overlap.FilterDescendantsInstances = { character }
-    overlap.MaxParts = 250
-    for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, range, overlap)) do
-        local model = part:FindFirstAncestorOfClass("Model")
-        while model and not model:FindFirstChildOfClass("Humanoid") do
-            model = model:FindFirstAncestorOfClass("Model")
+        if bedWarsEnemy(player) then
+            local model = player.Character
+            local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+            local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
+            if humanoid and humanoid.Health > 0 and targetRoot
+                and not model:FindFirstChildOfClass("ForceField") then
+                local distance = (root.Position - targetRoot.Position).Magnitude
+                if not nearestDistance or distance < nearestDistance then
+                    nearest = { model = model, root = targetRoot, distance = distance }
+                    nearestDistance = distance
+                end
+            end
         end
-        if model then consider(model) end
     end
-    table.sort(targets, function(a, b)
-        if BedWars.AuraPriority == "Higher HP" and a.health ~= b.health then
-            return a.health > b.health
-        elseif BedWars.AuraPriority == "Lower HP" and a.health ~= b.health then
-            return a.health < b.health
-        elseif BedWars.AuraPriority == "More Gear" and a.gear ~= b.gear then
-            return a.gear > b.gear
-        end
-        return a.distance < b.distance
-    end)
-    return targets[1]
+    -- Do not skip a close player to shoot someone farther away. Sword range
+    -- takes precedence over Projectile Aura for the nearest enemy.
+    if not nearest or nearestDistance > range
+        or nearestDistance <= bedWarsAttackRange() then return nil end
+    if not bedWarsVisible(character, nearest.model, origin, nearest.root) then return nil end
+    return nearest
 end
 local function bedWarsProjectileVelocity(origin, target, speed, gravity)
     local delta = target - origin
@@ -4041,14 +3838,18 @@ local function bedWarsProjectileStep()
                 local drawTime = math.clamp(selected.source.maxStrengthChargeSec or 0.2, 0.2, 2)
                 task.wait(drawTime)
                 local currentRoot = character:FindFirstChild("HumanoidRootPart")
-                if currentRoot and target.root.Parent and selected.item.Parent
+                local currentTarget = currentRoot and bedWarsProjectileTarget(character,
+                    currentRoot, BedWars.ProjectileRange, currentRoot.Position + Vector3.new(0, 1.5, 0))
+                if currentTarget and currentTarget.model == target.model
+                    and target.root.Parent and selected.item.Parent
                     and bedWarsHeldItem() == selected.item then
                     local launchOk, launchPosition = pcall(function()
                         return api.controller:getLaunchPosition(selected.item)
                     end)
                     local shotOrigin = launchOk and launchPosition or currentRoot.Position
-                    local shotAim = target.root.Position + Vector3.new(0, 0.8, 0)
-                        + target.root.AssemblyLinearVelocity * math.min(target.distance / speed, 0.65)
+                    local shotAim = currentTarget.root.Position + Vector3.new(0, 0.8, 0)
+                        + currentTarget.root.AssemblyLinearVelocity
+                            * math.min(currentTarget.distance / speed, 0.65)
                     local shotVelocity = bedWarsProjectileVelocity(shotOrigin, shotAim, speed, gravity)
                     if shotVelocity then
                         BedWars.ProjectileTimes[selected.item.Name] = os.clock()
@@ -4069,6 +3870,21 @@ local function bedWarsProjectileStep()
         end
     end)
     BedWars.ItemBusy = false
+end
+local function bedWarsEnemyInSwordRange(root)
+    local range = bedWarsAttackRange()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if bedWarsEnemy(player) then
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local targetRoot = character and character:FindFirstChild("HumanoidRootPart")
+            if humanoid and humanoid.Health > 0 and targetRoot
+                and (root.Position - targetRoot.Position).Magnitude <= range then
+                return true
+            end
+        end
+    end
+    return false
 end
 local function bedWarsScaffoldStep()
     if BedWars.ItemBusy or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
@@ -4105,6 +3921,12 @@ local function bedWarsScaffoldStep()
         grid = emptyCell(root.Position + humanoid.MoveDirection.Unit * 3.5)
     end
     if not grid then return end
+    -- Keep bridging when the block path is over a deep gap; otherwise let
+    -- nearby combat take priority and leave the player's held item alone.
+    local gapOrigin = grid * 3 + Vector3.new(0, 1.5, 0)
+    local groundBelow = workspace:Raycast(gapOrigin, Vector3.new(0, -24, 0), ray)
+    local overVoid = not groundBelow or (gapOrigin.Y - groundBelow.Position.Y) > 12
+    if not overVoid and bedWarsEnemyInSwordRange(root) then return end
     BedWars.BridgingNeeded = os.clock()
     if not item then return end
     local key = tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
@@ -4220,6 +4042,8 @@ function BedWars.Stop()
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
     BedWars.SprintOn = false
+    BedWars.AntiVoidOn = false
+    BedWars.LastSafeCFrame = nil
     stopBedWarsSprint()
     for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
 end
@@ -4266,24 +4090,72 @@ task.spawn(function()
 end)
 task.spawn(function()
     while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.AntiVoidOn then
+            local character = LocalPlayer.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if root ~= BedWars.SafeRoot then
+                BedWars.SafeRoot = root
+                BedWars.LastSafeCFrame = nil
+            end
+            if root and humanoid and humanoid.Health > 0 then
+                local ray = RaycastParams.new()
+                ray.FilterType = Enum.RaycastFilterType.Exclude
+                ray.FilterDescendantsInstances = { character }
+                ray.RespectCanCollide = true
+                local hit = workspace:Raycast(root.Position,
+                    Vector3.new(0, -30, 0), ray)
+                local solidGround = hit and (hit.Instance == workspace.Terrain
+                    or (hit.Instance:IsA("BasePart") and hit.Instance.Anchored))
+                local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
+                    and solidGround
+                    and root.Position.Y - hit.Position.Y < 8
+                if grounded then
+                    BedWars.LastSafeCFrame = root.CFrame
+                elseif BedWars.LastSafeCFrame
+                    and (not hit or root.Position.Y - hit.Position.Y > 20)
+                    and root.AssemblyLinearVelocity.Y < -8
+                    and root.Position.Y < BedWars.LastSafeCFrame.Position.Y - 7
+                    and os.clock() - (BedWars.LastVoidRescue or 0) > 0.8 then
+                    BedWars.LastVoidRescue = os.clock()
+                    root.CFrame = BedWars.LastSafeCFrame + Vector3.new(0, 2.5, 0)
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.SprintOn then
             local character = LocalPlayer.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             if humanoid and humanoid.Health > 0 then
+                if humanoid ~= BedWars.SprintHumanoid then
+                    BedWars.SprintHumanoid = humanoid
+                    BedWars.SprintBaseSpeed = humanoid.WalkSpeed
+                    BedWars.SprintFallbackSpeed = nil
+                end
                 local controller = bedWarsSprintController()
                 local start = controller and (controller.startSprinting or controller.startSprint)
                 if type(start) == "function" then
-                    local ok = pcall(start, controller)
-                    if BedWars.SprintStatus then
-                        BedWars.SprintStatus.Text = ok and "Sprint active"
-                            or "Sprint retrying"
-                    end
-                elseif BedWars.SprintStatus then
-                    BedWars.SprintStatus.Text = "Sprint controller unavailable"
+                    pcall(start, controller)
+                elseif controller and type(controller.setSprinting) == "function" then
+                    pcall(controller.setSprinting, controller, true)
+                end
+                -- Some BedWars builds expose the sprint controller but do not
+                -- increase WalkSpeed through its public start method.
+                local base = BedWars.SprintBaseSpeed or 16
+                if humanoid.WalkSpeed < base * 1.1 then
+                    local boosted = base * 1.35
+                    BedWars.SprintFallbackSpeed = boosted
+                    humanoid.WalkSpeed = boosted
                 end
             end
         end
-        task.wait(0.35)
+        task.wait(0.1)
     end
 end)
 
@@ -4292,13 +4164,15 @@ do
     local sprintSection = gameSection(gameName, MainTab.Right, "Sprint")
     Elements.Toggle(sprintSection, "Always Sprint", false, function(on)
         BedWars.SprintOn = on
-        if not on then
-            stopBedWarsSprint()
-            if BedWars.SprintStatus then BedWars.SprintStatus.Text = "Off" end
-        end
+        if not on then stopBedWarsSprint() end
     end)
-    BedWars.SprintStatus = Elements.Label(sprintSection, "Off")
-    BedWars.SprintStatus.TextColor3 = T.dim
+    local antiVoidSection = gameSection(gameName, MainTab.Right, "Anti Void")
+    Elements.Toggle(antiVoidSection, "Anti Void", false, function(on)
+        BedWars.AntiVoidOn = on
+        BedWars.LastSafeCFrame = nil
+        BedWars.SafeRoot = nil
+    end)
+    Elements.Label(antiVoidSection, "Return to your last safe ground after a fall.")
     local combatSection = gameSection(gameName, AimTab.Left, "Combat")
     Elements.Toggle(combatSection, "Kill Aura", false, function(on)
         BedWars.AuraOn = on
@@ -4572,7 +4446,6 @@ makeDraggable(Window, TitleBar)
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
 -- ============================================================
 ENV.SunsetUnload = function()
-    Burrow.Stop()
     GhostPulse.Stop()
     Fun.Running = false
     Fun.Enabled = false
