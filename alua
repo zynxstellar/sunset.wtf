@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-inline-fit-c742"
+local SUNSET_BUILD = "20261001-ui-refresh-d812"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4729,7 +4729,7 @@ local function buildBedWarsUI()
     title.Font = Enum.Font.GothamBold
     title.Position = UDim2.fromOffset(48, 10)
     title.Size = UDim2.fromOffset(230, 27)
-    local subtitle = label(header, "BEDWARS  /  SUNSET", 11, gold)
+    local subtitle = label(header, "BEDWARS  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
     subtitle.Font = Enum.Font.Gotham
     subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
@@ -5101,7 +5101,7 @@ ENV.SunsetUnload = function()
     ENV.SunsetUnload = nil
 end
 
-print("Sunset.wtf loaded. RightShift to open/close.")
+print("Sunset.wtf [" .. SUNSET_BUILD .. "] loaded. RightShift to open/close.")
 
 -- The Roblox experience is detected automatically. Match subplaces share the
 -- same universe ID, so entering a BedWars round keeps the BedWars modules.
@@ -5132,7 +5132,7 @@ if detectedGame then
             return
         end
         local loaderUrl = ENV.SunsetLoaderUrl
-            or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/alua"
+            or ("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/alua?build=" .. SUNSET_BUILD)
         local localReady = false
         if typeof(readfile) == "function" then
             local readOk, saved = pcall(readfile, SUNSET_LOCAL_SOURCE)
