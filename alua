@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-bedwars-lie-animation-a84e"
+local SUNSET_BUILD = "20261001-clean-ui-sprint-6c34"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -2068,6 +2068,7 @@ do
     Elements.Slider(left, "Smoothness", 0, 100, 30, "", function(v) Settings.AimSmoothTime = v / 250 end)
     Elements.Slider(left, "Range", 25, 1000, 300, "", function(v) Settings.AimRange = v end)
     local status = Elements.Label(left, "Off")
+    status.Visible = false
     status.TextWrapped = true
     status.Parent.Size = UDim2.new(1, 0, 0, 44)
     local aimStatus = new("TextLabel", {
@@ -2315,7 +2316,6 @@ end
 do
     local s = makeSection(SettingsTab.Left, "Watermark")
     Elements.Toggle(s, "Enabled", true, function(on) Settings.WatermarkOn = on end)
-    Elements.Label(s, "Drag the bar to move it", nil).TextColor3 = T.dim
     Elements.Button(s, "Reset Position", function() Watermark.Position = UDim2.fromOffset(10, 10) end)
 end
 
@@ -2906,6 +2906,7 @@ do
     end
 
     local status = Elements.Label(s, "Target: none")
+    status.Visible = false
     status.TextColor3 = T.dim
 
     local function teleportBehind(target)
@@ -3282,11 +3283,6 @@ do
         if ok then refreshConfigs() end
     end)
 end
--- ---- Settings / Credits
-do
-    local s = makeSection(SettingsTab.Left, "Credits")
-    Elements.Label(s, "Owner: ZYNX")
-end
 do
     local s = makeSection(SettingsTab.Left, "Arena Travel")
     Elements.Toggle(s, "Auto Reinject", true, function(on)
@@ -3295,6 +3291,7 @@ do
         if AutoReinject.enabled and AutoReinject.Queue then AutoReinject.Queue() end
     end)
     AutoReinject.Status = Elements.Label(s, "Checking teleport support...")
+    AutoReinject.Status.Visible = false
 end
 MainTab.Select()
 
@@ -3365,13 +3362,6 @@ do
     radar.Parent.LayoutOrder = 2
     Elements.Toggle(radar, "Zombie Outlines", false, Zombie.ZombieRadar.SetEnabled)
     Elements.Toggle(radar, "Shard + Salvage Markers", false, Zombie.DropMarkers.SetEnabled)
-    local radarStatus = Elements.Label(radar, "Zombies: --")
-    task.spawn(function()
-        while Zombie.alive and radarStatus.Parent do
-            radarStatus.Text = Zombie.ZombieRadar.Status
-            task.wait(0.5)
-        end
-    end)
 end
 -- BedWars starter modules use replicated players and map objects. No lobby
 -- remotes are fired, so the controls remain useful after entering a match.
@@ -3389,24 +3379,22 @@ local function bedWarsSprintController()
     if sprintController then return sprintController end
     local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
     local module = scripts and scripts:FindFirstChild("sprint-controller", true)
-    if module and module:IsA("ModuleScript") then
+    local storage = game:GetService("ReplicatedStorage")
+    local include = storage:FindFirstChild("rbxts_include")
+    local runtimeModule = include and include:FindFirstChild("RuntimeLib")
+    if runtimeModule and module then
+        local ok, controller = pcall(function()
+            local runtime = require(runtimeModule)
+            local knit = runtime.import(module, storage,
+                "rbxts_include", "node_modules", "@easy-games", "knit", "src").KnitClient
+            return knit.Controllers.SprintController
+        end)
+        if ok and controller then sprintController = controller end
+    end
+    if not sprintController and module and module:IsA("ModuleScript") then
         local ok, data = pcall(require, module)
         if ok and type(data) == "table" then
             sprintController = data.SprintController or data.default
-        end
-    end
-    if not sprintController then
-        local storage = game:GetService("ReplicatedStorage")
-        local include = storage:FindFirstChild("rbxts_include")
-        local runtimeModule = include and include:FindFirstChild("RuntimeLib")
-        if runtimeModule and scripts then
-            local ok, controller = pcall(function()
-                local runtime = require(runtimeModule)
-                local knit = runtime.import(module or scripts, storage,
-                    "rbxts_include", "node_modules", "@easy-games", "knit", "src").KnitClient
-                return knit.Controllers.SprintController
-            end)
-            if ok then sprintController = controller end
         end
     end
     return sprintController
@@ -4187,29 +4175,39 @@ task.spawn(function()
             if humanoid and humanoid.Health > 0 then
                 if humanoid ~= BedWars.SprintHumanoid then
                     BedWars.SprintHumanoid = humanoid
-                    BedWars.SprintBaseSpeed = humanoid.WalkSpeed
+                    BedWars.SprintBaseSpeed = math.max(16, humanoid.WalkSpeed)
                     BedWars.SprintFallbackSpeed = nil
                 end
                 local controller = bedWarsSprintController()
                 local start = controller and (controller.startSprinting or controller.startSprint)
-                if type(start) == "function" then
-                    pcall(start, controller)
-                elseif controller and type(controller.setSprinting) == "function" then
-                    pcall(controller.setSprinting, controller, true)
+                if controller and controller.sprinting ~= true then
+                    if type(start) == "function" then
+                        pcall(start, controller)
+                    elseif type(controller.setSprinting) == "function" then
+                        pcall(controller.setSprinting, controller, true)
+                    end
                 end
-                -- Some BedWars builds expose the sprint controller but do not
-                -- increase WalkSpeed through its public start method.
                 local base = BedWars.SprintBaseSpeed or 16
-                if humanoid.WalkSpeed < base * 1.1 then
-                    local boosted = base * 1.35
-                    BedWars.SprintFallbackSpeed = boosted
-                    humanoid.WalkSpeed = boosted
+                local boosted = math.max(20, base * 1.35)
+                if controller and type(controller.setSpeed) == "function"
+                    and humanoid.WalkSpeed < boosted - 0.1 then
+                    pcall(controller.setSpeed, controller, boosted)
                 end
+                BedWars.SprintFallbackSpeed = boosted
             end
         end
         task.wait(0.1)
     end
 end)
+track(RunService.Heartbeat:Connect(function()
+    if Settings.SelectedGame ~= "BedWars" or not BedWars.SprintOn then return end
+    local humanoid = BedWars.SprintHumanoid
+    local boosted = BedWars.SprintFallbackSpeed
+    if humanoid and humanoid.Parent and humanoid.Health > 0 and boosted
+        and humanoid.WalkSpeed < boosted - 0.1 then
+        humanoid.WalkSpeed = boosted
+    end
+end))
 
 local LieDown = { Enabled = false, AnimationId = "112195772277805", Generation = 0 }
 function LieDown.Stop()
@@ -4366,7 +4364,6 @@ do
         BedWars.LastSafeCFrame = nil
         BedWars.SafeRoot = nil
     end)
-    Elements.Label(antiVoidSection, "Return to your last safe ground after a fall.")
     local combatSection = gameSection(gameName, AimTab.Left, "Combat")
     Elements.Toggle(combatSection, "Kill Aura", false, function(on)
         BedWars.AuraOn = on
@@ -4408,8 +4405,7 @@ local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
     Color = Color3.fromRGB(255, 116, 82), Active = {},
     OrbitOn = false, OrbitRadius = 3, OrbitSpeed = 2,
     OrbitColor = Color3.fromRGB(130, 180, 255), OrbitRainbow = false,
-    FireworksOn = false, FireworkColor = Color3.fromRGB(255, 185, 85),
-    FireworkRainbow = false, FootstepsOn = false,
+    FootstepsOn = false,
     StepColor = Color3.fromRGB(95, 220, 255), StepRainbow = false }
 local function clearFunEffect(kind)
     for part, effect in pairs(Fun.Active) do
@@ -4468,54 +4464,11 @@ local function throwFakeProjectile()
     Debris:AddItem(orb, 1.5)
     tween:Play()
 end
-local function spawnTargetFireworks()
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local target = funTarget(root)
-    if not target then return end
-    local center = target.Position + Vector3.new(0, 2, 0)
-    for i = 1, 14 do
-        local angle = i * math.pi * 2 / 14
-        local color = Fun.FireworkRainbow
-            and Color3.fromHSV((os.clock() * 0.16 + i / 14) % 1, 0.85, 1)
-            or Fun.FireworkColor
-        local particle = new("Part", {
-            Name = "SunsetFirework", Shape = Enum.PartType.Ball,
-            Size = Vector3.new(0.32, 0.32, 0.32), Position = center,
-            Material = Enum.Material.Neon, Color = color,
-            Anchored = true, CanCollide = false, CanTouch = false, CanQuery = false,
-        }, workspace)
-        Fun.Active[particle] = "fireworks"
-        local radius = 3.5 + math.random() * 2
-        local endpoint = center + Vector3.new(math.cos(angle) * radius,
-            math.random(-1, 4), math.sin(angle) * radius)
-        local tween = TweenService:Create(particle,
-            TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { Position = endpoint, Transparency = 1, Size = Vector3.new(0.08, 0.08, 0.08) })
-        tween.Completed:Connect(function()
-            Fun.Active[particle] = nil
-            particle:Destroy()
-        end)
-        Debris:AddItem(particle, 1)
-        tween:Play()
-    end
-end
 task.spawn(function()
     while Fun.Running do
         if Fun.Enabled and Settings.SelectedGame then
             pcall(throwFakeProjectile)
             task.wait(1 / math.max(Fun.Rate, 1))
-        else
-            task.wait(0.25)
-        end
-    end
-end)
-task.spawn(function()
-    while Fun.Running do
-        if Fun.FireworksOn and Settings.SelectedGame then
-            pcall(spawnTargetFireworks)
-            task.wait(2.4)
         else
             task.wait(0.25)
         end
@@ -4597,7 +4550,6 @@ task.spawn(function()
 end)
 do
     local s = makeSection(FunTab.Left, "Fake Projectiles")
-    Elements.Label(s, "Visual only - throws glowing projectiles at nearby players.")
     Elements.Toggle(s, "Throw Fake Projectiles", false, function(on)
         Fun.Enabled = on
         if not on then clearFunEffect("projectile") end
@@ -4615,16 +4567,6 @@ do
     Elements.Toggle(orbit, "Rainbow Override", false, function(on) Fun.OrbitRainbow = on end)
     Elements.ColorPicker(orbit, "Star Color", Fun.OrbitColor, function(color)
         Fun.OrbitColor = color
-    end)
-    local fireworks = makeSection(FunTab.Right, "Target Fireworks")
-    Elements.Label(fireworks, "Visual only - colorful bursts on nearby players.")
-    Elements.Toggle(fireworks, "Target Fireworks", false, function(on)
-        Fun.FireworksOn = on
-        if not on then clearFunEffect("fireworks") end
-    end)
-    Elements.Toggle(fireworks, "Rainbow Override", false, function(on) Fun.FireworkRainbow = on end)
-    Elements.ColorPicker(fireworks, "Firework Color", Fun.FireworkColor, function(color)
-        Fun.FireworkColor = color
     end)
     local steps = makeSection(FunTab.Right, "Rainbow Footsteps")
     Elements.Toggle(steps, "Rainbow Footsteps", false, function(on)
