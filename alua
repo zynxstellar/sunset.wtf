@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-bedwars-clouds-5d84"
+local SUNSET_BUILD = "20261001-bedwars-lie-flip-scaffold-6b35"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -58,6 +58,9 @@ local sniperOnlySections = {}
 local bedWarsOutlineToggle
 local bedWarsNamesToggle
 local flyToggle
+local spinToggle
+local flipToggle
+local Flip
 local AutoReinject = { enabled = true }
 local RefreshConfigList
 
@@ -2427,7 +2430,8 @@ do
         end
         trackedHumanoid, originalAutoRotate, trackedRoot = nil, nil, nil
     end
-    Elements.Toggle(s, "Spinbot", false, function(on)
+    spinToggle = Elements.Toggle(s, "Spinbot", false, function(on)
+        if on and flipToggle and flipToggle.Get() then flipToggle.Set(false) end
         enabled = on
         if not on then restoreSpin() end
     end)
@@ -2436,7 +2440,8 @@ do
     track(RunService.Stepped:Connect(function(_, dt)
         if not enabled then return end
         -- Avoid competing with movement modules that own the character rotation.
-        if Settings.FlyEnabled or Settings.AutoTp then restoreSpin() return end
+        if Settings.FlyEnabled or Settings.AutoTp
+            or (BedWars and BedWars.FlipOn) then restoreSpin() return end
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -3607,6 +3612,8 @@ end
 local swordHitRemote, lastSwordRemoteLookup = nil, -math.huge
 local function bedWarsAuraStep()
     if BedWars.ItemBusy then return end
+    if BedWars.ScaffoldOn and BedWars.BridgingNeeded
+        and os.clock() - BedWars.BridgingNeeded < 0.55 then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3799,6 +3806,8 @@ local function bedWarsProjectileVelocity(origin, target, speed, gravity)
 end
 local function bedWarsProjectileStep()
     if BedWars.ItemBusy or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
+    if BedWars.ScaffoldOn and BedWars.BridgingNeeded
+        and os.clock() - BedWars.BridgingNeeded < 0.55 then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3910,8 +3919,20 @@ local function bedWarsEnemyInSwordRange(root)
     end
     return false
 end
+local function bedWarsReleaseScaffoldItem()
+    if BedWars.ItemBusy then return end
+    local previous, wool = BedWars.ScaffoldPreviousItem, BedWars.ScaffoldWoolItem
+    BedWars.ScaffoldPreviousItem = nil
+    BedWars.ScaffoldWoolItem = nil
+    if previous and previous.Parent == bedWarsInventory()
+        and bedWarsHeldItem() == wool then
+        BedWars.ItemBusy = true
+        pcall(bedWarsEquip, previous)
+        BedWars.ItemBusy = false
+    end
+end
 local function bedWarsScaffoldStep()
-    if BedWars.ItemBusy or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
+    if BedWars.ItemBusy then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3951,8 +3972,8 @@ local function bedWarsScaffoldStep()
     local groundBelow = workspace:Raycast(gapOrigin, Vector3.new(0, -24, 0), ray)
     local overVoid = not groundBelow or (gapOrigin.Y - groundBelow.Position.Y) > 12
     if not overVoid and bedWarsEnemyInSwordRange(root) then return end
-    BedWars.BridgingNeeded = os.clock()
     if not item then return end
+    BedWars.BridgingNeeded = os.clock()
     local key = tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
     BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
     local now = os.clock()
@@ -3965,15 +3986,15 @@ local function bedWarsScaffoldStep()
         pcall(function()
             if not BedWars.Running or not BedWars.ScaffoldOn then return end
             local previous = bedWarsHeldItem()
+            if previous and previous ~= item and not BedWars.ScaffoldPreviousItem then
+                BedWars.ScaffoldPreviousItem = previous
+            end
             if not bedWarsEquip(item) then return end
+            BedWars.ScaffoldWoolItem = item
             if item.Parent == bedWarsInventory() and bedWarsHeldItem() == item then
                 pcall(function()
                     remote:InvokeServer({ blockType = item.Name, position = grid })
                 end)
-            end
-            if previous and previous.Parent == bedWarsInventory()
-                and bedWarsHeldItem() == item then
-                bedWarsEquip(previous)
             end
         end)
         BedWars.ScaffoldPending = math.max(0, (BedWars.ScaffoldPending or 1) - 1)
@@ -4062,6 +4083,8 @@ local function refreshBedWarsMap()
     end
 end
 function BedWars.Stop()
+    bedWarsReleaseScaffoldItem()
+    if Flip then Flip.Stop() end
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
@@ -4108,6 +4131,11 @@ task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.ScaffoldOn then
             bedWarsScaffoldStep()
+        end
+        if BedWars.ScaffoldPreviousItem and (not BedWars.ScaffoldOn
+            or not BedWars.BridgingNeeded
+            or os.clock() - BedWars.BridgingNeeded > 0.55) then
+            bedWarsReleaseScaffoldItem()
         end
         task.wait(0.05)
     end
@@ -4183,8 +4211,149 @@ task.spawn(function()
     end
 end)
 
+local LieDown = { Enabled = false, AnimationId = "4686925579", Generation = 0 }
+function LieDown.Stop()
+    LieDown.Generation += 1
+    if LieDown.Track then
+        pcall(function() LieDown.Track:Stop(0.15) end)
+        pcall(function() LieDown.Track:Destroy() end)
+        LieDown.Track = nil
+    end
+    if LieDown.Animation then LieDown.Animation:Destroy() LieDown.Animation = nil end
+    if LieDown.Joint and LieDown.Joint.Parent and LieDown.OriginalC0 then
+        LieDown.Joint.C0 = LieDown.OriginalC0
+    end
+    LieDown.Joint, LieDown.OriginalC0 = nil, nil
+end
+local function bedWarsLiePose(character)
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, joint in ipairs(character:GetDescendants()) do
+        if joint:IsA("Motor6D") and joint.Part0 == root
+            and joint.Part1 and (joint.Part1.Name == "Torso"
+                or joint.Part1.Name == "LowerTorso") then
+            LieDown.Joint = joint
+            LieDown.OriginalC0 = joint.C0
+            joint.C0 = joint.C0 * CFrame.new(0, -1.1, 0)
+                * CFrame.Angles(math.rad(90), 0, 0)
+            return
+        end
+    end
+end
+local function startBedWarsLieDown()
+    LieDown.Stop()
+    if not LieDown.Enabled or Settings.SelectedGame ~= "BedWars" then return end
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    local generation = LieDown.Generation
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+        or humanoid:WaitForChild("Animator", 2)
+    if generation ~= LieDown.Generation or not LieDown.Enabled then return end
+    if not animator then bedWarsLiePose(character) return end
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://" .. LieDown.AnimationId
+    local ok, animationTrack = pcall(function()
+        return animator:LoadAnimation(animation)
+    end)
+    if not ok or not animationTrack then
+        animation:Destroy()
+        bedWarsLiePose(character)
+        return
+    end
+    LieDown.Animation, LieDown.Track = animation, animationTrack
+    animationTrack.Priority = Enum.AnimationPriority.Action4
+    animationTrack.Looped = true
+    local played = pcall(function() animationTrack:Play(0.15) end)
+    if not played then
+        LieDown.Stop()
+        if LieDown.Enabled then bedWarsLiePose(character) end
+        return
+    end
+    task.delay(1.2, function()
+        if generation ~= LieDown.Generation or not LieDown.Enabled
+            or LieDown.Track ~= animationTrack then return end
+        if animationTrack.Length > 0 and animationTrack.IsPlaying then
+            pcall(function()
+                animationTrack.TimePosition = math.max(0, animationTrack.Length * 0.7)
+                animationTrack:AdjustSpeed(0)
+            end)
+        else
+            LieDown.Stop()
+            if LieDown.Enabled then bedWarsLiePose(character) end
+        end
+    end)
+end
+track(LocalPlayer.CharacterAdded:Connect(function()
+    if not LieDown.Enabled then return end
+    task.wait(0.5)
+    if LieDown.Enabled then startBedWarsLieDown() end
+end))
+
 do
     local gameName = "BedWars"
+    local lieSection = gameSection(gameName, PlayerTab.Right, "Lie Down")
+    local lieToggle = Elements.Toggle(lieSection, "Lie Down", false, function(on)
+        LieDown.Enabled = on
+        if on and flipToggle and flipToggle.Get() then flipToggle.Set(false) end
+        if on then startBedWarsLieDown() else LieDown.Stop() end
+    end)
+    local lieInput = Elements.TextBox(lieSection, "Animation ID", "4686925579", function(value)
+        LieDown.AnimationId = tostring(value):match("%d+") or "4686925579"
+        if LieDown.Enabled then startBedWarsLieDown() end
+    end)
+    local lieBox = lieInput:FindFirstChildOfClass("TextBox")
+    table.insert(ConfigControls, {
+        Kind = "text", Key = configKey(lieSection, "Animation ID"),
+        Get = function() return lieBox.Text end,
+        Set = function(value)
+            lieBox.Text = tostring(value or "")
+            LieDown.AnimationId = lieBox.Text:match("%d+") or "4686925579"
+            if LieDown.Enabled then startBedWarsLieDown() end
+        end,
+        Box = lieSection.Parent, Row = lieInput,
+    })
+    Flip = { Stop = function() end }
+    local flipHumanoid, flipRoot, originalAutoRotate, flipYaw
+    function Flip.Stop()
+        BedWars.FlipOn = false
+        if flipRoot and flipRoot.Parent then
+            flipRoot.CFrame = CFrame.new(flipRoot.Position)
+                * CFrame.Angles(0, flipYaw or 0, 0)
+            flipRoot.AssemblyAngularVelocity = Vector3.zero
+        end
+        if flipHumanoid and flipHumanoid.Parent then
+            flipHumanoid.AutoRotate = originalAutoRotate
+        end
+        flipRoot, flipHumanoid, originalAutoRotate, flipYaw = nil, nil, nil, nil
+    end
+    local flipSection = gameSection(gameName, FunTab.Left, "Flip")
+    flipToggle = Elements.Toggle(flipSection, "Upside Down", false, function(on)
+        if on then
+            if lieToggle.Get() then lieToggle.Set(false) end
+            if spinToggle and spinToggle.Get() then spinToggle.Set(false) end
+            BedWars.FlipOn = true
+        else
+            Flip.Stop()
+        end
+    end)
+    track(RunService.Heartbeat:Connect(function()
+        if not BedWars.FlipOn or Settings.SelectedGame ~= "BedWars" then return end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or humanoid.Health <= 0 or not root or root.Anchored then return end
+        if root ~= flipRoot then
+            flipRoot, flipHumanoid = root, humanoid
+            originalAutoRotate = humanoid.AutoRotate
+            local _, yaw = root.CFrame:ToOrientation()
+            flipYaw = yaw
+        end
+        humanoid.AutoRotate = false
+        root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, flipYaw, 0)
+            * CFrame.Angles(math.pi, 0, 0)
+        root.AssemblyAngularVelocity = Vector3.zero
+    end))
     local sprintSection = gameSection(gameName, MainTab.Right, "Sprint")
     Elements.Toggle(sprintSection, "Always Sprint", false, function(on)
         BedWars.SprintOn = on
@@ -4216,7 +4385,13 @@ do
         BedWars.ProjectileRange = value
     end)
     local scaffoldSection = gameSection(gameName, MiscTab.Left, "Scaffold")
-    Elements.Toggle(scaffoldSection, "Scaffold", false, function(on) BedWars.ScaffoldOn = on end)
+    Elements.Toggle(scaffoldSection, "Scaffold", false, function(on)
+        BedWars.ScaffoldOn = on
+        if not on then
+            BedWars.BridgingNeeded = nil
+            bedWarsReleaseScaffoldItem()
+        end
+    end)
     local mapSection = gameSection(gameName, VisualsTab.Right, "BedWars Map")
     Elements.Toggle(mapSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
     Elements.ColorPicker(mapSection, "Bed Color", BedWars.BedColor, function(color)
@@ -4470,6 +4645,8 @@ makeDraggable(Window, TitleBar)
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
 -- ============================================================
 ENV.SunsetUnload = function()
+    LieDown.Enabled = false
+    LieDown.Stop()
     GhostPulse.Stop()
     Fun.Running = false
     Fun.Enabled = false
