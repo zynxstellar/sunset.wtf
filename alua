@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-menu-reveal-f218"
+local SUNSET_BUILD = "20261001-sprint-controller-g456"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3391,6 +3391,20 @@ local function stopBedWarsFakeLag()
     fakeLagRoot, fakeLagHumanoid, fakeLagSpeed, fakeLagStarted = nil, nil, nil, nil
 end
 local sprintController
+local sprintWalkSpeed, sprintRunSpeed = 14, 20
+do
+    local sprintFolder = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
+    sprintFolder = sprintFolder and sprintFolder:FindFirstChild("sprint")
+    local constantsModule = sprintFolder and sprintFolder:FindFirstChild("sprint-constants")
+    if constantsModule then
+        local ok, result = pcall(require, constantsModule)
+        local constants = ok and type(result) == "table" and result.SprintConstants
+        if type(constants) == "table" then
+            sprintWalkSpeed = tonumber(constants.WALK_SPEED) or sprintWalkSpeed
+            sprintRunSpeed = tonumber(constants.RUN_SPEED) or sprintRunSpeed
+        end
+    end
+end
 local function bedWarsSprintController()
     if sprintController then return sprintController end
     local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
@@ -3419,15 +3433,19 @@ local function stopBedWarsSprint()
     local controller = sprintController
     if controller then
         local stop = controller.stopSprinting or controller.stopSprint
-        if type(stop) == "function" then pcall(stop, controller) end
+        if type(stop) == "function" then pcall(stop, controller, true) end
+        if type(controller.setSpeed) == "function" then
+            pcall(controller.setSpeed, controller, sprintWalkSpeed)
+        end
         if type(controller.setSprinting) == "function" then
             pcall(controller.setSprinting, controller, false)
         end
     end
+    LocalPlayer:SetAttribute("Sprinting", false)
     local humanoid = BedWars.SprintHumanoid
     if humanoid and humanoid.Parent and BedWars.SprintFallbackSpeed
         and math.abs(humanoid.WalkSpeed - BedWars.SprintFallbackSpeed) < 0.1 then
-        humanoid.WalkSpeed = BedWars.SprintBaseSpeed
+        humanoid.WalkSpeed = BedWars.SprintBaseSpeed or sprintWalkSpeed
     end
     BedWars.SprintHumanoid = nil
     BedWars.SprintBaseSpeed = nil
@@ -4364,37 +4382,58 @@ task.spawn(function()
             if humanoid and humanoid.Health > 0 then
                 if humanoid ~= BedWars.SprintHumanoid then
                     BedWars.SprintHumanoid = humanoid
-                    BedWars.SprintBaseSpeed = math.max(16, humanoid.WalkSpeed)
+                    BedWars.SprintBaseSpeed = humanoid.WalkSpeed >= sprintRunSpeed - 0.1
+                        and sprintWalkSpeed or humanoid.WalkSpeed
                     BedWars.SprintFallbackSpeed = nil
                 end
                 local controller = bedWarsSprintController()
-                local start = controller and (controller.startSprinting or controller.startSprint)
-                if controller and controller.sprinting ~= true then
-                    if type(start) == "function" then
-                        pcall(start, controller)
-                    elseif type(controller.setSprinting) == "function" then
-                        pcall(controller.setSprinting, controller, true)
+                if controller and controller.blockSprint ~= true then
+                    if controller.sprinting ~= true then
+                        local start = controller.startSprinting or controller.startSprint
+                        if type(start) == "function" then
+                            pcall(start, controller)
+                        elseif type(controller.setSprinting) == "function" then
+                            pcall(controller.setSprinting, controller, true)
+                        end
+                    end
+                    if controller.sprinting == true
+                        and type(controller.setSpeed) == "function"
+                        and not (BedWars.FakeLagOn and humanoid.WalkSpeed == 0) then
+                        pcall(controller.setSpeed, controller, sprintRunSpeed)
                     end
                 end
-                local base = BedWars.SprintBaseSpeed or 16
-                local boosted = math.max(20, base * 1.35)
-                if controller and type(controller.setSpeed) == "function"
-                    and humanoid.WalkSpeed < boosted - 0.1 then
-                    pcall(controller.setSpeed, controller, boosted)
+                if (not controller or controller.sprinting ~= true)
+                    and (not controller or controller.blockSprint ~= true)
+                    and not (BedWars.FakeLagOn and humanoid.WalkSpeed == 0) then
+                    LocalPlayer:SetAttribute("Sprinting", true)
+                    humanoid.WalkSpeed = sprintRunSpeed
+                    BedWars.SprintFallbackSpeed = sprintRunSpeed
                 end
-                BedWars.SprintFallbackSpeed = boosted
             end
         end
-        task.wait(0.1)
+        task.wait(0.15)
     end
 end)
 track(RunService.Heartbeat:Connect(function()
     if Settings.SelectedGame ~= "BedWars" or not BedWars.SprintOn then return end
     local humanoid = BedWars.SprintHumanoid
-    local boosted = BedWars.SprintFallbackSpeed
-    if humanoid and humanoid.Parent and humanoid.Health > 0 and boosted
-        and humanoid.WalkSpeed < boosted - 0.1 then
-        humanoid.WalkSpeed = boosted
+    if not humanoid or not humanoid.Parent or humanoid.Health <= 0
+        or (BedWars.FakeLagOn and humanoid.WalkSpeed == 0) then return end
+    local controller = sprintController
+    if controller and controller.blockSprint == true then return end
+    local expected = sprintRunSpeed
+    if controller and controller.sprinting == true then
+        expected *= tonumber(controller.moveSpeedMultiplier) or 1
+        local maximum = tonumber(controller.maxSpeed)
+        if maximum and maximum > 0 then expected = math.min(expected, maximum) end
+    end
+    if humanoid.WalkSpeed < expected - 0.1 then
+        if controller and controller.sprinting == true
+            and type(controller.setSpeed) == "function" then
+            pcall(controller.setSpeed, controller, sprintRunSpeed)
+        else
+            humanoid.WalkSpeed = expected
+        end
     end
 end))
 
