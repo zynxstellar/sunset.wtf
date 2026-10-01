@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-bedwars-nearest-projectile-63a1"
+local SUNSET_BUILD = "20261001-bedwars-clouds-5d84"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -2460,7 +2460,7 @@ end
 
 -- ---- Misc / Ghost Pulse
 local GhostPulse = { Enabled = false, Speed = 2,
-    Color = Color3.fromRGB(170, 105, 255), Rainbow = true }
+    Color = Color3.fromRGB(170, 105, 255), Rainbow = false }
 do
     local s = makeSection(MiscTab.Right, "Ghost Pulse")
     local function clearHighlight()
@@ -2479,7 +2479,7 @@ do
     Elements.Slider(s, "Pulse Speed", 0.5, 6, 2, "", function(value)
         GhostPulse.Speed = value
     end)
-    Elements.Toggle(s, "Rainbow Override", true, function(on) GhostPulse.Rainbow = on end)
+    Elements.Toggle(s, "Rainbow Override", false, function(on) GhostPulse.Rainbow = on end)
     Elements.ColorPicker(s, "Ghost Color", GhostPulse.Color, function(color)
         GhostPulse.Color = color
     end)
@@ -2699,6 +2699,29 @@ local atmospherePresets = {
 }
 local lightingProperties = { "ClockTime", "Brightness", "Ambient", "OutdoorAmbient", "FogColor", "FogEnd" }
 local atmosphereProperties = { "Density", "Haze", "Glare", "Color", "Decay", "Offset" }
+local cloudStates = {}
+local cloudConnection
+local function setCloudRemoval(on)
+    if not on then
+        if cloudConnection then cloudConnection:Disconnect() cloudConnection = nil end
+        for clouds, wasEnabled in pairs(cloudStates) do
+            if clouds.Parent then clouds.Enabled = wasEnabled end
+            cloudStates[clouds] = nil
+        end
+        return
+    end
+    local terrain = workspace:FindFirstChildOfClass("Terrain")
+    if not terrain then return end
+    local function hideClouds(child)
+        if not child:IsA("Clouds") then return end
+        if cloudStates[child] == nil then cloudStates[child] = child.Enabled end
+        child.Enabled = false
+    end
+    for _, child in ipairs(terrain:GetChildren()) do hideClouds(child) end
+    if not cloudConnection then
+        cloudConnection = track(terrain.ChildAdded:Connect(hideClouds))
+    end
+end
 local function restoreAtmosphere()
     atmosphereEnabled = false
     if savedLighting then
@@ -2798,6 +2821,7 @@ do
         atmosphereNoFog = on
         applyAtmosphere()
     end)
+    Elements.Toggle(atmosphere, "Remove Clouds", false, setCloudRemoval)
     Elements.Toggle(atmosphere, "Full Bright", false, function(on)
         atmosphereFullBright = on
         applyAtmosphere()
@@ -4207,10 +4231,10 @@ end
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
     Color = Color3.fromRGB(255, 116, 82), Active = {},
     OrbitOn = false, OrbitRadius = 3, OrbitSpeed = 2,
-    OrbitColor = Color3.fromRGB(130, 180, 255), OrbitRainbow = true,
+    OrbitColor = Color3.fromRGB(130, 180, 255), OrbitRainbow = false,
     FireworksOn = false, FireworkColor = Color3.fromRGB(255, 185, 85),
-    FireworkRainbow = true, FootstepsOn = false,
-    StepColor = Color3.fromRGB(95, 220, 255), StepRainbow = true }
+    FireworkRainbow = false, FootstepsOn = false,
+    StepColor = Color3.fromRGB(95, 220, 255), StepRainbow = false }
 local function clearFunEffect(kind)
     for part, effect in pairs(Fun.Active) do
         if not kind or effect == kind then
@@ -4412,7 +4436,7 @@ do
     end)
     Elements.Slider(orbit, "Orbit Radius", 1, 6, 3, "studs", function(value) Fun.OrbitRadius = value end)
     Elements.Slider(orbit, "Orbit Speed", 0.5, 6, 2, "", function(value) Fun.OrbitSpeed = value end)
-    Elements.Toggle(orbit, "Rainbow Override", true, function(on) Fun.OrbitRainbow = on end)
+    Elements.Toggle(orbit, "Rainbow Override", false, function(on) Fun.OrbitRainbow = on end)
     Elements.ColorPicker(orbit, "Star Color", Fun.OrbitColor, function(color)
         Fun.OrbitColor = color
     end)
@@ -4422,7 +4446,7 @@ do
         Fun.FireworksOn = on
         if not on then clearFunEffect("fireworks") end
     end)
-    Elements.Toggle(fireworks, "Rainbow Override", true, function(on) Fun.FireworkRainbow = on end)
+    Elements.Toggle(fireworks, "Rainbow Override", false, function(on) Fun.FireworkRainbow = on end)
     Elements.ColorPicker(fireworks, "Firework Color", Fun.FireworkColor, function(color)
         Fun.FireworkColor = color
     end)
@@ -4431,7 +4455,7 @@ do
         Fun.FootstepsOn = on
         if not on then clearFunEffect("footsteps") end
     end)
-    Elements.Toggle(steps, "Rainbow Override", true, function(on) Fun.StepRainbow = on end)
+    Elements.Toggle(steps, "Rainbow Override", false, function(on) Fun.StepRainbow = on end)
     Elements.ColorPicker(steps, "Footstep Color", Fun.StepColor, function(color)
         Fun.StepColor = color
     end)
@@ -4455,6 +4479,7 @@ ENV.SunsetUnload = function()
     Settings.WatermarkOn = false
     Zombie.Stop()
     BedWars.Stop()
+    setCloudRemoval(false)
     restoreAtmosphere()
     pcall(Fly.Stop)
     pcall(ESP.Destroy)
