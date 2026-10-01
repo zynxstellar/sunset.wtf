@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-inline-sunset-b629"
+local SUNSET_BUILD = "20261001-inline-fit-c742"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4782,15 +4782,14 @@ local function buildBedWarsUI()
         heading.Font = Enum.Font.GothamBold
         heading.Position = UDim2.fromOffset(13, 12)
         heading.Size = UDim2.fromOffset(128, 20)
-        local count = label(col, "0", 17, gold, Enum.TextXAlignment.Right)
-        count.Font = Enum.Font.GothamBold
-        count.Position = UDim2.new(1, -67, 0, 8)
-        count.Size = UDim2.fromOffset(34, 25)
-        local collapse = new("TextButton", {
-            Position = UDim2.new(1, -31, 0, 8),
-            Size = UDim2.fromOffset(23, 25), BackgroundTransparency = 1,
-            BorderSizePixel = 0, Text = "⌃", Font = Enum.Font.GothamBold,
-            TextSize = 17, TextColor3 = muted, AutoButtonColor = false,
+        local count = new("TextButton", {
+            Text = "0", Font = Enum.Font.GothamBold,
+            TextSize = 17, TextColor3 = gold,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Position = UDim2.new(1, -48, 0, 8),
+            Size = UDim2.fromOffset(34, 25),
+            BackgroundTransparency = 1, BorderSizePixel = 0,
+            AutoButtonColor = false,
         }, col)
         new("Frame", {
             Position = UDim2.fromOffset(13, 39),
@@ -4810,7 +4809,7 @@ local function buildBedWarsUI()
         new("UIPadding", { PaddingBottom = UDim.new(0, 4) }, list)
         local dragHandle = new("Frame", {
             Position = UDim2.fromOffset(0, 0),
-            Size = UDim2.fromOffset(156, 43),
+            Size = UDim2.fromOffset(148, 43),
             BackgroundTransparency = 1, Active = true,
         }, col)
         makeDraggable(col, dragHandle)
@@ -4825,11 +4824,10 @@ local function buildBedWarsUI()
                     or math.min(540, 65 + column.VisibleCount * 36 + extra))
         end
         columns[name].Reflow = reflow
-        collapse.MouseButton1Click:Connect(function()
+        count.MouseButton1Click:Connect(function()
             local column = columns[name]
             column.Collapsed = not column.Collapsed
             column.List.Visible = not column.Collapsed
-            collapse.Text = column.Collapsed and "⌄" or "⌃"
             reflow()
         end)
     end
@@ -4867,6 +4865,28 @@ local function buildBedWarsUI()
         activeHolder, activeColumn = holder, column
         column.OpenHolder = holder
         holder.Visible = true
+        -- A module column is narrower than the classic menu. Keep the toggle
+        -- name and its keybind on separate lines so neither covers the other.
+        for _, option in ipairs(ConfigControls) do
+            if option.Box == box and option.Kind == "toggle" and option.Row then
+                local row = option.Row
+                local toggleName = row:FindFirstChildOfClass("TextLabel")
+                local bindButton = row:FindFirstChildOfClass("TextButton")
+                if toggleName and bindButton and bindButton.Visible then
+                    row.Size = UDim2.new(1, 0, 0, 34)
+                    toggleName.Size = UDim2.new(1, -20, 0, 17)
+                    toggleName.TextTruncate = Enum.TextTruncate.AtEnd
+                    bindButton.Position = UDim2.new(1, -76, 0, 18)
+                    bindButton.Size = UDim2.fromOffset(76, 14)
+                    bindButton.TextScaled = true
+                    if not bindButton:FindFirstChildOfClass("UITextSizeConstraint") then
+                        new("UITextSizeConstraint", {
+                            MinTextSize = 9, MaxTextSize = 12,
+                        }, bindButton)
+                    end
+                end
+            end
+        end
         for _, descendant in ipairs(activeContent:GetDescendants()) do
             if descendant:IsA("TextLabel") or descendant:IsA("TextButton")
                 or descendant:IsA("TextBox") then
@@ -4956,6 +4976,7 @@ local function buildBedWarsUI()
                 LayoutOrder = index * 2 + 1,
             }, columns[category].List)
             new("UICorner", { CornerRadius = UDim.new(0, 9) }, holder)
+            new("UIPadding", { PaddingBottom = UDim.new(0, 8) }, holder)
             track(holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
                 if holder.Visible then columns[category].Reflow() end
             end))
