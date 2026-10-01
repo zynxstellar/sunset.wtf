@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-custom-animation-87d2"
+local SUNSET_BUILD = "20261001-animation-preset-94292601332790"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4395,6 +4395,12 @@ do
     Elements.Toggle(animationSection, "Loop Animation", false, function(on)
         CustomAnimation.Loop = on
         if CustomAnimation.Track then CustomAnimation.Track.Looped = on end
+    end)
+    Elements.Button(animationSection, "Play 94292601332790", function()
+        animationBox.Text = "94292601332790"
+        CustomAnimation.AnimationId = animationBox.Text
+        if customAnimationToggle.Get() then playCustomAnimation()
+        else customAnimationToggle.Set(true) end
     end)
     Flip = { Stop = function() end }
     local flipHumanoid, flipRoot, originalAutoRotate, flipYaw
