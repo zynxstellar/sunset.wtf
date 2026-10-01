@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-animation-preset-94292601332790"
+local SUNSET_BUILD = "20261001-first-base-9e41"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3368,7 +3368,7 @@ end
 BedWars = {
     PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
-    SprintOn = false, AntiVoidOn = false,
+    SprintOn = false, AntiVoidOn = false, BasePending = true,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
     GeneratorColor = Color3.fromRGB(82, 220, 255),
@@ -4079,6 +4079,8 @@ function BedWars.Stop()
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
     BedWars.LastSafeCFrame = nil
+    BedWars.BaseCFrame = nil
+    BedWars.BasePending = false
     stopBedWarsSprint()
     for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
 end
@@ -4128,45 +4130,55 @@ task.spawn(function()
         task.wait(0.05)
     end
 end)
-task.spawn(function()
-    while BedWars.Running do
-        if Settings.SelectedGame == "BedWars" and BedWars.AntiVoidOn then
-            local character = LocalPlayer.Character
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if root ~= BedWars.SafeRoot then
-                BedWars.SafeRoot = root
-                BedWars.LastSafeCFrame = nil
-            end
-            if root and humanoid and humanoid.Health > 0 then
-                local ray = RaycastParams.new()
-                ray.FilterType = Enum.RaycastFilterType.Exclude
-                ray.FilterDescendantsInstances = { character }
-                ray.RespectCanCollide = true
-                local hit = workspace:Raycast(root.Position,
-                    Vector3.new(0, -30, 0), ray)
-                local solidGround = hit and (hit.Instance == workspace.Terrain
-                    or (hit.Instance:IsA("BasePart") and hit.Instance.Anchored))
-                local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
-                    and solidGround
-                    and root.Position.Y - hit.Position.Y < 8
-                if grounded then
-                    BedWars.LastSafeCFrame = root.CFrame
-                elseif BedWars.LastSafeCFrame
-                    and (not hit or root.Position.Y - hit.Position.Y > 20)
-                    and root.AssemblyLinearVelocity.Y < -8
-                    and root.Position.Y < BedWars.LastSafeCFrame.Position.Y - 7
-                    and os.clock() - (BedWars.LastVoidRescue or 0) > 0.8 then
-                    BedWars.LastVoidRescue = os.clock()
-                    root.CFrame = BedWars.LastSafeCFrame + Vector3.new(0, 2.5, 0)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                end
-            end
-        end
-        task.wait(0.1)
+local function bedWarsSafeGround(position, character)
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.FilterDescendantsInstances = character and { character } or {}
+    ray.RespectCanCollide = true
+    local hit = workspace:Raycast(position, Vector3.new(0, -30, 0), ray)
+    local solid = hit and (hit.Instance == workspace.Terrain
+        or (hit.Instance:IsA("BasePart") and hit.Instance.Anchored))
+    return hit, solid and position.Y - hit.Position.Y < 8
+end
+track(LocalPlayer.CharacterAdded:Connect(function()
+    if not BedWars.BaseCFrame then BedWars.BasePending = true end
+    BedWars.SafeRoot = nil
+    BedWars.LastSafeCFrame = nil
+end))
+track(RunService.Heartbeat:Connect(function()
+    if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
+    if not BedWars.AntiVoidOn and not BedWars.BasePending then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if root ~= BedWars.SafeRoot then
+        BedWars.SafeRoot = root
+        BedWars.LastSafeCFrame = nil
     end
-end)
+    if not root or not humanoid or humanoid.Health <= 0 then return end
+    local hit, solidGround = bedWarsSafeGround(root.Position, character)
+    local grounded = humanoid.FloorMaterial ~= Enum.Material.Air and solidGround
+    if BedWars.BasePending then
+        if not BedWars.BaseCFrame and LocalPlayer.Team and not LocalPlayer.Neutral
+            and grounded then
+            BedWars.BaseCFrame = root.CFrame
+            BedWars.BasePending = false
+        end
+    end
+    if not BedWars.AntiVoidOn then return end
+    if grounded then
+        BedWars.LastSafeCFrame = root.CFrame
+    elseif BedWars.LastSafeCFrame
+        and (not hit or root.Position.Y - hit.Position.Y > 20)
+        and root.AssemblyLinearVelocity.Y < -8
+        and root.Position.Y < BedWars.LastSafeCFrame.Position.Y - 7
+        and os.clock() - (BedWars.LastVoidRescue or 0) > 0.8 then
+        BedWars.LastVoidRescue = os.clock()
+        root.CFrame = BedWars.LastSafeCFrame + Vector3.new(0, 2.5, 0)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+end))
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.SprintOn then
@@ -4453,6 +4465,19 @@ do
         BedWars.AntiVoidOn = on
         BedWars.LastSafeCFrame = nil
         BedWars.SafeRoot = nil
+    end)
+    local baseSection = gameSection(gameName, PlayerTab.Left, "Base")
+    Elements.Button(baseSection, "TP to Base", function()
+        local destination = BedWars.BaseCFrame
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not destination or not root or not humanoid or humanoid.Health <= 0 then return end
+        if not select(2, bedWarsSafeGround(destination.Position, character)) then return end
+        root.CFrame = destination + Vector3.new(0, 2.5, 0)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+        BedWars.LastSafeCFrame = destination
     end)
     local combatSection = gameSection(gameName, AimTab.Left, "Combat")
     Elements.Toggle(combatSection, "Kill Aura", false, function(on)
