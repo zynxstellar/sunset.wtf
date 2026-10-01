@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-fake-lag-581d"
+local SUNSET_BUILD = "20261001-lie-fakelag-70bb"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -2441,7 +2441,7 @@ do
         if not enabled then return end
         -- Avoid competing with movement modules that own the character rotation.
         if Settings.FlyEnabled or Settings.AutoTp
-            or (BedWars and BedWars.FlipOn) then restoreSpin() return end
+            or (BedWars and (BedWars.FlipOn or BedWars.LieOn)) then restoreSpin() return end
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -3374,12 +3374,13 @@ BedWars = {
     GeneratorColor = Color3.fromRGB(82, 220, 255),
     WallCheck = true,
 }
-local fakeLagRoot, fakeLagSleeping, fakeLagStarted, fakeLagToggle
+local fakeLagRoot, fakeLagHumanoid, fakeLagSpeed, fakeLagStarted
 local function stopBedWarsFakeLag()
-    if fakeLagRoot and fakeLagRoot.Parent and type(sethiddenproperty) == "function" then
-        pcall(sethiddenproperty, fakeLagRoot, "NetworkIsSleeping", false)
+    if fakeLagHumanoid and fakeLagHumanoid.Parent
+        and fakeLagSpeed and fakeLagHumanoid.WalkSpeed == 0 then
+        fakeLagHumanoid.WalkSpeed = fakeLagSpeed
     end
-    fakeLagRoot, fakeLagSleeping, fakeLagStarted = nil, nil, nil
+    fakeLagRoot, fakeLagHumanoid, fakeLagSpeed, fakeLagStarted = nil, nil, nil, nil
 end
 local sprintController
 local function bedWarsSprintController()
@@ -4092,6 +4093,7 @@ function BedWars.Stop()
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
     BedWars.FakeLagOn = false
+    BedWars.LieOn = false
     BedWars.LastSafeCFrame = nil
     stopBedWarsFakeLag()
     stopBedWarsSprint()
@@ -4180,7 +4182,7 @@ track(RunService.Heartbeat:Connect(function()
         root.AssemblyAngularVelocity = Vector3.zero
     end
 end))
-track(RunService.Heartbeat:Connect(function()
+track(RunService.PreSimulation:Connect(function()
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
         or not BedWars.FakeLagOn then
         if fakeLagRoot then stopBedWarsFakeLag() end
@@ -4188,23 +4190,22 @@ track(RunService.Heartbeat:Connect(function()
     end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if root ~= fakeLagRoot then
         stopBedWarsFakeLag()
-        fakeLagRoot, fakeLagStarted = root, os.clock()
+        fakeLagRoot, fakeLagHumanoid, fakeLagStarted = root, humanoid, os.clock()
     end
-    if not root then return end
+    if not root or not humanoid or humanoid.Health <= 0 then return end
     local hold = BedWars.FakeLagHold or 0.3
-    local asleep = (os.clock() - fakeLagStarted) % (hold + 0.1) < hold
-    if not asleep and fakeLagSleeping == false then return end
-    local ok = pcall(sethiddenproperty, root, "NetworkIsSleeping", asleep)
-    if not ok then
-        BedWars.FakeLagOn = false
-        stopBedWarsFakeLag()
-        if fakeLagToggle then fakeLagToggle.Set(false) end
-        warn("Sunset Fake Lag needs an executor with NetworkIsSleeping support")
-        return
+    if (os.clock() - fakeLagStarted) % (hold + 0.1) < hold then
+        if humanoid.WalkSpeed > 0 then fakeLagSpeed = humanoid.WalkSpeed end
+        humanoid.WalkSpeed = 0
+        local velocity = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.new(0, velocity.Y, 0)
+    elseif fakeLagSpeed then
+        if humanoid.WalkSpeed == 0 then humanoid.WalkSpeed = fakeLagSpeed end
+        fakeLagSpeed = nil
     end
-    fakeLagSleeping = asleep
 end))
 task.spawn(function()
     while BedWars.Running do
@@ -4304,37 +4305,50 @@ function LieDown.Stop()
         LieDown.Track = nil
     end
     if LieDown.Animation then LieDown.Animation:Destroy() LieDown.Animation = nil end
-    if LieDown.Joint and LieDown.Joint.Parent and LieDown.OriginalC0 then
-        LieDown.Joint.C0 = LieDown.OriginalC0
+    if LieDown.Root and LieDown.Root.Parent then
+        LieDown.Root.CFrame = CFrame.new(LieDown.Root.Position)
+            * CFrame.Angles(0, LieDown.Yaw or 0, 0)
+        LieDown.Root.AssemblyAngularVelocity = Vector3.zero
     end
-    LieDown.Joint, LieDown.OriginalC0 = nil, nil
+    if LieDown.Humanoid and LieDown.Humanoid.Parent then
+        LieDown.Humanoid.AutoRotate = LieDown.OriginalAutoRotate
+    end
+    LieDown.Root, LieDown.Humanoid = nil, nil
+    LieDown.Yaw, LieDown.OriginalAutoRotate = nil, nil
 end
 local function bedWarsLiePose(character)
     local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    for _, joint in ipairs(character:GetDescendants()) do
-        if joint:IsA("Motor6D") and joint.Part0 == root
-            and joint.Part1 and (joint.Part1.Name == "Torso"
-                or joint.Part1.Name == "LowerTorso") then
-            LieDown.Joint = joint
-            LieDown.OriginalC0 = joint.C0
-            joint.C0 = joint.C0 * CFrame.new(0, -1.1, 0)
-                * CFrame.Angles(math.rad(90), 0, 0)
-            return
-        end
-    end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then return end
+    LieDown.Root, LieDown.Humanoid = root, humanoid
+    LieDown.OriginalAutoRotate = humanoid.AutoRotate
+    local _, yaw = root.CFrame:ToOrientation()
+    LieDown.Yaw = yaw
 end
+track(RunService.Heartbeat:Connect(function()
+    if not LieDown.Enabled or Settings.SelectedGame ~= "BedWars" then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 or root.Anchored then return end
+    if root ~= LieDown.Root then bedWarsLiePose(character) end
+    humanoid.AutoRotate = false
+    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, LieDown.Yaw or 0, 0)
+        * CFrame.Angles(math.rad(90), 0, 0)
+    root.AssemblyAngularVelocity = Vector3.zero
+end))
 local function startBedWarsLieDown()
     LieDown.Stop()
     if not LieDown.Enabled or Settings.SelectedGame ~= "BedWars" then return end
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid or humanoid.Health <= 0 then return end
+    bedWarsLiePose(character)
     local generation = LieDown.Generation
     local animator = humanoid:FindFirstChildOfClass("Animator")
         or humanoid:WaitForChild("Animator", 2)
     if generation ~= LieDown.Generation or not LieDown.Enabled then return end
-    if not animator then bedWarsLiePose(character) return end
+    if not animator then return end
     local animation = Instance.new("Animation")
     animation.AnimationId = "rbxassetid://" .. LieDown.AnimationId
     local ok, animationTrack = pcall(function()
@@ -4342,7 +4356,6 @@ local function startBedWarsLieDown()
     end)
     if not ok or not animationTrack then
         animation:Destroy()
-        bedWarsLiePose(character)
         return
     end
     LieDown.Animation, LieDown.Track = animation, animationTrack
@@ -4350,23 +4363,10 @@ local function startBedWarsLieDown()
     animationTrack.Looped = true
     local played = pcall(function() animationTrack:Play(0.15) end)
     if not played then
-        LieDown.Stop()
-        if LieDown.Enabled then bedWarsLiePose(character) end
-        return
+        pcall(function() animationTrack:Destroy() end)
+        animation:Destroy()
+        LieDown.Track, LieDown.Animation = nil, nil
     end
-    task.delay(1.2, function()
-        if generation ~= LieDown.Generation or not LieDown.Enabled
-            or LieDown.Track ~= animationTrack then return end
-        if animationTrack.Length > 0 and animationTrack.IsPlaying then
-            pcall(function()
-                animationTrack.TimePosition = math.max(0, animationTrack.Length * 0.7)
-                animationTrack:AdjustSpeed(0)
-            end)
-        else
-            LieDown.Stop()
-            if LieDown.Enabled then bedWarsLiePose(character) end
-        end
-    end)
 end
 track(LocalPlayer.CharacterAdded:Connect(function()
     if not LieDown.Enabled then return end
@@ -4379,7 +4379,9 @@ do
     local lieSection = gameSection(gameName, PlayerTab.Right, "Lie Down")
     local lieToggle = Elements.Toggle(lieSection, "Lie Down", false, function(on)
         LieDown.Enabled = on
+        BedWars.LieOn = on
         if on and flipToggle and flipToggle.Get() then flipToggle.Set(false) end
+        if on and spinToggle and spinToggle.Get() then spinToggle.Set(false) end
         if on and customAnimationToggle and customAnimationToggle.Get() then
             customAnimationToggle.Set(false)
         end
@@ -4520,12 +4522,7 @@ do
         end
     end)
     local fakeLagSection = gameSection(gameName, MiscTab.Right, "Fake Lag")
-    fakeLagToggle = Elements.Toggle(fakeLagSection, "Fake Lag", false, function(on)
-        if on and type(sethiddenproperty) ~= "function" then
-            warn("Sunset Fake Lag needs sethiddenproperty support")
-            fakeLagToggle.Set(false)
-            return
-        end
+    Elements.Toggle(fakeLagSection, "Fake Lag", false, function(on)
         BedWars.FakeLagOn = on
         if not on then stopBedWarsFakeLag() end
     end)
