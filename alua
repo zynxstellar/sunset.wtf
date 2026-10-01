@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-first-base-9e41"
+local SUNSET_BUILD = "20261001-projectile-scaffold-63a0"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3729,6 +3729,7 @@ local function bedWarsGetProjectileApi()
     local combat = global and global:FindFirstChild("combat")
     local projectile = combat and combat:FindFirstChild("projectile")
     local controllerModule = projectile and projectile:FindFirstChild("projectile-controller")
+        or (controllers and controllers:FindFirstChild("projectile-controller", true))
     local shared = storage:FindFirstChild("TS")
     local itemFolder = shared and shared:FindFirstChild("item")
     local metaModule = itemFolder and itemFolder:FindFirstChild("item-meta")
@@ -3793,9 +3794,6 @@ local function bedWarsProjectileVelocity(origin, target, speed, gravity)
         + Vector3.new(0, math.sin(angle) * speed, 0)
 end
 local function bedWarsProjectileStep()
-    if BedWars.ItemBusy or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
-    if BedWars.ScaffoldOn and BedWars.BridgingNeeded
-        and os.clock() - BedWars.BridgingNeeded < 0.55 then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3850,12 +3848,15 @@ local function bedWarsProjectileStep()
     BedWars.ProjectileTimes = BedWars.ProjectileTimes or {}
     local nextTime = BedWars.ProjectileTimes[selected.item.Name] or 0
     if now < nextTime then return end
+    -- Give a ready shot priority over Scaffold's continuous block placement.
+    BedWars.ProjectilePriorityUntil = now + 0.35
+    if BedWars.ItemBusy then return end
     BedWars.ItemBusy = true
-    pcall(function()
+    local fired, fireError = pcall(function()
         if BedWars.Running and BedWars.ProjectilesOn then
             local previous = bedWarsHeldItem()
             if not bedWarsEquip(selected.item) then return end
-            pcall(function()
+            local launched, launchError = pcall(function()
                 local drawTime = math.clamp(selected.source.maxStrengthChargeSec or 0.2, 0.2, 2)
                 task.wait(drawTime)
                 local currentRoot = character:FindFirstChild("HumanoidRootPart")
@@ -3884,6 +3885,7 @@ local function bedWarsProjectileStep()
                     end
                 end
             end)
+            if not launched then warn("Sunset Projectile Aura: " .. tostring(launchError)) end
             if previous and previous.Parent == bedWarsInventory()
                 and bedWarsHeldItem() == selected.item then
                 bedWarsEquip(previous)
@@ -3891,6 +3893,8 @@ local function bedWarsProjectileStep()
         end
     end)
     BedWars.ItemBusy = false
+    BedWars.ProjectilePriorityUntil = nil
+    if not fired then warn("Sunset Projectile Aura: " .. tostring(fireError)) end
 end
 local function bedWarsEnemyInSwordRange(root)
     local range = bedWarsAttackRange()
@@ -3921,6 +3925,8 @@ local function bedWarsReleaseScaffoldItem()
 end
 local function bedWarsScaffoldStep()
     if BedWars.ItemBusy then return end
+    if BedWars.ProjectilePriorityUntil
+        and os.clock() < BedWars.ProjectilePriorityUntil then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -4112,7 +4118,8 @@ end)
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.ProjectilesOn then
-            pcall(bedWarsProjectileStep)
+            local ok, err = pcall(bedWarsProjectileStep)
+            if not ok then warn("Sunset Projectile Aura: " .. tostring(err)) end
         end
         task.wait(0.2)
     end
