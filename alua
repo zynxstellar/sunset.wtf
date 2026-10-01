@@ -2,7 +2,7 @@ local source = [========[
 --[[
     Menu  -  Informant-style UI
     RightShift  : open / close
-    Fly         : WASD move, Space = up, LeftShift = down
+    Fly (non-BedWars): WASD move, Space = up, LeftShift = down
     ESP         : 2D boxes + names around other players
 ]]
 
@@ -18,7 +18,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20260930-sprint-burrow-7f1c"
+local SUNSET_BUILD = "20260930-bedwars-items-no-fly-82d4"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -57,6 +57,7 @@ local bedWarsHiddenSections = {}
 local sniperOnlySections = {}
 local bedWarsOutlineToggle
 local bedWarsNamesToggle
+local flyToggle
 local AutoReinject = { enabled = true }
 local RefreshConfigList
 
@@ -1685,6 +1686,12 @@ do
     end
 
     function Fly.Start()
+        if game.PlaceId == 6872265039 or game.GameId == 2619619496
+            or Settings.SelectedGame == "BedWars" then
+            Settings.FlyEnabled = false
+            Fly.Stop()
+            return
+        end
         local root, hum = getRoot()
         if not root then return end
         Fly.Stop()
@@ -1755,7 +1762,7 @@ do
     track(LocalPlayer.CharacterAdded:Connect(function(char)
         char:WaitForChild("HumanoidRootPart")
         task.wait(0.5)
-        if Settings.FlyEnabled then Fly.Start() end
+        if Settings.FlyEnabled and game.GameId ~= 2619619496 then Fly.Start() end
     end))
 end
 
@@ -2313,7 +2320,7 @@ end
 do
     local s = makeSection(MainTab.Left, "Fly")
     table.insert(bedWarsHiddenSections, s.Parent)
-    Elements.Toggle(s, "Fly", false, function(on)
+    flyToggle = Elements.Toggle(s, "Fly", false, function(on)
         Settings.FlyEnabled = on
         if on then Fly.Start() else Fly.Stop() end
     end, Enum.KeyCode.F)
@@ -3470,6 +3477,14 @@ local function showGameSections(gameName)
     end
     local isBedWars = gameName == "BedWars"
     for _, box in ipairs(bedWarsHiddenSections) do box.Visible = not isBedWars end
+    if isBedWars then
+        Settings.FlyEnabled = false
+        Fly.Stop()
+        if flyToggle then
+            flyToggle.Set(false)
+            flyToggle.SetBind(nil)
+        end
+    end
     for _, box in ipairs(sniperOnlySections) do box.Visible = gameName == "Sniper Arena" end
     if bedWarsOutlineToggle then bedWarsOutlineToggle._row.Visible = isBedWars end
     if bedWarsNamesToggle then bedWarsNamesToggle._row.Visible = not isBedWars end
@@ -3592,7 +3607,7 @@ local function bedWarsHeldItem()
     local character = LocalPlayer.Character
     local hand = character and character:FindFirstChild("HandInvItem")
     local item = hand and hand.Value
-    if typeof(item) == "Instance" then return item end
+    if hand then return typeof(item) == "Instance" and item or nil end
     return character and character:FindFirstChildOfClass("Tool") or nil
 end
 local function bedWarsInventory(player)
@@ -3634,11 +3649,17 @@ local function bedWarsGearScore(player, character)
 end
 local function bedWarsEquip(item)
     local equip = bedWarsRemote("SetInvItem", false)
-    if not item or not equip or not equip:IsA("RemoteFunction") then return end
-    local now = os.clock()
-    if (BedWars.LastEquipTime or 0) + 0.25 > now then return end
-    BedWars.LastEquipTime = now
-    pcall(function() equip:InvokeServer({ hand = item }) end)
+    local inventory = bedWarsInventory()
+    if not item or not inventory or item.Parent ~= inventory
+        or not equip or not equip:IsA("RemoteFunction") then return false end
+    if bedWarsHeldItem() == item then return true end
+    local ok = pcall(function() equip:InvokeServer({ hand = item }) end)
+    if not ok then return false end
+    for _ = 1, 12 do
+        if bedWarsHeldItem() == item then return true end
+        task.wait(0.05)
+    end
+    return false
 end
 local function bedWarsAttackRange()
     local ts = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
@@ -3742,7 +3763,7 @@ local function bedWarsVisible(character, target, origin, targetRoot)
 end
 local swordHitRemote, lastSwordRemoteLookup = nil, -math.huge
 local function bedWarsAuraStep()
-    if BedWars.ProjectileSwitching then return end
+    if BedWars.ItemBusy then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3813,7 +3834,12 @@ local function bedWarsAuraStep()
         end
         local sword = bedWarsBestSword()
         BedWars.AuraStatus = sword and "Equipping sword" or "No sword found"
-        bedWarsEquip(sword)
+        if sword then
+            BedWars.ItemBusy = true
+            local ok = bedWarsEquip(sword)
+            BedWars.ItemBusy = false
+            if not ok then BedWars.AuraStatus = "Sword equip failed" end
+        end
         return
     end
     table.sort(targets, function(a, b)
@@ -3951,6 +3977,7 @@ local function bedWarsProjectileVelocity(origin, target, speed, gravity)
         + Vector3.new(0, math.sin(angle) * speed, 0)
 end
 local function bedWarsProjectileStep()
+    if BedWars.ItemBusy or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -4005,41 +4032,50 @@ local function bedWarsProjectileStep()
     BedWars.ProjectileTimes = BedWars.ProjectileTimes or {}
     local nextTime = BedWars.ProjectileTimes[selected.item.Name] or 0
     if now < nextTime then return end
-    BedWars.ProjectileSwitching = true
+    BedWars.ItemBusy = true
     pcall(function()
         if BedWars.Running and BedWars.ProjectilesOn then
-            local drawTime = math.clamp(selected.source.maxStrengthChargeSec or 0.2, 0.2, 2)
-            task.wait(drawTime)
-            local currentRoot = character:FindFirstChild("HumanoidRootPart")
-            if currentRoot and target.root.Parent and selected.item.Parent then
-                local launchOk, launchPosition = pcall(function()
-                    return api.controller:getLaunchPosition(selected.item)
-                end)
-                local shotOrigin = launchOk and launchPosition or currentRoot.Position
-                local shotAim = target.root.Position + Vector3.new(0, 0.8, 0)
-                    + target.root.AssemblyLinearVelocity * math.min(target.distance / speed, 0.65)
-                local shotVelocity = bedWarsProjectileVelocity(shotOrigin, shotAim, speed, gravity)
-                if shotVelocity then
-                    BedWars.ProjectileTimes[selected.item.Name] = os.clock()
-                        + math.max(0.45, selected.source.fireDelaySec or 0.8)
-                    api.controller:launchProjectileWithValues({
-                        initialVelocity = shotVelocity,
-                        positionFrom = shotOrigin,
-                        drawDurationSeconds = drawTime,
-                    }, selected.item, selected.source, selected.ammo, {}, projectileType)
-                    task.wait(0.3)
+            local previous = bedWarsHeldItem()
+            if not bedWarsEquip(selected.item) then return end
+            pcall(function()
+                local drawTime = math.clamp(selected.source.maxStrengthChargeSec or 0.2, 0.2, 2)
+                task.wait(drawTime)
+                local currentRoot = character:FindFirstChild("HumanoidRootPart")
+                if currentRoot and target.root.Parent and selected.item.Parent
+                    and bedWarsHeldItem() == selected.item then
+                    local launchOk, launchPosition = pcall(function()
+                        return api.controller:getLaunchPosition(selected.item)
+                    end)
+                    local shotOrigin = launchOk and launchPosition or currentRoot.Position
+                    local shotAim = target.root.Position + Vector3.new(0, 0.8, 0)
+                        + target.root.AssemblyLinearVelocity * math.min(target.distance / speed, 0.65)
+                    local shotVelocity = bedWarsProjectileVelocity(shotOrigin, shotAim, speed, gravity)
+                    if shotVelocity then
+                        BedWars.ProjectileTimes[selected.item.Name] = os.clock()
+                            + math.max(0.45, selected.source.fireDelaySec or 0.8)
+                        api.controller:launchProjectileWithValues({
+                            initialVelocity = shotVelocity,
+                            positionFrom = shotOrigin,
+                            drawDurationSeconds = drawTime,
+                        }, selected.item, selected.source, selected.ammo, {}, projectileType)
+                        task.wait(0.3)
+                    end
                 end
+            end)
+            if previous and previous.Parent == bedWarsInventory()
+                and bedWarsHeldItem() == selected.item then
+                bedWarsEquip(previous)
             end
         end
     end)
-    BedWars.ProjectileSwitching = false
+    BedWars.ItemBusy = false
 end
 local function bedWarsScaffoldStep()
-    if BedWars.ProjectileSwitching then return end
+    if BedWars.ItemBusy or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local item = bedWarsHeldItem()
+    local item = bedWarsFindWool()
     local remote = bedWarsRemote("PlaceBlock", true)
     if not root or not humanoid or humanoid.Health <= 0
         or not remote or not remote:IsA("RemoteFunction") then return end
@@ -4070,10 +4106,7 @@ local function bedWarsScaffoldStep()
     end
     if not grid then return end
     BedWars.BridgingNeeded = os.clock()
-    if not bedWarsWoolItem(item) then
-        bedWarsEquip(bedWarsFindWool())
-        return
-    end
+    if not item then return end
     local key = tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
     BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
     local now = os.clock()
@@ -4081,13 +4114,24 @@ local function bedWarsScaffoldStep()
         or (BedWars.ScaffoldPending or 0) >= 3 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
+    BedWars.ItemBusy = true
     task.spawn(function()
-        if BedWars.Running and BedWars.ScaffoldOn then
-            pcall(function()
-                remote:InvokeServer({ blockType = item.Name, position = grid })
-            end)
-        end
+        pcall(function()
+            if not BedWars.Running or not BedWars.ScaffoldOn then return end
+            local previous = bedWarsHeldItem()
+            if not bedWarsEquip(item) then return end
+            if item.Parent == bedWarsInventory() and bedWarsHeldItem() == item then
+                pcall(function()
+                    remote:InvokeServer({ blockType = item.Name, position = grid })
+                end)
+            end
+            if previous and previous.Parent == bedWarsInventory()
+                and bedWarsHeldItem() == item then
+                bedWarsEquip(previous)
+            end
+        end)
         BedWars.ScaffoldPending = math.max(0, (BedWars.ScaffoldPending or 1) - 1)
+        BedWars.ItemBusy = false
     end)
 end
 local bedWarsMarks = { Players = {}, Beds = {}, Generators = {} }
@@ -4653,7 +4697,6 @@ do
         SettingsTab.Select()
     end
 end
-
 ]========]
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
 environment.SunsetEmbeddedSource = source
