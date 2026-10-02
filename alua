@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-auto-ore-m627"
+local SUNSET_BUILD = "20261001-auto-bed-p438"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3395,7 +3395,7 @@ BedWars = {
     PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false,
-    PickupOn = false, PickupRange = 8, AutoOreOn = false,
+    PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
     UseTeamBedColors = true,
@@ -4108,6 +4108,7 @@ local function bedWarsBlockBreaker()
 end
 
 local oreParts, oreScanAt = {}, 0
+local bedWarsNearbyEnemyBed
 local activeOreHighlight
 local function clearActiveOreHighlight()
     if activeOreHighlight then
@@ -4185,6 +4186,8 @@ local function bedWarsAutoOreStep()
             and LocalPlayer.Character == character and humanoid.Health > 0
             and pickaxe.Parent == inventory do
             if (ore.Position - root.Position).Magnitude > 18 then break end
+            if BedWars.AutoBedOn and bedWarsNearbyEnemyBed
+                and bedWarsNearbyEnemyBed(root) then break end
             if bedWarsHeldItem() ~= pickaxe and not bedWarsEquip(pickaxe) then break end
             local origin = root.Position + Vector3.new(0, 1, 0)
             local direction = ore.Position - origin
@@ -4273,6 +4276,92 @@ local function bedWarsTeamColor(bed)
     local _, saturation, brightness = bed.Color:ToHSV()
     if saturation > 0.3 and brightness > 0.25 then return bed.Color end
     return BedWars.BedColor
+end
+local function bedWarsToolTier(name)
+    for tier, token in ipairs({ "wood", "stone", "iron", "diamond", "emerald" }) do
+        if name:find(token, 1, true) then return tier end
+    end
+    return 0
+end
+local function bedWarsBedTool(inventory)
+    local best, bestKind, bestTier
+    for _, item in ipairs(inventory:GetChildren()) do
+        local name = item.Name:lower()
+        local kind = name:find("axe", 1, true) and not name:find("pickaxe", 1, true) and 3
+            or name:find("pickaxe", 1, true) and 2
+            or name:find("shear", 1, true) and 1 or 0
+        local tier = bedWarsToolTier(name)
+        if kind > 0 and (not best or kind > bestKind
+            or kind == bestKind and tier > bestTier) then
+            best, bestKind, bestTier = item, kind, tier
+        end
+    end
+    return best or bedWarsHeldItem()
+end
+bedWarsNearbyEnemyBed = function(root)
+    local nearest, distance = nil, 18
+    local ownTeam = LocalPlayer.Team
+    for bed in pairs(bedCandidates) do
+        if bed:IsDescendantOf(workspace) and bed.Transparency < 0.95 then
+            local bedTeamColor = bedWarsTeamColor(bed)
+            local ownColor = ownTeam and ownTeam.TeamColor.Color
+            local isOwn = ownColor and bedTeamColor
+                and math.abs(bedTeamColor.R - ownColor.R) < 0.08
+                and math.abs(bedTeamColor.G - ownColor.G) < 0.08
+                and math.abs(bedTeamColor.B - ownColor.B) < 0.08
+            if not isOwn then
+                local gap = (bed.Position - root.Position).Magnitude
+                if gap < distance then nearest, distance = bed, gap end
+            end
+        end
+    end
+    return nearest
+end
+local function bedWarsAutoBedStep()
+    if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 then return end
+    local bed = bedWarsNearbyEnemyBed(root)
+    local inventory = bedWarsInventory()
+    if not bed or not inventory then return end
+    local tool = bedWarsBedTool(inventory)
+    if not tool or tool.Parent ~= inventory then return end
+    local breaker = bedWarsBlockBreaker()
+    if not breaker then return end
+    BedWars.ItemBusy = true
+    local previous = bedWarsHeldItem()
+    local ok, err = pcall(function()
+        if not bedWarsEquip(tool) then return end
+        while BedWars.Running and BedWars.AutoBedOn and bed:IsDescendantOf(workspace)
+            and bed.Transparency < 0.95 and LocalPlayer.Character == character
+            and humanoid.Health > 0 and tool.Parent == inventory do
+            if (bed.Position - root.Position).Magnitude > 18 then break end
+            if bedWarsHeldItem() ~= tool and not bedWarsEquip(tool) then break end
+            local origin = root.Position + Vector3.new(0, 1, 0)
+            local direction = bed.Position - origin
+            if direction.Magnitude > 0.01 then
+                local cleanup = { Tasks = {} }
+                function cleanup:GiveTask(taskItem) table.insert(self.Tasks, taskItem) end
+                function cleanup:DoCleaning()
+                    for _, taskItem in ipairs(self.Tasks) do
+                        if type(taskItem) == "function" then pcall(taskItem) end
+                    end
+                    table.clear(self.Tasks)
+                end
+                breaker:hitBlock(cleanup, Ray.new(origin, direction.Unit * 18))
+                task.delay(0.25, function() cleanup:DoCleaning() end)
+            end
+            task.wait(0.22)
+        end
+    end)
+    if not ok then warn("Sunset Auto Bed: " .. tostring(err)) end
+    if previous and previous ~= tool and previous.Parent == inventory
+        and bedWarsHeldItem() == tool then
+        pcall(bedWarsEquip, previous)
+    end
+    BedWars.ItemBusy = false
 end
 local function clearBedWarsMarks(kind)
     for target, mark in pairs(bedWarsMarks[kind]) do
@@ -4369,6 +4458,7 @@ function BedWars.Stop()
     BedWars.AntiVoidOn = false
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
+    BedWars.AutoBedOn = false
     clearActiveOreHighlight()
     BedWars.LastSafeCFrame = nil
     stopBedWarsSprint()
@@ -4422,6 +4512,14 @@ task.spawn(function()
             pcall(bedWarsAutoOreStep)
         end
         task.wait(0.35)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.AutoBedOn then
+            pcall(bedWarsAutoBedStep)
+        end
+        task.wait(0.2)
     end
 end)
 task.spawn(function()
@@ -4627,6 +4725,10 @@ do
     Elements.Toggle(oreSection, "Iron Ore", false, function(on)
         BedWars.AutoOreOn = on
         if not on then clearActiveOreHighlight() end
+    end)
+    local autoBedSection = gameSection(gameName, PlayerTab.Right, "Auto Bed")
+    Elements.Toggle(autoBedSection, "Auto Bed", false, function(on)
+        BedWars.AutoBedOn = on
     end)
     local bedSection = gameSection(gameName, VisualsTab.Right, "Bed Outline")
     Elements.Toggle(bedSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
@@ -5163,6 +5265,7 @@ local function buildBedWarsUI()
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
+        { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
