@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-world-ore-j204"
+local SUNSET_BUILD = "20261001-world-ore-j205"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4417,18 +4417,35 @@ local function clearBedWarsMarks(kind)
 end
 local function setBedWarsMark(kind, target, color)
     local mark = bedWarsMarks[kind][target]
+    local needsBox = kind == "Enchants" and target:IsA("BasePart")
+        and target.Transparency >= 0.95
+    if mark and mark.Parent and needsBox ~= mark:IsA("SelectionBox") then
+        mark:Destroy()
+        mark = nil
+    end
     if not mark or not mark.Parent then
-        mark = new("Highlight", {
-            Name = "SunsetBedWars" .. kind, Adornee = target, Enabled = true,
-            DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-            FillTransparency = 1, OutlineTransparency = 0,
-        }, target)
+        if needsBox then
+            mark = new("SelectionBox", {
+                Name = "SunsetBedWars" .. kind, Adornee = target,
+                LineThickness = 0.06, SurfaceTransparency = 1,
+            }, target)
+        else
+            mark = new("Highlight", {
+                Name = "SunsetBedWars" .. kind, Adornee = target, Enabled = true,
+                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+                FillTransparency = 1, OutlineTransparency = 0,
+            }, target)
+        end
         bedWarsMarks[kind][target] = mark
     end
     mark.Adornee = target
-    mark.Enabled = true
-    mark.FillColor = color
-    mark.OutlineColor = color
+    if needsBox then
+        mark.Color3 = color
+    else
+        mark.Enabled = true
+        mark.FillColor = color
+        mark.OutlineColor = color
+    end
 end
 local function refreshBedWarsPlayers()
     local seen = {}
@@ -4485,8 +4502,16 @@ local function refreshBedWarsMap()
     end
     if BedWars.OutlineEnchant then
         count = 0
-        for node in pairs(enchantCandidates) do
-            if node:IsDescendantOf(workspace) then
+        local enchantTargets = {}
+        for node in pairs(enchantCandidates) do enchantTargets[node] = true end
+        for _, tag in ipairs({ "broken-enchant-table", "enchant-table" }) do
+            for _, node in ipairs(CollectionService:GetTagged(tag)) do
+                enchantTargets[node] = true
+            end
+        end
+        for node in pairs(enchantTargets) do
+            if (node:IsA("BasePart") or node:IsA("Model"))
+                and node:IsDescendantOf(workspace) then
                 seenEnchants[node] = true
                 setBedWarsMark("Enchants", node, Color3.fromRGB(186, 117, 255))
                 count += 1
