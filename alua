@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-green-team-h762"
+local SUNSET_BUILD = "20261001-world-ore-j204"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3267,8 +3267,6 @@ do
             ["Visuals/All/ESP Boxes/Player Outlines"] = "Visuals/BedWars/Player Outlines/Player Outlines",
             ["Visuals/BedWars/BedWars Map/Bed Outline"] = "Visuals/BedWars/Bed Outline/Bed Outline",
             ["Visuals/BedWars/BedWars Map/Bed Color"] = "Visuals/BedWars/Bed Outline/Bed Color",
-            ["Visuals/BedWars/BedWars Map/Generator Outline"] = "Visuals/BedWars/Generator Outline/Generator Outline",
-            ["Visuals/BedWars/BedWars Map/Generator Color"] = "Visuals/BedWars/Generator Outline/Generator Color",
             ["Fun/All/Rainbow Footsteps/Rainbow Footsteps"] = "Fun/All/Colored Footsteps/Colored Footsteps",
         }
         for i, item in ipairs(data.Controls or {}) do
@@ -3392,14 +3390,14 @@ end
 -- BedWars starter modules use replicated players and map objects. No lobby
 -- remotes are fired, so the controls remain useful after entering a match.
 BedWars = {
-    PlayersOn = false, BedsOn = false, GeneratorsOn = false, TeamCheck = true,
+    PlayersOn = false, BedsOn = false, TeamCheck = true,
+    OutlineOre = false, OutlineEnchant = false, OutlineDrops = false,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
     UseTeamBedColors = true,
-    GeneratorColor = Color3.fromRGB(82, 220, 255),
     WallCheck = true, ProjectileWallCheck = true,
 }
 local sprintController
@@ -4144,6 +4142,44 @@ local function bedWarsNearbyOre(root)
     end
     return nearest
 end
+local oreSelectorMode
+local oreSelectorChecked = false
+local function bedWarsRayToOre(breaker, ore)
+    if not oreSelectorChecked then
+        oreSelectorChecked = true
+        local ok, mode = pcall(function()
+            local modules = game:GetService("ReplicatedStorage").rbxts_include.node_modules
+            return require(modules["@easy-games"]["block-engine"].out.client.select["block-selector"])
+                .BlockSelectorMode.SELECT
+        end)
+        if ok then oreSelectorMode = mode end
+    end
+    local manager = breaker.clientManager
+    local selector = manager and manager:getBlockSelector()
+    local faces = {
+        { Vector3.new(0, 1, 0), ore.Size.Y / 2 },
+        { Vector3.new(1, 0, 0), ore.Size.X / 2 },
+        { Vector3.new(-1, 0, 0), ore.Size.X / 2 },
+        { Vector3.new(0, 0, 1), ore.Size.Z / 2 },
+        { Vector3.new(0, 0, -1), ore.Size.Z / 2 },
+        { Vector3.new(0, -1, 0), ore.Size.Y / 2 },
+    }
+    for _, face in ipairs(faces) do
+        local normal = ore.CFrame:VectorToWorldSpace(face[1])
+        local ray = Ray.new(ore.Position + normal * (face[2] + 0.6),
+            -normal * (face[2] * 2 + 1.2))
+        if selector and oreSelectorMode then
+            local ok, info = pcall(selector.getMouseInfo, selector, oreSelectorMode,
+                { ray = ray, range = breaker.range })
+            if ok and info and info.target and info.target.blockInstance == ore then
+                return ray
+            end
+        elseif face[1].Y == 1 then
+            return ray
+        end
+    end
+    return nil
+end
 
 local function bedWarsAutoOreStep()
     if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem or BedWars.ProjectilePriorityUntil
@@ -4156,11 +4192,17 @@ local function bedWarsAutoOreStep()
     if not ore then return end
     local inventory = bedWarsInventory()
     if not inventory then return end
-    local pickaxe
+    local pickaxe, bestTier
     for _, item in ipairs(inventory:GetChildren()) do
-        if string.find(string.lower(item.Name), "pickaxe", 1, true) then
-            pickaxe = item
-            break
+        local name = item.Name:lower()
+        if name:find("pickaxe", 1, true) then
+            local tier = 0
+            for score, token in ipairs({ "wood", "stone", "iron", "diamond", "emerald" }) do
+                if name:find(token, 1, true) then tier = score end
+            end
+            if not pickaxe or tier > bestTier then
+                pickaxe, bestTier = item, tier
+            end
         end
     end
     if not pickaxe then return end
@@ -4170,7 +4212,7 @@ local function bedWarsAutoOreStep()
         local breaker = bedWarsBlockBreaker()
         if not breaker then return end
         if not bedWarsEquip(pickaxe) then return end
-        task.wait(0.08)
+        task.wait(0.15)
         if not BedWars.AutoOreOn or not bedWarsIsIronOre(ore) then return end
         clearActiveOreHighlight()
         local highlight = Instance.new("Highlight")
@@ -4189,9 +4231,8 @@ local function bedWarsAutoOreStep()
             if BedWars.AutoBedOn and bedWarsNearbyEnemyBed
                 and bedWarsNearbyEnemyBed(root) then break end
             if bedWarsHeldItem() ~= pickaxe and not bedWarsEquip(pickaxe) then break end
-            local origin = root.Position + Vector3.new(0, 1, 0)
-            local direction = ore.Position - origin
-            if direction.Magnitude > 0.01 then
+            local ray = bedWarsRayToOre(breaker, ore)
+            if ray then
                 local cleanup = { Tasks = {} }
                 function cleanup:GiveTask(taskItem) table.insert(self.Tasks, taskItem) end
                 function cleanup:DoCleaning()
@@ -4200,10 +4241,10 @@ local function bedWarsAutoOreStep()
                     end
                     table.clear(self.Tasks)
                 end
-                breaker:hitBlock(cleanup, Ray.new(origin, direction.Unit * 18))
+                breaker:hitBlock(cleanup, ray)
                 task.delay(0.25, function() cleanup:DoCleaning() end)
             end
-            task.wait(0.22)
+            task.wait(math.max(0.25, tonumber(breaker.cooldown) or 0.3))
         end
     end)
     clearActiveOreHighlight()
@@ -4215,21 +4256,26 @@ local function bedWarsAutoOreStep()
     BedWars.ItemBusy = false
 end
 
-local bedWarsMarks = { Players = {}, Beds = {}, Generators = {} }
-local bedCandidates, generatorCandidates = {}, {}
+local bedWarsMarks = { Players = {}, Beds = {}, Ores = {}, Enchants = {}, Drops = {} }
+local bedCandidates, oreCandidates, enchantCandidates = {}, {}, {}
 local function indexBedWarsMapNode(node)
     if node:IsA("BasePart") and node.Name:lower() == "bed" then
         bedCandidates[node] = true
-    elseif (node:IsA("BasePart") or node:IsA("Model"))
-        and node.Name:lower():find("generator", 1, true) then
-        generatorCandidates[node] = true
+    elseif bedWarsIsIronOre(node) then
+        oreCandidates[node] = true
+    elseif (node:IsA("BasePart") or node:IsA("Model")) then
+        local name = node.Name:lower()
+        if name:find("enchant", 1, true) and name:find("table", 1, true) then
+            enchantCandidates[node] = true
+        end
     end
 end
 for _, node in ipairs(workspace:GetDescendants()) do indexBedWarsMapNode(node) end
 track(workspace.DescendantAdded:Connect(indexBedWarsMapNode))
 track(workspace.DescendantRemoving:Connect(function(node)
     bedCandidates[node] = nil
-    generatorCandidates[node] = nil
+    oreCandidates[node] = nil
+    enchantCandidates[node] = nil
 end))
 local function bedWarsTeamColor(bed)
     local teams = game:GetService("Teams"):GetTeams()
@@ -4408,9 +4454,12 @@ local function refreshBedWarsPlayers()
 end
 local function refreshBedWarsMap()
     if not BedWars.BedsOn then clearBedWarsMarks("Beds") end
-    if not BedWars.GeneratorsOn then clearBedWarsMarks("Generators") end
-    if not BedWars.BedsOn and not BedWars.GeneratorsOn then return end
-    local seenBeds, seenGenerators = {}, {}
+    if not BedWars.OutlineOre then clearBedWarsMarks("Ores") end
+    if not BedWars.OutlineEnchant then clearBedWarsMarks("Enchants") end
+    if not BedWars.OutlineDrops then clearBedWarsMarks("Drops") end
+    if not BedWars.BedsOn and not BedWars.OutlineOre
+        and not BedWars.OutlineEnchant and not BedWars.OutlineDrops then return end
+    local seenBeds, seenOres, seenEnchants, seenDrops = {}, {}, {}, {}
     local count = 0
     if BedWars.BedsOn then
         for node in pairs(bedCandidates) do
@@ -4423,15 +4472,37 @@ local function refreshBedWarsMap()
             end
         end
     end
-    if BedWars.GeneratorsOn then
-        for node in pairs(generatorCandidates) do
-            local parent = node.Parent
-            if node:IsDescendantOf(workspace) and parent
-                and not parent.Name:lower():find("generator", 1, true) then
-                seenGenerators[node] = true
-                setBedWarsMark("Generators", node, BedWars.GeneratorColor)
+    if BedWars.OutlineOre then
+        count = 0
+        for node in pairs(oreCandidates) do
+            if bedWarsIsIronOre(node) and node.Transparency < 0.95 then
+                seenOres[node] = true
+                setBedWarsMark("Ores", node, Color3.fromRGB(255, 167, 92))
                 count += 1
-                if count >= 80 then break end
+                if count >= 120 then break end
+            end
+        end
+    end
+    if BedWars.OutlineEnchant then
+        count = 0
+        for node in pairs(enchantCandidates) do
+            if node:IsDescendantOf(workspace) then
+                seenEnchants[node] = true
+                setBedWarsMark("Enchants", node, Color3.fromRGB(186, 117, 255))
+                count += 1
+                if count >= 60 then break end
+            end
+        end
+    end
+    if BedWars.OutlineDrops then
+        count = 0
+        for _, node in ipairs(CollectionService:GetTagged("ItemDrop")) do
+            if (node:IsA("BasePart") or node:IsA("Model"))
+                and node:IsDescendantOf(workspace) then
+                seenDrops[node] = true
+                setBedWarsMark("Drops", node, Color3.fromRGB(99, 218, 255))
+                count += 1
+                if count >= 120 then break end
             end
         end
     end
@@ -4441,10 +4512,12 @@ local function refreshBedWarsMap()
             bedWarsMarks.Beds[target] = nil
         end
     end
-    for target, mark in pairs(bedWarsMarks.Generators) do
-        if not seenGenerators[target] or not target.Parent then
-            mark:Destroy()
-            bedWarsMarks.Generators[target] = nil
+    for kind, seen in pairs({ Ores = seenOres, Enchants = seenEnchants, Drops = seenDrops }) do
+        for target, mark in pairs(bedWarsMarks[kind]) do
+            if not seen[target] or not target.Parent then
+                mark:Destroy()
+                bedWarsMarks[kind][target] = nil
+            end
         end
     end
 end
@@ -4738,12 +4811,15 @@ do
     Elements.ColorPicker(bedSection, "Bed Color", BedWars.BedColor, function(color)
         BedWars.BedColor = color
     end)
-    local generatorSection = gameSection(gameName, VisualsTab.Right, "Generator Outline")
-    Elements.Toggle(generatorSection, "Generator Outline", false, function(on)
-        BedWars.GeneratorsOn = on
+    local worldSection = gameSection(gameName, VisualsTab.Right, "World Outlines")
+    Elements.Toggle(worldSection, "Iron Ore", false, function(on)
+        BedWars.OutlineOre = on
     end)
-    Elements.ColorPicker(generatorSection, "Generator Color", BedWars.GeneratorColor, function(color)
-        BedWars.GeneratorColor = color
+    Elements.Toggle(worldSection, "Enchant Tables", false, function(on)
+        BedWars.OutlineEnchant = on
+    end)
+    Elements.Toggle(worldSection, "Dropped Items", false, function(on)
+        BedWars.OutlineDrops = on
     end)
     local outlineSection = gameSection(gameName, VisualsTab.Left, "Player Outlines")
     Elements.Toggle(outlineSection, "Player Outlines", false, function(on)
@@ -5270,7 +5346,9 @@ local function buildBedWarsUI()
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
-        { "Visuals", "Generator Outline", "Visuals", "BedWars", "Generator Outline", "Generator Outline" },
+        { "Visuals", "Iron Ore Outline", "Visuals", "BedWars", "World Outlines", "Iron Ore" },
+        { "Visuals", "Enchant Tables", "Visuals", "BedWars", "World Outlines", "Enchant Tables" },
+        { "Visuals", "Dropped Items", "Visuals", "BedWars", "World Outlines", "Dropped Items" },
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
