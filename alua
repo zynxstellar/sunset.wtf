@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-auto-bed-p438"
+local SUNSET_BUILD = "20261001-green-team-h762"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4390,12 +4390,12 @@ local function refreshBedWarsPlayers()
         for _, player in ipairs(Players:GetPlayers()) do
             local model = player.Character
             local humanoid = model and model:FindFirstChildOfClass("Humanoid")
-            local teammate = BedWars.TeamCheck and model
-                and teamRelation(model) == "friendly"
             if player ~= LocalPlayer and model and humanoid and humanoid.Health > 0
-                and model:IsDescendantOf(workspace) and not teammate then
+                and model:IsDescendantOf(workspace) then
                 seen[model] = true
-                setBedWarsMark("Players", model, Settings.EspBoxColor)
+                local teammate = BedWars.TeamCheck and teamRelation(model) == "friendly"
+                setBedWarsMark("Players", model, teammate
+                    and Color3.fromRGB(75, 225, 120) or Settings.EspBoxColor)
             end
         end
     end
