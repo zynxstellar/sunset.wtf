@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261001-module-panels-k915"
+local SUNSET_BUILD = "20261001-auto-ore-m627"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4108,12 +4108,16 @@ local function bedWarsBlockBreaker()
 end
 
 local oreParts, oreScanAt = {}, 0
+local activeOreHighlight
+local function clearActiveOreHighlight()
+    if activeOreHighlight then
+        activeOreHighlight:Destroy()
+        activeOreHighlight = nil
+    end
+end
 local function bedWarsIsIronOre(node)
     if not node:IsA("BasePart") then return false end
-    local name = string.lower(node.Name)
-    if name ~= "iron_block" and name ~= "iron_ore"
-        and name ~= "iron_ore_block" and name ~= "iron_ore_mesh_block"
-        and name ~= "ironore" then return false end
+    if string.lower(node.Name) ~= "iron_ore_mesh_block" then return false end
     -- Item drops and decorative ore displays use similar names but are not blocks.
     if CollectionService:HasTag(node, "ItemDrop") then return false end
     return node:IsDescendantOf(workspace)
@@ -4130,7 +4134,7 @@ local function bedWarsNearbyOre(root)
     end
     local nearest, nearestDistance = nil, 18
     for _, ore in ipairs(oreParts) do
-        if ore.Parent then
+        if bedWarsIsIronOre(ore) then
             local distance = (ore.Position - root.Position).Magnitude
             if distance < nearestDistance then
                 nearest, nearestDistance = ore, distance
@@ -4162,24 +4166,44 @@ local function bedWarsAutoOreStep()
     BedWars.ItemBusy = true
     local previous = bedWarsHeldItem()
     local ok, err = pcall(function()
-        if not bedWarsEquip(pickaxe) then return end
-        task.wait(0.08)
-        if not BedWars.AutoOreOn or not ore.Parent or bedWarsHeldItem() ~= pickaxe then return end
-        local origin = root.Position + Vector3.new(0, 1, 0)
-        local direction = ore.Position - origin
         local breaker = bedWarsBlockBreaker()
         if not breaker then return end
-        local cleanup = { Tasks = {} }
-        function cleanup:GiveTask(taskItem) table.insert(self.Tasks, taskItem) end
-        function cleanup:DoCleaning()
-            for _, taskItem in ipairs(self.Tasks) do
-                if type(taskItem) == "function" then pcall(taskItem) end
+        if not bedWarsEquip(pickaxe) then return end
+        task.wait(0.08)
+        if not BedWars.AutoOreOn or not bedWarsIsIronOre(ore) then return end
+        clearActiveOreHighlight()
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "SunsetAutoOreTarget"
+        highlight.Adornee = ore
+        highlight.FillTransparency = 1
+        highlight.OutlineColor = Color3.fromRGB(255, 139, 84)
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = ore
+        activeOreHighlight = highlight
+        while BedWars.Running and BedWars.AutoOreOn and bedWarsIsIronOre(ore)
+            and LocalPlayer.Character == character and humanoid.Health > 0
+            and pickaxe.Parent == inventory do
+            if (ore.Position - root.Position).Magnitude > 18 then break end
+            if bedWarsHeldItem() ~= pickaxe and not bedWarsEquip(pickaxe) then break end
+            local origin = root.Position + Vector3.new(0, 1, 0)
+            local direction = ore.Position - origin
+            if direction.Magnitude > 0.01 then
+                local cleanup = { Tasks = {} }
+                function cleanup:GiveTask(taskItem) table.insert(self.Tasks, taskItem) end
+                function cleanup:DoCleaning()
+                    for _, taskItem in ipairs(self.Tasks) do
+                        if type(taskItem) == "function" then pcall(taskItem) end
+                    end
+                    table.clear(self.Tasks)
+                end
+                breaker:hitBlock(cleanup, Ray.new(origin, direction.Unit * 18))
+                task.delay(0.25, function() cleanup:DoCleaning() end)
             end
-            table.clear(self.Tasks)
+            task.wait(0.22)
         end
-        breaker:hitBlock(cleanup, Ray.new(origin, direction.Unit * 18))
-        task.delay(0.25, function() cleanup:DoCleaning() end)
     end)
+    clearActiveOreHighlight()
     if not ok then warn("Sunset Auto Ore: " .. tostring(err)) end
     if previous and previous ~= pickaxe and previous.Parent == inventory
         and bedWarsHeldItem() == pickaxe then
@@ -4345,6 +4369,7 @@ function BedWars.Stop()
     BedWars.AntiVoidOn = false
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
+    clearActiveOreHighlight()
     BedWars.LastSafeCFrame = nil
     stopBedWarsSprint()
     for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
@@ -4601,6 +4626,7 @@ do
     local oreSection = gameSection(gameName, PlayerTab.Left, "Auto Mine")
     Elements.Toggle(oreSection, "Iron Ore", false, function(on)
         BedWars.AutoOreOn = on
+        if not on then clearActiveOreHighlight() end
     end)
     local bedSection = gameSection(gameName, VisualsTab.Right, "Bed Outline")
     Elements.Toggle(bedSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
