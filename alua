@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-bedwars-ui-j209"
+local SUNSET_BUILD = "20261002-bedwars-hud-j210"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3399,6 +3399,8 @@ BedWars = {
     BedColor = Color3.fromRGB(255, 204, 82),
     UseTeamBedColors = true,
     WallCheck = false, ProjectileWallCheck = false,
+    TargetHUDOn = false, SessionInfoOn = false,
+    AutoClickOn = false, AutoClickCPS = 10, AntiAFKOn = false,
 }
 local sprintController
 local sprintActionName = "SunsetAlwaysSprint"
@@ -3759,6 +3761,10 @@ local function bedWarsAuraStep()
     local camera = workspace.CurrentCamera
     local cameraPosition = camera and camera.CFrame.Position or root.Position + Vector3.new(0, 2, 0)
     local target = targets[1]
+    if Players:GetPlayerFromCharacter(target.model) then
+        BedWars.TargetModel = target.model
+        BedWars.TargetLastAt = os.clock()
+    end
     local delta = target.root.Position - cameraPosition
     if delta.Magnitude < 0.01 then return end
     local payload = {
@@ -4646,10 +4652,245 @@ function BedWars.Stop()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
     BedWars.AutoBedOn = false
+    BedWars.TargetHUDOn = false
+    BedWars.SessionInfoOn = false
+    BedWars.AutoClickOn = false
+    BedWars.AntiAFKOn = false
+    BedWars.TargetModel = nil
     clearActiveOreHighlight()
     BedWars.LastSafeCFrame = nil
     stopBedWarsSprint()
     for kind in pairs(bedWarsMarks) do clearBedWarsMarks(kind) end
+end
+
+-- BedWars overlays use the same ScreenGui as the menu, but stay visible when
+-- the menu is closed. Their toggles are independent from combat automation.
+do
+local targetHUD = new("Frame", {
+    Name = "BedWarsTargetHUD", Visible = false,
+    AnchorPoint = Vector2.new(0.5, 1),
+    Position = UDim2.new(0.5, 0, 1, -115),
+    Size = UDim2.fromOffset(280, 77),
+    BackgroundColor3 = Color3.fromRGB(27, 20, 28),
+    BackgroundTransparency = 0.08, BorderSizePixel = 0,
+}, Gui)
+new("UICorner", { CornerRadius = UDim.new(0, 12) }, targetHUD)
+border(targetHUD, Color3.fromRGB(255, 132, 92))
+BedWars.TargetHUD = targetHUD
+local targetAvatar = new("ImageLabel", {
+    Position = UDim2.fromOffset(11, 12), Size = UDim2.fromOffset(51, 51),
+    BackgroundColor3 = Color3.fromRGB(67, 42, 51),
+    BorderSizePixel = 0, Image = "",
+}, targetHUD)
+new("UICorner", { CornerRadius = UDim.new(0, 9) }, targetAvatar)
+local targetName = label(targetHUD, "", 15, Color3.fromRGB(255, 239, 229))
+targetName.Font = Enum.Font.GothamBold
+targetName.Position = UDim2.fromOffset(72, 10)
+targetName.Size = UDim2.fromOffset(196, 23)
+targetName.TextTruncate = Enum.TextTruncate.AtEnd
+local targetHP = label(targetHUD, "", 12, Color3.fromRGB(255, 194, 153))
+targetHP.Font = Enum.Font.GothamMedium
+targetHP.Position = UDim2.fromOffset(72, 33)
+targetHP.Size = UDim2.fromOffset(196, 17)
+local healthBack = new("Frame", {
+    Position = UDim2.fromOffset(72, 55), Size = UDim2.fromOffset(196, 8),
+    BackgroundColor3 = Color3.fromRGB(77, 54, 62), BorderSizePixel = 0,
+}, targetHUD)
+new("UICorner", { CornerRadius = UDim.new(1, 0) }, healthBack)
+local healthFill = new("Frame", {
+    Size = UDim2.fromScale(1, 1),
+    BackgroundColor3 = Color3.fromRGB(255, 128, 88), BorderSizePixel = 0,
+}, healthBack)
+new("UICorner", { CornerRadius = UDim.new(1, 0) }, healthFill)
+makeDraggable(targetHUD, targetHUD)
+
+local sessionStarted = os.clock()
+local sessionBaseline = {}
+local sessionPanel = new("Frame", {
+    Name = "BedWarsSessionInfo", Visible = false,
+    Position = UDim2.new(0, 15, 1, -205),
+    Size = UDim2.fromOffset(190, 177),
+    BackgroundColor3 = Color3.fromRGB(27, 20, 28),
+    BackgroundTransparency = 0.08, BorderSizePixel = 0,
+}, Gui)
+new("UICorner", { CornerRadius = UDim.new(0, 12) }, sessionPanel)
+border(sessionPanel, Color3.fromRGB(111, 71, 78))
+BedWars.SessionPanel = sessionPanel
+local sessionTitle = label(sessionPanel, "SESSION INFO", 14, Color3.fromRGB(255, 197, 139))
+sessionTitle.Font = Enum.Font.GothamBold
+sessionTitle.Position = UDim2.fromOffset(12, 10)
+sessionTitle.Size = UDim2.new(1, -24, 0, 20)
+new("Frame", {
+    Position = UDim2.fromOffset(12, 34),
+    Size = UDim2.new(1, -24, 0, 1),
+    BackgroundColor3 = Color3.fromRGB(103, 65, 70), BorderSizePixel = 0,
+}, sessionPanel)
+local sessionLines = {}
+for index, title in ipairs({ "Time Played", "Kills", "Beds", "Wins", "Games", "Map" }) do
+    local row = label(sessionPanel, title .. ": --", 12,
+        Color3.fromRGB(244, 225, 216))
+    row.Font = Enum.Font.GothamMedium
+    row.Position = UDim2.fromOffset(12, 39 + (index - 1) * 21)
+    row.Size = UDim2.new(1, -24, 0, 18)
+    row.TextTruncate = Enum.TextTruncate.AtEnd
+    sessionLines[title] = row
+end
+makeDraggable(sessionPanel, sessionPanel)
+
+local function sessionNumber(names)
+    local attributes = LocalPlayer:GetAttributes()
+    for _, name in ipairs(names) do
+        local value = attributes[name]
+        if type(value) == "number" then return value end
+    end
+    for _, folderName in ipairs({ "leaderstats", "stats", "Stats" }) do
+        local folder = LocalPlayer:FindFirstChild(folderName)
+        if folder then
+            for _, name in ipairs(names) do
+                local value = folder:FindFirstChild(name)
+                if value and value:IsA("ValueBase") and type(value.Value) == "number" then
+                    return value.Value
+                end
+            end
+        end
+    end
+    return nil
+end
+local function sessionMap()
+    for _, source in ipairs({ workspace, game:GetService("ReplicatedStorage") }) do
+        for _, name in ipairs({ "MapName", "CurrentMap", "Map" }) do
+            local value = source:GetAttribute(name)
+            if type(value) == "string" and value ~= "" then return value end
+        end
+    end
+    return "Unknown"
+end
+local sessionFields = {
+    Kills = { "Kills", "kills", "KillCount" },
+    Beds = { "BedsBroken", "BedBreaks", "Beds" },
+    Wins = { "Wins", "wins", "WinCount" },
+    Games = { "GamesPlayed", "MatchesPlayed", "Games" },
+}
+for title, names in pairs(sessionFields) do
+    sessionBaseline[title] = sessionNumber(names)
+end
+task.spawn(function()
+    while BedWars.Running do
+        sessionPanel.Visible = Settings.SelectedGame == "BedWars" and BedWars.SessionInfoOn
+        if sessionPanel.Visible then
+            local seconds = math.floor(os.clock() - sessionStarted)
+            sessionLines["Time Played"].Text = string.format("Time Played: %02d:%02d:%02d",
+                math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
+            for title, names in pairs(sessionFields) do
+                local value = sessionNumber(names)
+                if value ~= nil and sessionBaseline[title] == nil then
+                    sessionBaseline[title] = value
+                end
+                sessionLines[title].Text = title .. ": " .. (value == nil and "--"
+                    or tostring(math.max(0, value - (sessionBaseline[title] or 0))))
+            end
+            sessionLines.Map.Text = "Map: " .. sessionMap()
+        end
+        task.wait(1)
+    end
+    sessionPanel.Visible = false
+end)
+
+local shownTarget
+track(UIS.InputBegan:Connect(function(input, processed)
+    if processed or input.UserInputType ~= Enum.UserInputType.MouseButton1
+        or Settings.SelectedGame ~= "BedWars" or not BedWars.TargetHUDOn
+        or anyMenuVisible() then return end
+    local mouse = LocalPlayer:GetMouse()
+    local node = mouse.Target
+    local model = node and node:FindFirstAncestorOfClass("Model")
+    local player = model and Players:GetPlayerFromCharacter(model)
+    if player and bedWarsEnemy(player) then
+        BedWars.TargetModel = model
+        BedWars.TargetLastAt = os.clock()
+    end
+end))
+task.spawn(function()
+    while BedWars.Running do
+        local model = BedWars.TargetModel
+        local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+        local player = model and Players:GetPlayerFromCharacter(model)
+        local visible = Settings.SelectedGame == "BedWars" and BedWars.TargetHUDOn
+            and player and bedWarsEnemy(player) and humanoid
+            and os.clock() - (BedWars.TargetLastAt or 0) < 3
+        targetHUD.Visible = visible == true
+        if visible then
+            if shownTarget ~= model then
+                shownTarget = model
+                targetAvatar.Image = ""
+                task.spawn(function()
+                    local ok, image = pcall(Players.GetUserThumbnailAsync, Players,
+                        player.UserId, Enum.ThumbnailType.HeadShot,
+                        Enum.ThumbnailSize.Size100x100)
+                    if ok and shownTarget == model then targetAvatar.Image = image end
+                end)
+            end
+            targetName.Text = player.DisplayName or player.Name
+            local hp = math.max(0, humanoid.Health)
+            local maxHP = math.max(1, humanoid.MaxHealth)
+            targetHP.Text = string.format("%d / %d HP", math.ceil(hp), math.ceil(maxHP))
+            healthFill.Size = UDim2.fromScale(math.clamp(hp / maxHP, 0, 1), 1)
+        else
+            shownTarget = nil
+        end
+        task.wait(0.1)
+    end
+    targetHUD.Visible = false
+end)
+
+local virtualInput
+pcall(function() virtualInput = game:GetService("VirtualInputManager") end)
+local virtualUser
+pcall(function() virtualUser = game:GetService("VirtualUser") end)
+local autoClickWarned = false
+local function bedWarsClick()
+    if typeof(mouse1click) == "function" then
+        local ok = pcall(mouse1click)
+        if ok then return true end
+    end
+    if virtualInput then
+        local position = UIS:GetMouseLocation()
+        local ok = pcall(function()
+            virtualInput:SendMouseButtonEvent(position.X, position.Y, 0, true, game, 0)
+            virtualInput:SendMouseButtonEvent(position.X, position.Y, 0, false, game, 0)
+        end)
+        if ok then return true end
+    end
+    if virtualUser then
+        return pcall(virtualUser.ClickButton1, virtualUser, Vector2.zero)
+    end
+    return false
+end
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.AutoClickOn
+            and not anyMenuVisible() and not UIS:GetFocusedTextBox() then
+            local ok = bedWarsClick()
+            if not ok and not autoClickWarned then
+                autoClickWarned = true
+                warn("Sunset Auto Clicker: input simulation unavailable in this executor")
+            end
+            task.wait(1 / math.max(1, BedWars.AutoClickCPS))
+        else
+            task.wait(0.08)
+        end
+    end
+end)
+track(LocalPlayer.Idled:Connect(function()
+    if Settings.SelectedGame ~= "BedWars" or not BedWars.AntiAFKOn
+        or not virtualUser then return end
+    pcall(function()
+        virtualUser:CaptureController()
+        virtualUser:Button2Down(Vector2.zero, workspace.CurrentCamera.CFrame)
+        task.wait(0.1)
+        virtualUser:Button2Up(Vector2.zero, workspace.CurrentCamera.CFrame)
+    end)
+end))
 end
 task.spawn(function()
     while BedWars.Running do
@@ -4853,6 +5094,13 @@ do
     Elements.Slider(projectileSection, "Projectile Range", 12, 100, 60, "studs", function(value)
         BedWars.ProjectileRange = value
     end)
+    local clickSection = gameSection(gameName, AimTab.Left, "Auto Clicker")
+    Elements.Toggle(clickSection, "Auto Clicker", false, function(on)
+        BedWars.AutoClickOn = on
+    end)
+    Elements.Slider(clickSection, "Clicks Per Second", 2, 20, 10, "CPS", function(value)
+        BedWars.AutoClickCPS = value
+    end)
     local scaffoldSection = gameSection(gameName, MiscTab.Left, "Scaffold")
     Elements.Toggle(scaffoldSection, "Scaffold", false, function(on)
         BedWars.ScaffoldOn = on
@@ -4897,6 +5145,16 @@ do
     Elements.Toggle(droppedSection, "Dropped Items", false, function(on)
         BedWars.OutlineDrops = on
     end)
+    local targetSection = gameSection(gameName, VisualsTab.Left, "Target HUD")
+    Elements.Toggle(targetSection, "Target HUD", false, function(on)
+        BedWars.TargetHUDOn = on
+        if not on then BedWars.TargetHUD.Visible = false end
+    end)
+    local sessionSection = gameSection(gameName, VisualsTab.Left, "Session Info")
+    Elements.Toggle(sessionSection, "Session Info", false, function(on)
+        BedWars.SessionInfoOn = on
+        if not on then BedWars.SessionPanel.Visible = false end
+    end)
     local outlineSection = gameSection(gameName, VisualsTab.Left, "Player Outlines")
     Elements.Toggle(outlineSection, "Player Outlines", false, function(on)
         BedWars.PlayersOn = on
@@ -4908,6 +5166,10 @@ do
     Elements.Toggle(listSection, "Module List", true, function(on)
         Settings.ModuleListOn = on
     end, nil, true)
+    local afkSection = gameSection(gameName, MiscTab.Right, "Anti AFK")
+    Elements.Toggle(afkSection, "Anti AFK", false, function(on)
+        BedWars.AntiAFKOn = on
+    end)
 end
 -- Client-only visual projectiles. These never call a game combat remote.
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
@@ -5420,6 +5682,7 @@ local function buildBedWarsUI()
     local specs = {
         { "Combat", "Kill Aura", "Combat", "BedWars", "Kill Aura", "Kill Aura" },
         { "Combat", "Projectile Aura", "Combat", "BedWars", "Projectile Aura", "Projectile Aura" },
+        { "Combat", "Auto Clicker", "Combat", "BedWars", "Auto Clicker", "Auto Clicker" },
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
@@ -5432,9 +5695,12 @@ local function buildBedWarsUI()
         { "Visuals", "Iron Ore Outline", "Visuals", "BedWars", "Iron Ore Outline", "Iron Ore Outline" },
         { "Visuals", "Enchant Tables", "Visuals", "BedWars", "Enchant Tables", "Enchant Tables" },
         { "Visuals", "Dropped Items", "Visuals", "BedWars", "Dropped Items", "Dropped Items" },
+        { "Visuals", "Target HUD", "Visuals", "BedWars", "Target HUD", "Target HUD" },
+        { "Visuals", "Session Info", "Visuals", "BedWars", "Session Info", "Session Info" },
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
+        { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
