@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-bedwars-hud-j210"
+local SUNSET_BUILD = "20261002-settings-persist-j211"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -368,6 +368,90 @@ end
 -- ============================================================
 local Elements = {}
 local ConfigControls = {}
+local Persistence = {}
+do
+    local lastSavedJSON
+    local function sessionPath(gameName)
+        return "SunsetConfigs/SunsetAuto_"
+            .. tostring(gameName):gsub("[^%w%-_]", "_") .. ".json"
+    end
+    function Persistence.Save()
+        local gameName = Settings.SelectedGame
+        if not gameName then return false end
+        local saved = {}
+        for _, control in ipairs(ConfigControls) do
+            if control.Key and (not control.Box or control.Box.Visible)
+                and (not control.Row or control.Row.Visible) then
+                local value = control.Get()
+                if control.Kind == "color" and typeof(value) == "Color3" then
+                    value = { math.floor(value.R * 255 + 0.5),
+                        math.floor(value.G * 255 + 0.5),
+                        math.floor(value.B * 255 + 0.5) }
+                end
+                local bind = control.GetBind and control.GetBind()
+                saved[#saved + 1] = { Key = control.Key, Kind = control.Kind,
+                    Value = value, Bind = bind and bind.Name or nil }
+            end
+        end
+        local data = { Version = 1, Game = gameName, Controls = saved,
+            MenuKey = Settings.MenuKey.Name }
+        ENV.SunsetSettingsSnapshot = data
+        if typeof(writefile) ~= "function" then return true end
+        local ok, encoded = pcall(HttpService.JSONEncode, HttpService, data)
+        if not ok then return false end
+        if encoded == lastSavedJSON then return true end
+        if typeof(makefolder) == "function" then
+            pcall(makefolder, "SunsetConfigs")
+        end
+        local written = pcall(writefile, sessionPath(gameName), encoded)
+        if written then lastSavedJSON = encoded end
+        return written
+    end
+    function Persistence.Restore(gameName, menuKeyControl)
+        local data = ENV.SunsetSettingsSnapshot
+        if (type(data) ~= "table" or data.Game ~= gameName)
+            and typeof(readfile) == "function" then
+            local ok, decoded = pcall(function()
+                return HttpService:JSONDecode(readfile(sessionPath(gameName)))
+            end)
+            if ok then data = decoded end
+        end
+        if type(data) ~= "table" or data.Game ~= gameName
+            or type(data.Controls) ~= "table" then return false end
+        local byKey = {}
+        for _, control in ipairs(ConfigControls) do
+            if control.Key then byKey[control.Key] = control end
+        end
+        for _, item in ipairs(data.Controls) do
+            local control = item.Key and byKey[item.Key]
+            if control and control.Kind == item.Kind
+                and (not control.Box or control.Box.Visible)
+                and (not control.Row or control.Row.Visible) then
+                local value = item.Value
+                if control.Kind == "color" and type(value) == "table" then
+                    value = Color3.fromRGB(tonumber(value[1]) or 255,
+                        tonumber(value[2]) or 255, tonumber(value[3]) or 255)
+                end
+                control.Set(value)
+                if control.SetBind then
+                    control.SetBind(item.Bind and Enum.KeyCode[item.Bind] or nil)
+                end
+            end
+        end
+        if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
+            menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
+        end
+        return true
+    end
+    function Persistence.Start()
+        task.spawn(function()
+            while Gui.Parent do
+                Persistence.Save()
+                task.wait(1)
+            end
+        end)
+    end
+end
 local function configKey(parent, text)
     local section = parent and parent.Parent
     local title = section and section:FindFirstChildOfClass("TextLabel")
@@ -3309,10 +3393,17 @@ do
 end
 do
     local s = makeSection(SettingsTab.Left, "Arena Travel")
-    Elements.Toggle(s, "Auto Reinject", true, function(on)
-        AutoReinject.enabled = on == true
+    AutoReinject.Toggle = Elements.Toggle(s, "Auto Reinject", true, function(on)
+        if not AutoReinject.ready then return end
+        if AutoReinject.Toggle then
+            AutoReinject.enabled = AutoReinject.Toggle.Get() == true
+        else
+            AutoReinject.enabled = on == true
+        end
         ENV.SunsetAutoReinject = AutoReinject.enabled
-        if AutoReinject.enabled and AutoReinject.Queue then AutoReinject.Queue() end
+        if AutoReinject.enabled and AutoReinject.ready and AutoReinject.Queue then
+            AutoReinject.Queue()
+        end
     end)
     AutoReinject.Status = Elements.Label(s, "Checking teleport support...")
     AutoReinject.Status.Visible = false
@@ -5922,6 +6013,7 @@ buildBedWarsUI()
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
 -- ============================================================
 ENV.SunsetUnload = function()
+    Persistence.Save()
     GhostPulse.Stop()
     Fun.Running = false
     Fun.Enabled = false
@@ -6026,7 +6118,6 @@ if detectedGame then
                     or "Queued build-checked GitHub fallback"))
             or ("Queue failed: " .. tostring(err):sub(1, 38))
     end
-    AutoReinject.Queue()
 else
     AutoReinject.Status.Text = "Supported games only"
 end
@@ -6065,6 +6156,17 @@ do
         Elements.Label(notice, "Sunset supports BedWars, Sniper Arena, and Survive Zombie Arena.")
         SettingsTab.Select()
     end
+end
+if detectedGame then
+    Persistence.Restore(detectedGame, menuKeyControl)
+    Persistence.Start()
+    track(LocalPlayer.OnTeleport:Connect(function(state)
+        if state == Enum.TeleportState.Started then Persistence.Save() end
+    end))
+    AutoReinject.enabled = AutoReinject.Toggle.Get() == true
+    ENV.SunsetAutoReinject = AutoReinject.enabled
+    AutoReinject.ready = true
+    if AutoReinject.enabled and AutoReinject.Queue then AutoReinject.Queue() end
 end
 ]========]
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
