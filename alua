@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-ore-scaffold-j206"
+local SUNSET_BUILD = "20261002-wall-default-j207"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -2053,7 +2053,7 @@ local SettingsTab = makeTab("Sunset")
 Settings.AimEnabled = false
 Settings.TriggerEnabled = false
 Settings.AimTeamCheck = true
-Settings.AimVisibleCheck = true
+Settings.AimVisibleCheck = false
 Settings.AimAllDirections = false
 Settings.AimRange = 300
 Settings.AimFovEnabled = true
@@ -2111,7 +2111,7 @@ do
     }, fovCircle)
     track({ Disconnect = function() fovGui:Destroy() end })
     Elements.Toggle(right, "Team Check", true, function(v) Settings.AimTeamCheck = v end)
-    Elements.Toggle(right, "Wall Check", true, function(v) Settings.AimVisibleCheck = v end)
+    Elements.Toggle(right, "Wall Check", false, function(v) Settings.AimVisibleCheck = v end)
     Elements.Toggle(right, "Look Behind", false, function(v) Settings.AimAllDirections = v end)
     Elements.Toggle(right, "Skip Unset Teams", false, function(v) Settings.AimSkipUnknown = v end)
     Elements.TextBox(right, "Team Label", "optional: FactionId", function(v)
@@ -3398,7 +3398,7 @@ BedWars = {
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
     UseTeamBedColors = true,
-    WallCheck = true, ProjectileWallCheck = true,
+    WallCheck = false, ProjectileWallCheck = false,
 }
 local sprintController
 local sprintActionName = "SunsetAlwaysSprint"
@@ -4853,14 +4853,14 @@ do
         { "Anything", "Lower HP", "Higher HP", "More Gear" }, "Lower HP", function(value)
             BedWars.AuraPriority = value
     end)
-    Elements.Toggle(killAuraSection, "Wall Check", true, function(on)
+    Elements.Toggle(killAuraSection, "Wall Check", false, function(on)
         BedWars.WallCheck = on
     end)
     local projectileSection = gameSection(gameName, AimTab.Right, "Projectile Aura")
     Elements.Toggle(projectileSection, "Projectile Aura", false, function(on)
         BedWars.ProjectilesOn = on
     end)
-    Elements.Toggle(projectileSection, "Wall Check", true, function(on)
+    Elements.Toggle(projectileSection, "Wall Check", false, function(on)
         BedWars.ProjectileWallCheck = on
     end, nil, true)
     Elements.Slider(projectileSection, "Projectile Range", 12, 100, 60, "studs", function(value)
