@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-module-length-k219"
+local SUNSET_BUILD = "20261002-bed-protect-k220"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3546,9 +3546,10 @@ BedWars = {
     SpeedOn = false, SpeedValue = 23, SpeedWallCheck = true,
     FlyOn = false, FlySpeed = 23, FlyVerticalSpeed = 40,
     HitBoxesOn = false, HitBoxesExpand = 14.4,
-    BedProtectorOn = false, BedProtectorLayers = 1,
+    BedProtectorOn = false, BedProtectorLayers = 1, ProtectBeds = {},
     FastConsumeOn = false, FastConsumeFactor = 0.4,
-    AutoBuyOn = false, AutoBuyWool = true, AutoBuySword = true,
+    AutoBuyOn = false, AutoBuyWool = true, AutoBuyArmor = true,
+    AutoBuyDelay = 0.5,
     AutoBuyPickaxe = false, AutoBuyAxe = false,
     HitColorOn = false, HitColor = Color3.fromRGB(255, 99, 84),
     DamageIndicatorOn = false, DamageIndicatorColor = Color3.fromRGB(255, 151, 101),
@@ -4565,6 +4566,10 @@ local bedCandidates, oreCandidates, enchantCandidates = {}, {}, {}
 local function indexBedWarsMapNode(node)
     if node:IsA("BasePart") and node.Name:lower() == "bed" then
         bedCandidates[node] = true
+        BedWars.ProtectBeds[node] = true
+    elseif node:IsA("Model") and node.Name:lower() == "bed" then
+        local part = node.PrimaryPart or node:FindFirstChildWhichIsA("BasePart", true)
+        if part then BedWars.ProtectBeds[part] = true end
     elseif bedWarsIsIronOre(node) then
         oreCandidates[node] = true
     elseif (node:IsA("BasePart") or node:IsA("Model")) then
@@ -4578,6 +4583,7 @@ for _, node in ipairs(workspace:GetDescendants()) do indexBedWarsMapNode(node) e
 track(workspace.DescendantAdded:Connect(indexBedWarsMapNode))
 track(workspace.DescendantRemoving:Connect(function(node)
     bedCandidates[node] = nil
+    BedWars.ProtectBeds[node] = nil
     oreCandidates[node] = nil
     enchantCandidates[node] = nil
 end))
@@ -5062,42 +5068,65 @@ local function bedWarsAutoBuyStep()
         local item = inventory:FindFirstChild(name)
         return item and (tonumber(item:GetAttribute("Amount")) or 1) or 0
     end
-    local wanted
+    BedWars.AutoBuyAttempts = BedWars.AutoBuyAttempts or {}
+    local wanted, item
+    local function choose(name)
+        local offer = catalog[name]
+        if not offer or amount(offer.currency) < (offer.price or 0)
+            or os.clock() - (BedWars.AutoBuyAttempts[name] or 0)
+                < BedWars.AutoBuyDelay then return false end
+        wanted, item = name, offer
+        return true
+    end
     if BedWars.AutoBuyWool then
         local wool = bedWarsFindWool()
         local woolCount = wool and (tonumber(wool:GetAttribute("Amount")) or 1) or 0
-        if woolCount < 64 then wanted = "wool_white" end
+        if woolCount < 64 then choose("wool_white") end
     end
-    if not wanted and BedWars.AutoBuySword then
-        local swords = { "wood_sword", "stone_sword", "iron_sword",
-            "diamond_sword", "emerald_sword" }
-        for i = 2, #swords do
-            if amount(swords[i - 1]) > 0 and amount(swords[i]) == 0 then
-                wanted = swords[i]
-                break
+    if not wanted and BedWars.AutoBuyArmor then
+        local armor = { "leather_chestplate", "iron_chestplate",
+            "diamond_chestplate", "emerald_chestplate", "void_chestplate" }
+        local tier = BedWars.AutoBuyArmorTier or 0
+        for index, name in ipairs(armor) do
+            if inventory:FindFirstChild(name, true)
+                or character:FindFirstChild(name, true) then
+                tier = math.max(tier, index)
             end
         end
+        BedWars.AutoBuyArmorTier = tier
+        if armor[tier + 1] then choose(armor[tier + 1]) end
     end
     if not wanted and BedWars.AutoBuyPickaxe then
         for _, name in ipairs({ "stone_pickaxe", "iron_pickaxe", "diamond_pickaxe" }) do
-            if amount(name) == 0 then wanted = name break end
+            if amount(name) == 0 then
+                if choose(name) then break end
+            end
         end
     end
     if not wanted and BedWars.AutoBuyAxe then
         for _, name in ipairs({ "wood_axe", "stone_axe", "iron_axe", "diamond_axe" }) do
-            if amount(name) == 0 then wanted = name break end
+            if amount(name) == 0 then
+                if choose(name) then break end
+            end
         end
     end
-    local item = wanted and catalog[wanted]
-    if not item or amount(item.currency) < (item.price or 0) then return end
-    BedWars.AutoBuyAttempts = BedWars.AutoBuyAttempts or {}
-    if os.clock() - (BedWars.AutoBuyAttempts[wanted] or 0) < 1 then return end
+    if not wanted then return end
     BedWars.AutoBuyAttempts[wanted] = os.clock()
     local payload = { shopItem = item, shopId = shop.Name }
+    local ok, result
     if remote:IsA("RemoteFunction") then
-        pcall(remote.InvokeServer, remote, payload)
+        ok, result = pcall(remote.InvokeServer, remote, payload)
     elseif remote:IsA("RemoteEvent") then
-        pcall(remote.FireServer, remote, payload)
+        ok = pcall(remote.FireServer, remote, payload)
+    end
+    if ok and result ~= false and wanted:find("chestplate", 1, true) then
+        for index, name in ipairs({ "leather_chestplate", "iron_chestplate",
+            "diamond_chestplate", "emerald_chestplate", "void_chestplate" }) do
+            if name == wanted then
+                BedWars.AutoBuyArmorTier = math.max(BedWars.AutoBuyArmorTier or 0, index)
+                break
+            end
+        end
     end
 end
 function BedWars.AutoPearlStep(character, root, pearl)
@@ -5156,6 +5185,20 @@ function BedWars.AutoPearlStep(character, root, pearl)
     BedWars.ItemBusy = false
     if not launched then warn("Sunset Auto Pearl: " .. tostring(err)) end
 end
+function BedWars.SelectProtectionBed()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+    local nearest, distance = nil, 18
+    for bed in pairs(BedWars.ProtectBeds) do
+        if bed:IsDescendantOf(workspace) then
+            local gap = (bed.Position - root.Position).Magnitude
+            if gap < distance then nearest, distance = bed, gap end
+        end
+    end
+    BedWars.ProtectHomeBed = nearest
+    return nearest
+end
 function BedWars.ProtectStep()
     if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem
         or os.clock() - BedWars.LastProtect < 0.2 then return end
@@ -5166,14 +5209,34 @@ function BedWars.ProtectStep()
     local remote = bedWarsRemote("PlaceBlock", true)
     if not root or not team or not wool or not remote
         or not remote:IsA("RemoteFunction") then return end
-    local ownBed
-    for bed in pairs(bedCandidates) do
-        if bed:IsDescendantOf(workspace) then
-            local color, verified = bedWarsTeamColor(bed)
-            if verified and (color - team.TeamColor.Color).Magnitude < 0.14
-                and (bed.Position - root.Position).Magnitude < 18 then
-                ownBed = bed
-                break
+    if tonumber(wool:GetAttribute("Amount")) == 0 then return end
+    local ownBed = BedWars.ProtectHomeBed
+    if ownBed and (not ownBed:IsDescendantOf(workspace)
+        or (ownBed.Position - root.Position).Magnitude >= 18) then
+        ownBed = nil
+    end
+    if not ownBed then
+        local bestDistance = 18
+        for bed in pairs(BedWars.ProtectBeds) do
+            if bed:IsDescendantOf(workspace) then
+                local gap = (bed.Position - root.Position).Magnitude
+                if gap < bestDistance then
+                    local color, verified = bedWarsTeamColor(bed)
+                    local isOwn = verified
+                        and (color - team.TeamColor.Color).Magnitude < 0.14
+                    if not verified then
+                        local closestTeam, colorDistance
+                        for _, candidate in ipairs(game:GetService("Teams"):GetTeams()) do
+                            local difference = (bed.Color - candidate.TeamColor.Color).Magnitude
+                            if not colorDistance or difference < colorDistance then
+                                closestTeam, colorDistance = candidate, difference
+                            end
+                        end
+                        isOwn = closestTeam == team and colorDistance
+                            and colorDistance < 0.45
+                    end
+                    if isOwn then ownBed, bestDistance = bed, gap end
+                end
             end
         end
     end
@@ -5182,40 +5245,55 @@ function BedWars.ProtectStep()
         math.round(ownBed.Position.Y / 3), math.round(ownBed.Position.Z / 3))
     local overlap = OverlapParams.new()
     overlap.FilterType = Enum.RaycastFilterType.Exclude
-    overlap.FilterDescendantsInstances = { character }
+    local ignored = { character }
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and player.Character ~= character then
+            table.insert(ignored, player.Character)
+        end
+    end
+    overlap.FilterDescendantsInstances = ignored
     for layer = 1, BedWars.BedProtectorLayers do
+        local offsets = {}
         for x = -layer, layer do
             for z = -layer, layer do
-                if math.abs(x) == layer or math.abs(z) == layer then
-                    local grid = center + Vector3.new(x, 0, z)
-                    local key = tostring(grid)
-                    if os.clock() - (BedWars.ProtectionAttempts[key] or 0) > 0.7 then
-                        local occupied = false
-                        for _, part in ipairs(workspace:GetPartBoundsInBox(
-                            CFrame.new(grid * 3), Vector3.new(2.5, 2.5, 2.5), overlap)) do
-                            if part.CanCollide then occupied = true break end
+                if math.max(math.abs(x), math.abs(z)) == layer then
+                    table.insert(offsets, { x = x, z = z })
+                end
+            end
+        end
+        table.sort(offsets, function(a, b)
+            return math.abs(a.x) + math.abs(a.z)
+                < math.abs(b.x) + math.abs(b.z)
+        end)
+        for _, offset in ipairs(offsets) do
+            local grid = center + Vector3.new(offset.x, 0, offset.z)
+            local key = tostring(grid)
+            if (grid * 3 - root.Position).Magnitude < 18
+                and os.clock() - (BedWars.ProtectionAttempts[key] or 0) > 0.7 then
+                local occupied = false
+                for _, part in ipairs(workspace:GetPartBoundsInBox(
+                    CFrame.new(grid * 3), Vector3.new(2.5, 2.5, 2.5), overlap)) do
+                    if part.CanCollide then occupied = true break end
+                end
+                if not occupied then
+                    BedWars.ProtectionAttempts[key] = os.clock()
+                    BedWars.LastProtect = os.clock()
+                    BedWars.ItemBusy = true
+                    task.spawn(function()
+                        local previous = bedWarsHeldItem()
+                        pcall(function()
+                            if bedWarsEquip(wool) then
+                                remote:InvokeServer({ blockType = wool.Name,
+                                    position = grid })
+                            end
+                        end)
+                        if previous and previous.Parent == bedWarsInventory()
+                            and bedWarsHeldItem() == wool then
+                            pcall(bedWarsEquip, previous)
                         end
-                        if not occupied then
-                            BedWars.ProtectionAttempts[key] = os.clock()
-                            BedWars.LastProtect = os.clock()
-                            BedWars.ItemBusy = true
-                            task.spawn(function()
-                                local previous = bedWarsHeldItem()
-                                pcall(function()
-                                    if bedWarsEquip(wool) then
-                                        remote:InvokeServer({ blockType = wool.Name,
-                                            position = grid })
-                                    end
-                                end)
-                                if previous and previous.Parent == bedWarsInventory()
-                                    and bedWarsHeldItem() == wool then
-                                    pcall(bedWarsEquip, previous)
-                                end
-                                BedWars.ItemBusy = false
-                            end)
-                            return
-                        end
-                    end
+                        BedWars.ItemBusy = false
+                    end)
+                    return
                 end
             end
         end
@@ -5585,7 +5663,7 @@ task.spawn(function()
         if Settings.SelectedGame == "BedWars" and BedWars.AutoBuyOn then
             pcall(bedWarsAutoBuyStep)
         end
-        task.wait(0.5)
+        task.wait(math.max(0.15, BedWars.AutoBuyDelay))
     end
 end)
 local function bedWarsCheckStaff(player)
@@ -6393,6 +6471,14 @@ do
     end)
     Elements.Slider(protectorSection, "Layers", 1, 3, 1, "",
         function(value) BedWars.BedProtectorLayers = value end)
+    local selectBedButton
+    selectBedButton = Elements.Button(protectorSection, "Use Nearest Bed", function()
+        local bed = BedWars.SelectProtectionBed()
+        selectBedButton.Text = bed and "Bed Selected" or "No Bed Nearby"
+        task.delay(2, function()
+            if selectBedButton.Parent then selectBedButton.Text = "Use Nearest Bed" end
+        end)
+    end)
     end
     local antiVoidSection = gameSection(gameName, MainTab.Right, "Anti Void")
     Elements.Toggle(antiVoidSection, "Anti Void", false, function(on)
@@ -6564,8 +6650,8 @@ do
     Elements.Toggle(buySection, "Wool", true, function(on)
         BedWars.AutoBuyWool = on
     end, nil, true)
-    Elements.Toggle(buySection, "Swords", true, function(on)
-        BedWars.AutoBuySword = on
+    Elements.Toggle(buySection, "Armor", true, function(on)
+        BedWars.AutoBuyArmor = on
     end, nil, true)
     Elements.Toggle(buySection, "Pickaxes", false, function(on)
         BedWars.AutoBuyPickaxe = on
@@ -6573,6 +6659,8 @@ do
     Elements.Toggle(buySection, "Axes", false, function(on)
         BedWars.AutoBuyAxe = on
     end, nil, true)
+    Elements.Slider(buySection, "Buy Delay", 0.15, 2, 0.5, "seconds",
+        function(value) BedWars.AutoBuyDelay = value end, 0.05)
     end
     local oreSection = gameSection(gameName, PlayerTab.Left, "Auto Mine")
     Elements.Toggle(oreSection, "Iron Ore", false, function(on)
