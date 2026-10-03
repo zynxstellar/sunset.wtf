@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rivals-ui-k233"
+local SUNSET_BUILD = "20261003-menu-music-k235"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -62,6 +62,7 @@ local BedWars
 local bedWarsHiddenSections = {}
 local bedWarsNamesToggle
 local flyToggle
+local zoomUnlockToggle
 local spinToggle
 local AutoReinject = { enabled = true }
 local RefreshConfigList
@@ -86,9 +87,12 @@ local Settings = {
     GodMode        = false,
     EspBoxColor    = Color3.fromRGB(255, 255, 255),
     WatermarkOn    = true,
+    MenuBlurOn     = true,
     ModuleListOn   = true,
     DisableMoveOpen= false,
 }
+local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150,
+    Available = false }
 
 -- ============================================================
 -- Tiny UI helpers
@@ -125,6 +129,17 @@ for _, name in ipairs({ "MenuUI", "EspGui" }) do
 end
 
 local Gui = new("ScreenGui", { Name = "MenuUI", DisplayOrder = 2147483647, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, PlayerGui)
+Settings.MenuBlurEffect = new("BlurEffect", { Name = "SunsetMenuBlur", Size = 0 }, Lighting)
+Settings.MenuBlurTween = nil
+function Settings.SetMenuBlur(size)
+    if not Settings.MenuBlurEffect.Parent then return end
+    if Settings.MenuBlurTween then Settings.MenuBlurTween:Cancel() end
+    Settings.MenuBlurTween = TweenService:Create(Settings.MenuBlurEffect,
+        TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { Size = size })
+    Settings.MenuBlurTween:Play()
+end
+Settings.SetMenuBlur(20)
 ENV.SunsetLoading = {}
 ENV.SunsetLoading.Overlay = new("Frame", {
     Name = "SunsetLoading", Size = UDim2.fromScale(1, 1),
@@ -169,6 +184,7 @@ local Window = new("Frame", {
 }, Gui)
 local BedWarsUI
 local RivalsUI
+Settings.ActiveSearchBox = nil
 local function anyMenuVisible()
     return Window.Visible or (BedWarsUI and BedWarsUI.Visible)
         or (RivalsUI and RivalsUI.Visible) or false
@@ -195,7 +211,9 @@ local listeningFor = nil
 -- The menu is available as soon as its window is created.
 track(UIS.InputBegan:Connect(function(i, gp)
     if Settings.SelectedGame and not listeningFor
-        and i.KeyCode == Settings.MenuKey and not UIS:GetFocusedTextBox() then
+        and not ENV.SunsetLoading and i.KeyCode == Settings.MenuKey
+        and (not UIS:GetFocusedTextBox()
+            or UIS:GetFocusedTextBox() == Settings.ActiveSearchBox) then
         if Settings.SelectedGame == "BedWars" and BedWarsUI then
             BedWarsUI.Visible = not BedWarsUI.Visible
         elseif Settings.SelectedGame == "Rivals" and RivalsUI then
@@ -219,7 +237,22 @@ local useScriptable = not canHook
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 
 local function onMenuVisibility()
-    if anyMenuVisible() then
+    local visible = anyMenuVisible()
+    Settings.SetMenuBlur(ENV.SunsetLoading and 20
+        or (visible and Settings.MenuBlurOn and 16 or 0))
+    if Settings.ActiveSearchBox then
+        if visible then
+            task.defer(function()
+                if anyMenuVisible() and Settings.ActiveSearchBox and Settings.ActiveSearchBox.Parent then
+                    Settings.ActiveSearchBox:CaptureFocus()
+                end
+            end)
+        else
+            Settings.ActiveSearchBox.Text = ""
+            Settings.ActiveSearchBox:ReleaseFocus()
+        end
+    end
+    if visible then
         if savedCamMode ~= nil then return end
         savedCamMode = LocalPlayer.CameraMode
         LocalPlayer.CameraMode = Enum.CameraMode.Classic
@@ -410,6 +443,28 @@ end
 local Elements = {}
 local ConfigControls = {}
 local Persistence = {}
+Persistence.HUDFrames = {}
+function Persistence.SavedHUDPositions()
+    local positions = {}
+    for name, frame in pairs(Persistence.HUDFrames) do
+        if frame and frame.Parent then
+            local p = frame.Position
+            positions[name] = { p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset }
+        end
+    end
+    return positions
+end
+function Persistence.RestoreHUDPositions(positions)
+    if type(positions) ~= "table" then return end
+    for name, value in pairs(positions) do
+        local frame = Persistence.HUDFrames[name]
+        if frame and frame.Parent and type(value) == "table"
+            and type(value[1]) == "number" and type(value[2]) == "number"
+            and type(value[3]) == "number" and type(value[4]) == "number" then
+            frame.Position = UDim2.new(value[1], value[2], value[3], value[4])
+        end
+    end
+end
 do
     local lastSavedJSON
     local function sessionPath(gameName)
@@ -423,7 +478,8 @@ do
         for _, control in ipairs(ConfigControls) do
             if control.Key
                 and (gameName ~= "Rivals"
-                    or control.Key == "Sunset/All/Watermark/Enabled")
+                    or control.Key == "Sunset/All/Watermark/Enabled"
+                    or control.Key == "Sunset/All/Menu Blur/Enabled")
                 and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = control.Get()
@@ -437,8 +493,12 @@ do
                     Value = value, Bind = bind and bind.Name or nil }
             end
         end
-        local data = { Version = 1, Game = gameName, Controls = saved,
-            MenuKey = Settings.MenuKey.Name }
+        local data = { Version = 2, Game = gameName, Controls = saved,
+            MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions() }
+        if gameName == "Rivals" then
+            data.RivalsAim = { Enabled = RivalsAim.Enabled,
+                FOVVisible = RivalsAim.FOVVisible, Radius = RivalsAim.Radius }
+        end
         if gameName == "BedWars" and BedWars and BedWars.Session then
             data.Session = BedWars.Session
         end
@@ -465,6 +525,11 @@ do
         end
         if type(data) ~= "table" or data.Game ~= gameName
             or type(data.Controls) ~= "table" then return false end
+        if gameName == "Rivals" and type(data.RivalsAim) == "table" then
+            RivalsAim.Enabled = data.RivalsAim.Enabled == true and RivalsAim.Available
+            RivalsAim.FOVVisible = data.RivalsAim.FOVVisible == true
+            RivalsAim.Radius = math.clamp(tonumber(data.RivalsAim.Radius) or 150, 50, 400)
+        end
         if gameName == "BedWars" and BedWars and BedWars.Session
             and type(data.Session) == "table" then
             local target = BedWars.Session
@@ -497,9 +562,14 @@ do
         end
         for _, item in ipairs(data.Controls) do
             local control = item.Key and byKey[item.Key]
+            if gameName == "BedWars" and item.Kind == "number"
+                and item.Key == "Movement/BedWars/Speed/Speed" then
+                control = byKey["Movement/BedWars/Speed/Move Speed"]
+            end
             if control and control.Kind == item.Kind
                 and (gameName ~= "Rivals"
-                    or control.Key == "Sunset/All/Watermark/Enabled")
+                    or control.Key == "Sunset/All/Watermark/Enabled"
+                    or control.Key == "Sunset/All/Menu Blur/Enabled")
                 and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
@@ -516,6 +586,7 @@ do
         if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
             menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
         end
+        Persistence.RestoreHUDPositions(data.HUDPositions)
         return true
     end
     function Persistence.Start()
@@ -1380,6 +1451,7 @@ border(Watermark, T.outer)
 new("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, Watermark)
 new("Frame", { Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.red, BorderSizePixel = 0 }, Watermark)
 makeDraggable(Watermark, Watermark)
+Persistence.HUDFrames.Watermark = Watermark
 
 task.spawn(function()
     local frames, last = 0, os.clock()
@@ -1413,6 +1485,13 @@ do
     local s = makeSection(SettingsTab.Left, "Watermark")
     Elements.Toggle(s, "Enabled", true, function(on) Settings.WatermarkOn = on end)
     Elements.Button(s, "Reset Position", function() Watermark.Position = UDim2.fromOffset(10, 10) end)
+end
+do
+    local s = makeSection(SettingsTab.Left, "Menu Blur")
+    Elements.Toggle(s, "Enabled", true, function(on)
+        Settings.MenuBlurOn = on
+        onMenuVisibility()
+    end, nil, true)
 end
 
 -- ---- Main / Movement
@@ -2179,10 +2258,59 @@ do
     local original = {}
     for role, value in pairs(T) do original[role] = value end
     local accents = {
+        Sunset = Color3.fromRGB(255, 132, 92),
+        Ocean = Color3.fromRGB(83, 176, 237),
+        Amethyst = Color3.fromRGB(177, 120, 245),
+        Emerald = Color3.fromRGB(97, 210, 158),
+        Rose = Color3.fromRGB(244, 111, 163),
         Red = Color3.fromRGB(215, 65, 75), Blue = Color3.fromRGB(70, 145, 245),
         Purple = Color3.fromRGB(165, 110, 235), Green = Color3.fromRGB(65, 195, 125),
         Amber = Color3.fromRGB(225, 165, 55), Light = Color3.fromRGB(65, 105, 205),
     }
+    local boardOriginal = setmetatable({}, { __mode = "k" })
+    local function tintColor(color, hue)
+        local _, saturation, value = color:ToHSV()
+        if saturation < 0.12 and value > 0.55 then return color end
+        return Color3.fromHSV(hue, math.max(saturation, value < 0.4 and 0.22 or 0.18), value)
+    end
+    local function applyBoardTheme(name)
+        local accent = accents[name] or accents.Sunset
+        local hue = select(1, accent:ToHSV())
+        for _, object in ipairs(Gui:GetDescendants()) do
+            if not object:GetAttribute("UIThemeIgnore")
+                and (object:IsDescendantOf(BedWarsUI or Gui)
+                    or object:IsDescendantOf(RivalsUI or Gui)) then
+                local originalColors = boardOriginal[object]
+                if not originalColors then
+                    originalColors = {}
+                    boardOriginal[object] = originalColors
+                end
+                local function update(property)
+                    if originalColors[property] == nil then
+                        originalColors[property] = object[property]
+                    end
+                    object[property] = tintColor(originalColors[property], hue)
+                end
+                if object:IsA("GuiObject") then update("BackgroundColor3") end
+                if object:IsA("TextLabel") or object:IsA("TextButton")
+                    or object:IsA("TextBox") then
+                    update("TextColor3")
+                    if object:IsA("TextBox") then update("PlaceholderColor3") end
+                end
+                if object:IsA("UIStroke") then update("Color") end
+                if object:IsA("ScrollingFrame") then update("ScrollBarImageColor3") end
+                if object:IsA("UIGradient") then
+                    if not originalColors.Gradient then originalColors.Gradient = object.Color end
+                    local points = {}
+                    for _, point in ipairs(originalColors.Gradient.Keypoints) do
+                        points[#points + 1] = ColorSequenceKeypoint.new(point.Time,
+                            tintColor(point.Value, hue))
+                    end
+                    object.Color = ColorSequence.new(points)
+                end
+            end
+        end
+    end
     local function applyPreset(name)
         local previous = {}
         for role, value in pairs(T) do previous[role] = value end
@@ -2219,8 +2347,9 @@ do
                 if object:IsA("ScrollingFrame") then recolor(object, "ScrollBarImageColor3") end
             end
         end
+        applyBoardTheme(name)
     end
-    Elements.Dropdown(s, "Preset", { "Red", "Blue", "Purple", "Green", "Amber", "Light" }, "Red", applyPreset)
+    Elements.Dropdown(s, "Preset", { "Sunset", "Ocean", "Amethyst", "Emerald", "Rose", "Red", "Blue", "Purple", "Green", "Amber", "Light" }, "Sunset", applyPreset)
     Elements.ColorPicker(s, "Accent Color", T.red, function(color)
         local previous = T.red
         T.red = color
@@ -2307,7 +2436,7 @@ do
         local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
             Version = 2, Game = Settings.SelectedGame, Controls = saved,
-            MenuKey = Settings.MenuKey.Name,
+            MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions(),
         }))
         status.Text = ok and "Saved " .. name or "Could not save config"
         if ok then nameBox.Text = name refreshConfigs(name) end
@@ -2322,6 +2451,7 @@ do
             status.Text = "Config missing or incompatible"
             return
         end
+        Persistence.RestoreHUDPositions(data.HUDPositions)
         local byKey = {}
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
@@ -2343,6 +2473,10 @@ do
             local key = item.Key and (legacyKeys[item.Key] or item.Key)
             local control = key and byKey[key]
                 or (not item.Key and ConfigControls[i])
+            if item.Kind == "number"
+                and key == "Movement/BedWars/Speed/Speed" then
+                control = byKey["Movement/BedWars/Speed/Move Speed"]
+            end
             if control and control.Kind == item.Kind and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
@@ -2438,7 +2572,7 @@ BedWars = {
     FakeLagOn = false,
     KillChatOn = false, KillChatQueue = {},
     AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Sunset.wtf <3",
-    InfiniteJumpOn = false,
+    InfiniteJumpOn = false, InfiniteJumpMax = 5, InfiniteJumpCount = 0,
     GravityOn = false, GravityValue = 90,
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
@@ -2451,7 +2585,7 @@ BedWars = {
     AdetundeHitsOn = true, AdetundeShieldOn = true,
     AdetundeStormOn = true, AdetundeStrikeOn = true,
     KitAbility = {},
-    WebhookOn = false, WebhookUrl = "",
+    WebhookOn = true, WebhookUrl = "",
     BedAlarmOn = false, BedAlarmRange = 24,
     AutoTeamUpgradeOn = false, AutoTeamUpgradeRange = 20,
     TeamUpgradeArmor = true, TeamUpgradeDamage = true,
@@ -2534,33 +2668,54 @@ do
 end
 do
     BedWars.SpotifyPanel = new("Frame", {
-        Name = "SunsetSpotifyHUD", AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -18, 1, -170), Size = UDim2.fromOffset(276, 72),
-        BackgroundColor3 = Color3.fromRGB(27, 22, 31),
-        BackgroundTransparency = 0.05, BorderSizePixel = 0,
+        Name = "SunsetMusicOverlay", AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, -18, 1, -170), Size = UDim2.fromOffset(300, 94),
+        BackgroundColor3 = Color3.fromRGB(32, 21, 32),
+        BackgroundTransparency = 0.22, BorderSizePixel = 0,
         Active = true, Visible = false,
     }, Gui)
+    Persistence.HUDFrames.MusicOverlay = BedWars.SpotifyPanel
     new("UICorner", { CornerRadius = UDim.new(0, 12) }, BedWars.SpotifyPanel)
-    border(BedWars.SpotifyPanel, Color3.fromRGB(74, 184, 112))
-    local icon = new("TextLabel", {
-        Position = UDim2.fromOffset(9, 12), Size = UDim2.fromOffset(43, 43),
-        BackgroundColor3 = Color3.fromRGB(42, 111, 69),
-        BorderSizePixel = 0, Text = "♫", Font = Enum.Font.GothamBold,
-        TextSize = 25, TextColor3 = Color3.fromRGB(224, 255, 227),
+    border(BedWars.SpotifyPanel, Color3.fromRGB(255, 139, 98))
+    local cover = new("ImageLabel", {
+        Position = UDim2.fromOffset(10, 10), Size = UDim2.fromOffset(60, 60),
+        BackgroundColor3 = Color3.fromRGB(78, 47, 57),
+        BackgroundTransparency = 0.18, BorderSizePixel = 0,
+        Image = "", ScaleType = Enum.ScaleType.Crop,
     }, BedWars.SpotifyPanel)
-    new("UICorner", { CornerRadius = UDim.new(0, 9) }, icon)
-    local heading = label(BedWars.SpotifyPanel, "SPOTIFY  /  CURRENT TRACK", 10,
-        Color3.fromRGB(119, 223, 151))
+    new("UICorner", { CornerRadius = UDim.new(0, 9) }, cover)
+    local icon = label(cover, "♫", 29, Color3.fromRGB(255, 205, 154), Enum.TextXAlignment.Center)
+    icon.Size = UDim2.fromScale(1, 1)
+    local heading = label(BedWars.SpotifyPanel, "MUSIC OVERLAY", 10,
+        Color3.fromRGB(255, 185, 127))
     heading.Font = Enum.Font.GothamBold
-    heading.Position = UDim2.fromOffset(63, 11)
-    heading.Size = UDim2.fromOffset(200, 15)
+    heading.Position = UDim2.fromOffset(80, 10)
+    heading.Size = UDim2.fromOffset(205, 15)
     BedWars.SpotifyTitle = label(BedWars.SpotifyPanel,
-        "Waiting for Spotify...", 14, Color3.fromRGB(247, 240, 240))
+        "Waiting for music...", 14, Color3.fromRGB(255, 238, 225))
     BedWars.SpotifyTitle.Font = Enum.Font.GothamSemibold
-    BedWars.SpotifyTitle.Position = UDim2.fromOffset(63, 27)
-    BedWars.SpotifyTitle.Size = UDim2.fromOffset(200, 34)
+    BedWars.SpotifyTitle.Position = UDim2.fromOffset(80, 28)
+    BedWars.SpotifyTitle.Size = UDim2.fromOffset(205, 28)
     BedWars.SpotifyTitle.TextWrapped = true
     BedWars.SpotifyTitle.TextTruncate = Enum.TextTruncate.AtEnd
+    local timeText = label(BedWars.SpotifyPanel, "0:00 / 0:00", 10,
+        Color3.fromRGB(214, 185, 178), Enum.TextXAlignment.Right)
+    timeText.Position = UDim2.fromOffset(185, 59)
+    timeText.Size = UDim2.fromOffset(100, 13)
+    local progressBack = new("Frame", {
+        Position = UDim2.fromOffset(10, 79), Size = UDim2.fromOffset(280, 4),
+        BackgroundColor3 = Color3.fromRGB(96, 63, 72), BorderSizePixel = 0,
+    }, BedWars.SpotifyPanel)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, progressBack)
+    local progressFill = new("Frame", {
+        Size = UDim2.fromScale(0, 1), BackgroundColor3 = Color3.fromRGB(255, 135, 95),
+        BorderSizePixel = 0,
+    }, progressBack)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, progressFill)
+    local function clockTime(seconds)
+        seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+        return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+    end
     makeDraggable(BedWars.SpotifyPanel, BedWars.SpotifyPanel)
     function BedWars.SpotifyStep()
         local url = "http://127.0.0.1:47821/now-playing"
@@ -2586,16 +2741,48 @@ do
         local success = code == 200 or (not code and ok
             and type(response) == "table" and response.Success == true)
         if not success or type(body) ~= "string" then
-            BedWars.SpotifyTitle.Text = "Start the Spotify bridge"
+            BedWars.SpotifyTitle.Text = "Start the music bridge"
+            timeText.Text = "0:00 / 0:00"
+            progressFill.Size = UDim2.fromScale(0, 1)
             return
         end
         local decoded, data = pcall(HttpService.JSONDecode, HttpService, body)
         if not decoded or type(data) ~= "table" then
-            BedWars.SpotifyTitle.Text = "Spotify data unavailable"
+            BedWars.SpotifyTitle.Text = "Music data unavailable"
         elseif data.available and type(data.title) == "string" then
-            BedWars.SpotifyTitle.Text = data.title:sub(1, 120)
+            local artist = type(data.artist) == "string" and data.artist or ""
+            BedWars.SpotifyTitle.Text = (artist ~= ""
+                and (data.title .. " - " .. artist) or data.title):sub(1, 120)
+            local duration = math.max(0, tonumber(data.duration) or 0)
+            local position = math.clamp(tonumber(data.position) or 0, 0,
+                math.max(duration, 0))
+            timeText.Text = clockTime(position) .. " / " .. clockTime(duration)
+            progressFill.Size = UDim2.fromScale(duration > 0 and position / duration or 0, 1)
+            if type(data.artwork_key) == "string" and data.artwork_key ~= ""
+                and data.artwork_key ~= BedWars.MusicArtworkKey then
+                BedWars.MusicArtworkKey = data.artwork_key
+                local asset = type(getcustomasset) == "function" and getcustomasset
+                    or type(getsynasset) == "function" and getsynasset or nil
+                if requestFn and type(writefile) == "function" and asset then
+                    local imageOk, imageResponse = pcall(requestFn, {
+                        Url = "http://127.0.0.1:47821/cover", Method = "GET" })
+                    if imageOk and type(imageResponse) == "table"
+                        and tonumber(imageResponse.StatusCode or imageResponse.status_code) == 200
+                        and type(imageResponse.Body or imageResponse.body) == "string" then
+                        local path = "SunsetConfigs/MusicCover.png"
+                        if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
+                        local wrote = pcall(writefile, path, imageResponse.Body or imageResponse.body)
+                        if wrote then
+                            local loaded, imageId = pcall(asset, path)
+                            if loaded then cover.Image = imageId icon.Visible = false end
+                        end
+                    end
+                end
+            end
         else
-            BedWars.SpotifyTitle.Text = "Nothing playing in Spotify"
+            BedWars.SpotifyTitle.Text = "Nothing playing"
+            timeText.Text = "0:00 / 0:00"
+            progressFill.Size = UDim2.fromScale(0, 1)
         end
     end
     task.spawn(function()
@@ -2630,24 +2817,24 @@ do
             end
             if report then BedWars.Notify("Webhook", message, true) end
         end
-        if not BedWars.WebhookOn then
-            status("Enable Webhook first")
-            return false
-        end
-        local input = BedWars.WebhookInput
-        local entered = input and input.Parent and input.Text or BedWars.WebhookUrl
+        local entered = BedWars.WebhookUrl
         local url = type(entered) == "string"
             and entered:match("^%s*(.-)%s*$") or ""
-        if not url:match("^https://discord%.com/api/webhooks/%d+/[%w_-]+$") then
+        local base, suffix = url:match("^(https://discord%.com/api/webhooks/%d+/[%w_-]+)(.*)$")
+        if not base or (suffix ~= "" and suffix ~= "/" and suffix ~= "?wait=true"
+            and not suffix:match("^%?thread_id=%d+$")) then
             status("Enter a valid Discord webhook URL")
             return false
         end
+        local threadId = suffix:match("^%?thread_id=(%d+)$")
+        local postUrl = base .. (threadId and ("?thread_id=" .. threadId .. "&wait=true")
+            or "?wait=true")
         if not report and os.clock() - (BedWars.LastWebhook or -math.huge) < 4 then
             return false
         end
-        BedWars.LastWebhook = os.clock()
         local body = HttpService:JSONEncode({
             username = "Sunset",
+            allowed_mentions = { parse = {} },
             embeds = {{
                 title = "Sunset event",
                 color = 16743007,
@@ -2661,33 +2848,65 @@ do
             }},
         })
         task.spawn(function()
-            local requestFn = type(ENV.request) == "function" and ENV.request
-                or type(ENV.http_request) == "function" and ENV.http_request
-                or type(request) == "function" and request
-                or type(http_request) == "function" and http_request
-                or type(ENV.syn) == "table" and type(ENV.syn.request) == "function"
-                    and ENV.syn.request
-                or nil
-            local ok, response
-            if requestFn then
-                ok, response = pcall(requestFn, { Url = url, Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" }, Body = body })
-            else
-                ok, response = pcall(function()
-                    return HttpService:RequestAsync({ Url = url, Method = "POST",
-                        Headers = { ["Content-Type"] = "application/json" }, Body = body })
-                end)
+            local payload = { Url = postUrl, Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" }, Body = body }
+            local transports = {}
+            local function addTransport(send)
+                if type(send) == "function" then
+                    table.insert(transports, send)
+                end
             end
-            local code = ok and type(response) == "table"
+            addTransport(ENV.request)
+            addTransport(ENV.http_request)
+            addTransport(request)
+            addTransport(http_request)
+            if type(ENV.syn) == "table" then addTransport(ENV.syn.request) end
+            if type(syn) == "table" then addTransport(syn.request) end
+            if type(ENV.http) == "table" then addTransport(ENV.http.request) end
+            if type(http) == "table" then addTransport(http.request) end
+            if type(fluxus) == "table" then addTransport(fluxus.request) end
+            local response
+            local attempted = false
+            for _, send in ipairs(transports) do
+                if type(send) == "function" then
+                    attempted = true
+                    local ok, result = pcall(send, payload)
+                    if ok and type(result) == "table" then
+                        response = result
+                        break
+                    end
+                end
+            end
+            if not response then
+                local ok, result = pcall(HttpService.RequestAsync, HttpService, payload)
+                if ok and type(result) == "table" then response = result end
+            end
+            local code = type(response) == "table"
                 and tonumber(response.StatusCode or response.status_code
                     or response.Status) or nil
-            if ok and ((code and code >= 200 and code < 300)
-                or (not code and type(response) == "table"
-                    and response.Success == true)) then
-                status("Sent successfully" .. (code and " (HTTP " .. code .. ")" or ""))
+            local success = type(response) == "table"
+                and ((code and code >= 200 and code < 300)
+                    or (not code and response.Success == true))
+            if success then
+                BedWars.LastWebhook = os.clock()
+                status("Delivered" .. (code and " (HTTP " .. code .. ")" or ""))
             else
-                status(code and "Failed (HTTP " .. code .. ")"
-                    or "Failed: no successful HTTP response")
+                local message = type(response) == "table"
+                    and (response.Body or response.body) or nil
+                local details
+                if type(message) == "string" then
+                    local ok, data = pcall(HttpService.JSONDecode, HttpService, message)
+                    if ok and type(data) == "table" then details = data end
+                end
+                local reason = type(details) == "table"
+                    and type(details.message) == "string" and details.message or nil
+                if code == 404 then reason = "Webhook not found or revoked" end
+                if code == 401 or code == 403 then reason = "Discord denied this request" end
+                if code == 429 then reason = "Discord rate limit; try later" end
+                status(code and ("HTTP " .. code .. ": "
+                    .. tostring(reason or "Request failed"):sub(1, 70))
+                    or (attempted and "Executor HTTP failed; check its network access"
+                        or "No executor HTTP; Roblox HTTP may be blocked"))
             end
         end)
         return true
@@ -2715,6 +2934,7 @@ do
         BedWars.GravityOn = false
         BedWars.ZoomUnlockOn = false
         BedWars.InfiniteJumpOn = false
+        BedWars.InfiniteJumpCount = 0
         clearGravity()
         restoreZoom()
     end
@@ -2726,8 +2946,10 @@ do
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
         if not humanoid or not root or humanoid.Health <= 0 or humanoid.SeatPart
-            or humanoid.FloorMaterial ~= Enum.Material.Air then return end
+            or humanoid.FloorMaterial ~= Enum.Material.Air
+            or BedWars.InfiniteJumpCount >= BedWars.InfiniteJumpMax then return end
         lastJump = os.clock()
+        BedWars.InfiniteJumpCount += 1
         local jumpSpeed = humanoid.UseJumpPower and humanoid.JumpPower
             or math.sqrt(2 * workspace.Gravity * humanoid.JumpHeight)
         root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X,
@@ -2739,6 +2961,9 @@ do
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.FloorMaterial ~= Enum.Material.Air then
+            BedWars.InfiniteJumpCount = 0
+        end
         if BedWars.GravityOn and root and humanoid and humanoid.Health > 0 then
             if gravityRoot ~= root or not gravityForce or not gravityForce.Parent then
                 clearGravity()
@@ -2767,6 +2992,26 @@ do
             restoreZoom()
         end
     end))
+    local function bindZoomReset(character)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+            or character:WaitForChild("Humanoid", 10)
+        if not humanoid then return end
+        track(humanoid.Died:Connect(function()
+            if not BedWars.ZoomUnlockOn then return end
+            if zoomUnlockToggle then zoomUnlockToggle.Set(false) end
+            BedWars.ZoomUnlockOn = false
+            restoreZoom()
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            LocalPlayer.CameraMinZoomDistance = 0.5
+            LocalPlayer.CameraMaxZoomDistance = math.max(12.5,
+                LocalPlayer.CameraMaxZoomDistance)
+        end))
+    end
+    if LocalPlayer.Character then task.spawn(bindZoomReset, LocalPlayer.Character) end
+    track(LocalPlayer.CharacterAdded:Connect(function(character)
+        BedWars.InfiniteJumpCount = 0
+        task.spawn(bindZoomReset, character)
+    end))
 end
 do
     local tags = {}
@@ -2791,7 +3036,7 @@ do
                                     Name = "SunsetNameTag", Adornee = head,
                                     AlwaysOnTop = true, Size = UDim2.fromOffset(170, 36),
                                     StudsOffsetWorldSpace = Vector3.new(0, 2.2, 0),
-                                    MaxDistance = 250,
+                                    MaxDistance = 600,
                                 }, PlayerGui)
                                 local textLabel = label(tag, "", 14,
                                     Color3.fromRGB(255, 105, 115), Enum.TextXAlignment.Center)
@@ -2823,7 +3068,7 @@ do
             else
                 clearTags()
             end
-            task.wait(0.15)
+            task.wait(0.08)
         end
         clearTags()
     end)
@@ -3054,7 +3299,7 @@ do
         end
     end
 end
-local function bedWarsSprintController()
+function BedWars.SprintController()
     if sprintController then return sprintController end
     local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
     local module = scripts and scripts:FindFirstChild("sprint-controller", true)
@@ -3106,7 +3351,7 @@ track(LocalPlayer:GetAttributeChangedSignal("Sprinting"):Connect(function()
         or LocalPlayer:GetAttribute("Sprinting") ~= false then return end
     task.defer(function()
         if not BedWars.SprintOn or Settings.SelectedGame ~= "BedWars" then return end
-        local controller = bedWarsSprintController()
+        local controller = BedWars.SprintController()
         if controller and controller.blockSprint ~= true
             and type(controller.startSprinting) == "function" then
             pcall(controller.startSprinting, controller)
@@ -3114,7 +3359,7 @@ track(LocalPlayer:GetAttributeChangedSignal("Sprinting"):Connect(function()
     end)
 end))
 local bedWarsNet = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
-local function bedWarsRemote(name, blockEngine)
+function BedWars.Remote(name, blockEngine)
     local root = bedWarsNet and bedWarsNet:FindFirstChild("node_modules")
     if blockEngine then
         local games = root and root:FindFirstChild("@easy-games")
@@ -3135,14 +3380,14 @@ local function bedWarsRemote(name, blockEngine)
     end
     return nil
 end
-local function bedWarsHeldItem()
+function BedWars.HeldItem()
     local character = LocalPlayer.Character
     local hand = character and character:FindFirstChild("HandInvItem")
     local item = hand and hand.Value
     if hand then return typeof(item) == "Instance" and item or nil end
     return character and character:FindFirstChildOfClass("Tool") or nil
 end
-local function bedWarsInventory(player)
+function BedWars.Inventory(player)
     player = player or LocalPlayer
     local character = player.Character
     local inventoryValue = character and character:FindFirstChild("InventoryFolder")
@@ -3151,8 +3396,8 @@ local function bedWarsInventory(player)
     local folders = game:GetService("ReplicatedStorage"):FindFirstChild("Inventories")
     return folders and folders:FindFirstChild(player.Name)
 end
-local function bedWarsGearScore(player, character)
-    local inventory = player and bedWarsInventory(player)
+function BedWars.GearScore(player, character)
+    local inventory = player and BedWars.Inventory(player)
     local armor, sword = 0, 0
     local function inspect(item)
         local name = string.lower(item.Name)
@@ -3179,32 +3424,35 @@ local function bedWarsGearScore(player, character)
     end
     return armor * 10 + sword
 end
-local function bedWarsEquip(item)
-    local equip = bedWarsRemote("SetInvItem", false)
-    local inventory = bedWarsInventory()
+function BedWars.Equip(item)
+    local equip = BedWars.Remote("SetInvItem", false)
+    local inventory = BedWars.Inventory()
     if not item or not inventory or item.Parent ~= inventory
         or not equip or not equip:IsA("RemoteFunction") then return false end
-    if bedWarsHeldItem() == item then return true end
+    if BedWars.HeldItem() == item then return true end
     local ok = pcall(function() equip:InvokeServer({ hand = item }) end)
     if not ok then return false end
     for _ = 1, 12 do
-        if bedWarsHeldItem() == item then return true end
+        if BedWars.HeldItem() == item then return true end
         task.wait(0.05)
     end
     return false
 end
-local function bedWarsAttackRange()
+function BedWars.AttackRange()
+    local configured = BedWars.ReachOn and BedWars.ReachDistance or nil
     local ts = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
     local combat = ts and ts:FindFirstChild("combat")
     local module = combat and combat:FindFirstChild("combat-constant")
     if module then
         local ok, data = pcall(require, module)
         local value = ok and data.CombatConstant and data.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE
-        if type(value) == "number" then return value end
+        if type(value) == "number" then
+            return configured and math.max(value, configured) or value
+        end
     end
-    return 14.4
+    return configured and math.max(14.4, configured) or 14.4
 end
-local function bedWarsMeleeItem(item)
+function BedWars.MeleeItem(item)
     if not item then return false end
     local ts = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
     local games = ts and ts:FindFirstChild("games")
@@ -3223,13 +3471,13 @@ local function bedWarsMeleeItem(item)
         or string.find(name, "scythe", 1, true) ~= nil
         or name == "frosty_hammer"
 end
-local function bedWarsBestSword()
-    local inventory = bedWarsInventory()
+function BedWars.BestSword()
+    local inventory = BedWars.Inventory()
     if not inventory then return nil end
     local best, rank = nil, 0
     local priority = { wood = 1, stone = 2, iron = 3, diamond = 4, emerald = 5 }
     for _, item in ipairs(inventory:GetChildren()) do
-        if bedWarsMeleeItem(item) then
+        if BedWars.MeleeItem(item) then
             local tier = 1
             for material, score in pairs(priority) do
                 if string.find(string.lower(item.Name), material, 1, true) then
@@ -3247,25 +3495,25 @@ local bedWarsWoolColors = {
     purple = true, pink = true, cyan = true, white = true, black = true,
     gray = true, grey = true, brown = true, lime = true,
 }
-local function bedWarsWoolItem(item)
+function BedWars.WoolItem(item)
     if not item then return false end
     local name = string.lower(item.Name)
     if string.find(name, "wool", 1, true) then return true end
     local color = name:match("^wood_(%a+)$")
     return color ~= nil and bedWarsWoolColors[color] == true
 end
-local function bedWarsFindWool()
-    local inventory = bedWarsInventory()
+function BedWars.FindWool()
+    local inventory = BedWars.Inventory()
     if not inventory then return nil end
     for _, item in ipairs(inventory:GetChildren()) do
-        if bedWarsWoolItem(item) then return item end
+        if BedWars.WoolItem(item) then return item end
     end
     return nil
 end
 function BedWars.HoldingAbility()
-    local item = bedWarsHeldItem()
+    local item = BedWars.HeldItem()
     if not item then return false end
-    if bedWarsMeleeItem(item) or bedWarsWoolItem(item) then return false end
+    if BedWars.MeleeItem(item) or BedWars.WoolItem(item) then return false end
     if item:GetAttribute("Ability") == true
         or item:GetAttribute("IsAbility") == true
         or item:GetAttribute("ItemType") == "ability"
@@ -3278,7 +3526,7 @@ function BedWars.HoldingAbility()
     -- All other held utility or kit tools take priority over automatic swaps.
     return true
 end
-local function bedWarsEnemy(player)
+function BedWars.Enemy(player)
     if player == LocalPlayer then return false end
     if LocalPlayer.Team and player.Team then return player.Team ~= LocalPlayer.Team end
     if not LocalPlayer.Neutral and not player.Neutral then
@@ -3286,7 +3534,7 @@ local function bedWarsEnemy(player)
     end
     return player.Character and teamRelation(player.Character) == "enemy"
 end
-local function bedWarsHostileNpc(model)
+function BedWars.HostileNpc(model)
     local name = string.lower(model.Name)
     if name:find("shop", 1, true) or name:find("merchant", 1, true)
         or name:find("upgrade", 1, true) then return false end
@@ -3296,7 +3544,7 @@ local function bedWarsHostileNpc(model)
         or name:find("guardian", 1, true) ~= nil
         or name:find("monster", 1, true) ~= nil
 end
-local function bedWarsVisible(character, target, origin, targetRoot, checkWalls)
+function BedWars.Visible(character, target, origin, targetRoot, checkWalls)
     if not checkWalls then return true end
     local ray = RaycastParams.new()
     ray.FilterType = Enum.RaycastFilterType.Exclude
@@ -3317,16 +3565,16 @@ function BedWars.ReleaseAuraItem()
     if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem then return end
     BedWars.AuraPreviousItem = nil
     BedWars.AuraSwordItem = nil
-    if previous.Parent == bedWarsInventory() and bedWarsHeldItem() == sword then
+    if previous.Parent == BedWars.Inventory() and BedWars.HeldItem() == sword then
         BedWars.ItemBusy = true
-        pcall(bedWarsEquip, previous)
+        pcall(BedWars.Equip, previous)
         BedWars.ItemBusy = false
     end
 end
 local function bedWarsAuraStep()
     if BedWars.ItemBusy then return end
     if BedWars.AuraPreviousItem and not BedWars.ScaffoldPreviousItem
-        and bedWarsHeldItem() ~= BedWars.AuraSwordItem then
+        and BedWars.HeldItem() ~= BedWars.AuraSwordItem then
         BedWars.AuraPreviousItem = nil
         BedWars.AuraSwordItem = nil
     end
@@ -3335,10 +3583,10 @@ local function bedWarsAuraStep()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local weapon = bedWarsHeldItem()
+    local weapon = BedWars.HeldItem()
     if not swordHitRemote or not swordHitRemote.Parent then
         if os.clock() - lastSwordRemoteLookup >= 2 then
-            swordHitRemote = bedWarsRemote("SwordHit", false)
+            swordHitRemote = BedWars.Remote("SwordHit", false)
             lastSwordRemoteLookup = os.clock()
         end
     end
@@ -3351,20 +3599,20 @@ local function bedWarsAuraStep()
         BedWars.AuraStatus = "SwordHit remote unavailable"
         return
     end
-    local range = bedWarsAttackRange()
+    local range = BedWars.AttackRange()
     local targets = {}
     local seen = {}
     local function consider(target)
         if not target or target == character or seen[target] then return end
         seen[target] = true
         local owner = Players:GetPlayerFromCharacter(target)
-        if owner and not bedWarsEnemy(owner) then return end
-        if not owner and not bedWarsHostileNpc(target) then return end
+        if owner and not BedWars.Enemy(owner) then return end
+        if not owner and not BedWars.HostileNpc(target) then return end
         local targetHumanoid = target:FindFirstChildOfClass("Humanoid")
         local targetRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
         if not targetHumanoid or targetHumanoid.Health <= 0 or not targetRoot
             or target:FindFirstChildOfClass("ForceField") then return end
-        if not bedWarsVisible(character, target,
+        if not BedWars.Visible(character, target,
             root.Position + Vector3.new(0, 1.5, 0), targetRoot,
             BedWars.WallCheck) then return end
         local d = (root.Position - targetRoot.Position).Magnitude
@@ -3372,12 +3620,12 @@ local function bedWarsAuraStep()
             targets[#targets + 1] = {
                 model = target, root = targetRoot, distance = d,
                 health = targetHumanoid.Health,
-                gear = bedWarsGearScore(owner, target),
+                gear = BedWars.GearScore(owner, target),
             }
         end
     end
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then consider(player.Character) end
+        if BedWars.Enemy(player) then consider(player.Character) end
     end
     -- Practice arenas use enemy dummies, which are not in Players.
     local overlap = OverlapParams.new()
@@ -3398,20 +3646,20 @@ local function bedWarsAuraStep()
     end
     -- BedWars validates SwordHit against the item actually equipped.
     -- Only switch when an enemy is in range, and do not interrupt a held click.
-    if not bedWarsMeleeItem(weapon) then
+    if not BedWars.MeleeItem(weapon) then
         if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
             BedWars.AuraStatus = "Using held item"
             return
         end
         if BedWars.ScaffoldPreviousItem then return end
-        local sword = bedWarsBestSword()
+        local sword = BedWars.BestSword()
         BedWars.AuraStatus = sword and "Equipping sword" or "No sword found"
         if sword then
             BedWars.ItemBusy = true
             if weapon and not BedWars.AuraPreviousItem then
                 BedWars.AuraPreviousItem = weapon
             end
-            local ok = bedWarsEquip(sword)
+            local ok = BedWars.Equip(sword)
             BedWars.ItemBusy = false
             if ok then
                 BedWars.AuraSwordItem = sword
@@ -3506,7 +3754,7 @@ end
 local function bedWarsProjectileTarget(character, root, range, origin)
     local nearest, nearestDistance
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then
+        if BedWars.Enemy(player) then
             local model = player.Character
             local humanoid = model and model:FindFirstChildOfClass("Humanoid")
             local targetRoot = model and model:FindFirstChild("HumanoidRootPart")
@@ -3523,8 +3771,8 @@ local function bedWarsProjectileTarget(character, root, range, origin)
     -- Do not skip a close player to shoot someone farther away. Sword range
     -- takes precedence over Projectile Aura for the nearest enemy.
     if not nearest or nearestDistance > range
-        or nearestDistance <= bedWarsAttackRange() then return nil end
-    if not bedWarsVisible(character, nearest.model, origin, nearest.root,
+        or nearestDistance <= BedWars.AttackRange() then return nil end
+    if not BedWars.Visible(character, nearest.model, origin, nearest.root,
         BedWars.ProjectileWallCheck) then return nil end
     return nearest
 end
@@ -3548,7 +3796,7 @@ local function bedWarsProjectileStep()
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid or humanoid.Health <= 0 then return end
     local api = bedWarsGetProjectileApi()
-    local inventory = bedWarsInventory()
+    local inventory = BedWars.Inventory()
     if not api or not inventory then return end
     local origin = root.Position + Vector3.new(0, 1.5, 0)
     local target = bedWarsProjectileTarget(character, root, BedWars.ProjectileRange, origin)
@@ -3603,8 +3851,8 @@ local function bedWarsProjectileStep()
     BedWars.ItemBusy = true
     local fired, fireError = pcall(function()
         if BedWars.Running and BedWars.ProjectilesOn then
-            local previous = bedWarsHeldItem()
-            if not bedWarsEquip(selected.item) then return end
+            local previous = BedWars.HeldItem()
+            if not BedWars.Equip(selected.item) then return end
             local launched, launchError = pcall(function()
                 local drawTime = math.clamp(selected.source.maxStrengthChargeSec or 0.2, 0.2, 2)
                 task.wait(drawTime)
@@ -3613,7 +3861,7 @@ local function bedWarsProjectileStep()
                     currentRoot, BedWars.ProjectileRange, currentRoot.Position + Vector3.new(0, 1.5, 0))
                 if currentTarget and currentTarget.model == target.model
                     and target.root.Parent and selected.item.Parent
-                    and bedWarsHeldItem() == selected.item then
+                    and BedWars.HeldItem() == selected.item then
                     local launchOk, launchPosition = pcall(function()
                         return api.controller:getLaunchPosition(selected.item)
                     end)
@@ -3635,9 +3883,9 @@ local function bedWarsProjectileStep()
                 end
             end)
             if not launched then warn("Sunset Projectile Aura: " .. tostring(launchError)) end
-            if previous and previous.Parent == bedWarsInventory()
-                and bedWarsHeldItem() == selected.item then
-                bedWarsEquip(previous)
+            if previous and previous.Parent == BedWars.Inventory()
+                and BedWars.HeldItem() == selected.item then
+                BedWars.Equip(previous)
             end
         end
     end)
@@ -3646,9 +3894,9 @@ local function bedWarsProjectileStep()
     if not fired then warn("Sunset Projectile Aura: " .. tostring(fireError)) end
 end
 local function bedWarsEnemyInSwordRange(root)
-    local range = bedWarsAttackRange()
+    local range = BedWars.AttackRange()
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then
+        if BedWars.Enemy(player) then
             local character = player.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
             local targetRoot = character and character:FindFirstChild("HumanoidRootPart")
@@ -3665,10 +3913,10 @@ local function bedWarsReleaseScaffoldItem()
     local previous, wool = BedWars.ScaffoldPreviousItem, BedWars.ScaffoldWoolItem
     BedWars.ScaffoldPreviousItem = nil
     BedWars.ScaffoldWoolItem = nil
-    if previous and previous.Parent == bedWarsInventory()
-        and bedWarsHeldItem() == wool then
+    if previous and previous.Parent == BedWars.Inventory()
+        and BedWars.HeldItem() == wool then
         BedWars.ItemBusy = true
-        pcall(bedWarsEquip, previous)
+        pcall(BedWars.Equip, previous)
         BedWars.ItemBusy = false
     end
 end
@@ -3683,10 +3931,10 @@ local function bedWarsScaffoldStep()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local item = bedWarsFindWool()
+    local item = BedWars.FindWool()
     local remote = BedWars.ScaffoldPlaceRemote
     if not remote or not remote.Parent then
-        remote = bedWarsRemote("PlaceBlock", true)
+        remote = BedWars.Remote("PlaceBlock", true)
         BedWars.ScaffoldPlaceRemote = remote
     end
     if not root or not humanoid or humanoid.Health <= 0
@@ -3760,7 +4008,7 @@ local function bedWarsScaffoldStep()
     if not overVoid and bedWarsEnemyInSwordRange(root) then return end
     if not item then return end
     if BedWars.ScaffoldWoolItem and BedWars.ScaffoldPreviousItem
-        and bedWarsHeldItem() ~= BedWars.ScaffoldWoolItem then
+        and BedWars.HeldItem() ~= BedWars.ScaffoldWoolItem then
         -- Another action (or the player) changed items. Do not fight it.
         BedWars.ScaffoldPreviousItem = nil
         BedWars.ScaffoldWoolItem = nil
@@ -3791,13 +4039,13 @@ local function bedWarsScaffoldStep()
         local dispatched = false
         pcall(function()
             if not BedWars.Running or not BedWars.ScaffoldOn then return end
-            local previous = bedWarsHeldItem()
+            local previous = BedWars.HeldItem()
             if previous and previous ~= item and not BedWars.ScaffoldPreviousItem then
                 BedWars.ScaffoldPreviousItem = previous
             end
-            if not bedWarsEquip(item) then return end
+            if not BedWars.Equip(item) then return end
             BedWars.ScaffoldWoolItem = item
-            if item.Parent == bedWarsInventory() and bedWarsHeldItem() == item then
+            if item.Parent == BedWars.Inventory() and BedWars.HeldItem() == item then
                 dispatched = true
                 -- Keep the wool equipped, but do not stall the next block on
                 -- this RemoteFunction's round-trip.
@@ -3827,7 +4075,7 @@ local pickupAttempts = setmetatable({}, { __mode = "k" })
 local function bedWarsPickupStep()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
-    local remote = bedWarsRemote("PickupItemDrop", false)
+    local remote = BedWars.Remote("PickupItemDrop", false)
     if not root or not remote or not remote:IsA("RemoteFunction")
         or LocalPlayer:GetAttribute("BlockItemPickup") == true then return end
     local now = os.clock()
@@ -3973,7 +4221,7 @@ local function bedWarsAutoOreStep()
     local ore = bedWarsNearbyOre(root)
     if not ore then return end
     if os.clock() < (BedWars.AutoOreNextHitAt or 0) then return end
-    local inventory = bedWarsInventory()
+    local inventory = BedWars.Inventory()
     if not inventory then bedWarsOreNotice("inventory unavailable") return end
     local pickaxe, bestTier
     for _, item in ipairs(inventory:GetChildren()) do
@@ -3990,11 +4238,11 @@ local function bedWarsAutoOreStep()
     end
     if not pickaxe then bedWarsOreNotice("no pickaxe in inventory") return end
     BedWars.ItemBusy = true
-    local previous = bedWarsHeldItem()
+    local previous = BedWars.HeldItem()
     local ok, err = pcall(function()
         local breaker = bedWarsBlockBreaker()
         if not breaker then bedWarsOreNotice("block breaker unavailable") return end
-        if not bedWarsEquip(pickaxe) then bedWarsOreNotice("pickaxe equip failed") return end
+        if not BedWars.Equip(pickaxe) then bedWarsOreNotice("pickaxe equip failed") return end
         if not BedWars.AutoOreOn or not bedWarsIsIronOre(ore) then return end
         clearActiveOreHighlight()
         local highlight = Instance.new("Highlight")
@@ -4017,7 +4265,7 @@ local function bedWarsAutoOreStep()
             if BedWars.AutoBedOn and bedWarsNearbyEnemyBed
                 and bedWarsNearbyEnemyBed(root) then break end
             if bedWarsEnemyInSwordRange(root) then break end
-            if bedWarsHeldItem() ~= pickaxe then break end
+            if BedWars.HeldItem() ~= pickaxe then break end
             local ray = bedWarsRayToOre(breaker, ore)
             if ray then
                 local cleanup = { Tasks = {} }
@@ -4046,8 +4294,8 @@ local function bedWarsAutoOreStep()
     clearActiveOreHighlight()
     if not ok then warn("Sunset Auto Ore: " .. tostring(err)) end
     if previous and previous ~= pickaxe and previous.Parent == inventory
-        and bedWarsHeldItem() == pickaxe then
-        pcall(bedWarsEquip, previous)
+        and BedWars.HeldItem() == pickaxe then
+        pcall(BedWars.Equip, previous)
     end
     BedWars.ItemBusy = false
 end
@@ -4184,7 +4432,7 @@ local function bedWarsBedTool(inventory, block)
             best, bestKind, bestTier = item, kind, tier
         end
     end
-    return best or bedWarsHeldItem()
+    return best or BedWars.HeldItem()
 end
 local function bedWarsRayToBedTarget(breaker, root, bed)
     if not oreSelectorChecked then
@@ -4231,12 +4479,12 @@ local function bedWarsAutoBedStep()
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid or humanoid.Health <= 0 then return end
     local bed = bedWarsNearbyEnemyBed(root)
-    local inventory = bedWarsInventory()
+    local inventory = BedWars.Inventory()
     if not bed or not inventory then return end
     local breaker = bedWarsBlockBreaker()
     if not breaker then return end
     BedWars.ItemBusy = true
-    local previous = bedWarsHeldItem()
+    local previous = BedWars.HeldItem()
     local lastTool
     local ok, err = pcall(function()
         while BedWars.Running and BedWars.AutoBedOn and bed:IsDescendantOf(workspace)
@@ -4260,9 +4508,9 @@ local function bedWarsAutoBedStep()
             end
             local tool = bedWarsBedTool(inventory, target)
             if not tool or tool.Parent ~= inventory then break end
-            if bedWarsHeldItem() ~= tool and not bedWarsEquip(tool) then break end
+            if BedWars.HeldItem() ~= tool and not BedWars.Equip(tool) then break end
             lastTool = tool
-            if bedWarsHeldItem() == tool then
+            if BedWars.HeldItem() == tool then
                 local cleanup = { Tasks = {} }
                 function cleanup:GiveTask(taskItem) table.insert(self.Tasks, taskItem) end
                 function cleanup:DoCleaning()
@@ -4279,8 +4527,8 @@ local function bedWarsAutoBedStep()
     end)
     if not ok then warn("Sunset Auto Bed: " .. tostring(err)) end
     if previous and previous ~= lastTool and previous.Parent == inventory
-        and bedWarsHeldItem() == lastTool then
-        pcall(bedWarsEquip, previous)
+        and BedWars.HeldItem() == lastTool then
+        pcall(BedWars.Equip, previous)
     end
     BedWars.ItemBusy = false
 end
@@ -4727,10 +4975,10 @@ local function bedWarsShopCatalog()
 end
 local function bedWarsAutoBuyStep()
     local catalog = bedWarsShopCatalog()
-    local inventory = bedWarsInventory()
+    local inventory = BedWars.Inventory()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
-    local remote = bedWarsRemote("BedwarsPurchaseItem")
+    local remote = BedWars.Remote("BedwarsPurchaseItem")
     if not catalog or not inventory or not root or not remote then return end
     local shop, distance
     for _, npc in ipairs(CollectionService:GetTagged("BedwarsItemShop")) do
@@ -4786,7 +5034,7 @@ local function bedWarsAutoBuyStep()
         table.sort(requests, function(a, b) return a.priority < b.priority end)
         for _, request in ipairs(requests) do
             if request.after == after then
-                local current = request.name == "wool_white" and bedWarsFindWool()
+                local current = request.name == "wool_white" and BedWars.FindWool()
                 local owned = current and (tonumber(current:GetAttribute("Amount")) or 1)
                     or amount(request.name)
                 if owned < request.count and buy(request.name) then return true end
@@ -4855,7 +5103,7 @@ local function bedWarsAutoBuyStep()
         end
     end
     if BedWars.AutoBuyWool then
-        local wool = bedWarsFindWool()
+        local wool = BedWars.FindWool()
         if (wool and (tonumber(wool:GetAttribute("Amount")) or 1) or 0) < 64
             and buy("wool_white") then return end
     end
@@ -4906,9 +5154,9 @@ function BedWars.AutoPearlStep(character, root, pearl)
     end
     if not destination or BedWars.ItemBusy then return end
     BedWars.ItemBusy = true
-    local previous = bedWarsHeldItem()
+    local previous = BedWars.HeldItem()
     local launched, err = pcall(function()
-        if not bedWarsEquip(pearl) then return end
+        if not BedWars.Equip(pearl) then return end
         local launchOk, launchPosition = pcall(function()
             return api.controller:getLaunchPosition(pearl)
         end)
@@ -4924,8 +5172,8 @@ function BedWars.AutoPearlStep(character, root, pearl)
             BedWars.LastPearl = os.clock()
         end
         task.wait(0.2)
-        if previous and previous.Parent == bedWarsInventory()
-            and bedWarsHeldItem() == pearl then bedWarsEquip(previous) end
+        if previous and previous.Parent == BedWars.Inventory()
+            and BedWars.HeldItem() == pearl then BedWars.Equip(previous) end
     end)
     BedWars.ItemBusy = false
     if not launched then warn("Sunset Auto Pearl: " .. tostring(err)) end
@@ -4961,7 +5209,7 @@ function BedWars.BedAlarmStep()
     if not ownBed then return end
     BedWars.BedAlarmSeen = BedWars.BedAlarmSeen or {}
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then
+        if BedWars.Enemy(player) then
             local character = player.Character
             local root = character and character:FindFirstChild("HumanoidRootPart")
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -4986,8 +5234,8 @@ function BedWars.ProtectStep()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local team = LocalPlayer.Team
-    local wool = bedWarsFindWool()
-    local remote = bedWarsRemote("PlaceBlock", true)
+    local wool = BedWars.FindWool()
+    local remote = BedWars.Remote("PlaceBlock", true)
     if not root or not team or not wool or not remote
         or not remote:IsA("RemoteFunction") then return end
     if tonumber(wool:GetAttribute("Amount")) == 0 then return end
@@ -5050,17 +5298,17 @@ function BedWars.ProtectStep()
                     BedWars.LastProtect = os.clock()
                     BedWars.ItemBusy = true
                     task.spawn(function()
-                        local previous = bedWarsHeldItem()
+                        local previous = BedWars.HeldItem()
                         pcall(function()
                             if BedWars.BedProtectorOn and BedWars.IsOwnBed(ownBed)
-                                and bedWarsEquip(wool) and BedWars.IsOwnBed(ownBed) then
+                                and BedWars.Equip(wool) and BedWars.IsOwnBed(ownBed) then
                                 remote:InvokeServer({ blockType = wool.Name,
                                     position = grid })
                             end
                         end)
-                        if previous and previous.Parent == bedWarsInventory()
-                            and bedWarsHeldItem() == wool then
-                            pcall(bedWarsEquip, previous)
+                        if previous and previous.Parent == BedWars.Inventory()
+                            and BedWars.HeldItem() == wool then
+                            pcall(BedWars.Equip, previous)
                         end
                         BedWars.ItemBusy = false
                     end)
@@ -5110,7 +5358,7 @@ track(RunService.Heartbeat:Connect(function()
         bedWarsHitBoxFunction, bedWarsHitBoxOriginal = nil, nil
     end
     if BedWars.NoSlowdownOn then
-        local sprint = bedWarsSprintController()
+        local sprint = BedWars.SprintController()
         local ok, modifier = pcall(function()
             return sprint and sprint:getMovementStatusModifier()
         end)
@@ -5190,7 +5438,7 @@ track(RunService.Heartbeat:Connect(function()
             return function() end
         end)
         local character = LocalPlayer.Character
-        local inventory = bedWarsInventory()
+        local inventory = BedWars.Inventory()
         if balloon and character and inventory
             and inventory:FindFirstChild("balloon")
             and (character:GetAttribute("InflatedBalloons") or 0) == 0
@@ -5301,7 +5549,7 @@ track(RunService.Heartbeat:Connect(function()
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local inventory = bedWarsInventory()
+        local inventory = BedWars.Inventory()
         local balloon = inventory and inventory:FindFirstChild("balloon")
         if root and humanoid and humanoid.Health > 0 and balloon
             and (character:GetAttribute("InflatedBalloons") or 0) < 3
@@ -5324,7 +5572,7 @@ track(RunService.Heartbeat:Connect(function()
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local inventory = bedWarsInventory()
+        local inventory = BedWars.Inventory()
         local pearl = inventory and inventory:FindFirstChild("telepearl")
         if root and humanoid and humanoid.Health > 0 and pearl
             and root.AssemblyLinearVelocity.Y < -50 then
@@ -5345,7 +5593,7 @@ track(RunService.Heartbeat:Connect(function()
     if BedWars.TriggerBotOn and os.clock() - BedWars.LastTrigger
         >= 1 / math.max(BedWars.TriggerCPS, 1)
         and not UIS:GetFocusedTextBox() and not anyMenuVisible() then
-        local held = bedWarsHeldItem()
+        local held = BedWars.HeldItem()
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
         local mouseTarget = LocalPlayer:GetMouse().Target
@@ -5353,10 +5601,10 @@ track(RunService.Heartbeat:Connect(function()
         local player = targetModel and Players:GetPlayerFromCharacter(targetModel)
         local targetRoot = targetModel and targetModel:FindFirstChild("HumanoidRootPart")
         local targetHumanoid = targetModel and targetModel:FindFirstChildOfClass("Humanoid")
-        if root and held and bedWarsMeleeItem(held) and player
-            and bedWarsEnemy(player) and targetRoot and targetHumanoid
+        if root and held and BedWars.MeleeItem(held) and player
+            and BedWars.Enemy(player) and targetRoot and targetHumanoid
             and targetHumanoid.Health > 0
-            and (root.Position - targetRoot.Position).Magnitude <= bedWarsAttackRange() then
+            and (root.Position - targetRoot.Position).Magnitude <= BedWars.AttackRange() then
             local sword = bedWarsController("SwordController")
             if sword and type(sword.swingSwordAtMouse) == "function" then
                 BedWars.LastTrigger = os.clock()
@@ -5398,9 +5646,9 @@ track(RunService.Heartbeat:Connect(function()
                         local ownRoot = LocalPlayer.Character
                             and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                         local enemyRoot = model:FindFirstChild("HumanoidRootPart")
-                        if bedWarsEnemy(player) and ownRoot and enemyRoot
+                        if BedWars.Enemy(player) and ownRoot and enemyRoot
                             and (ownRoot.Position - enemyRoot.Position).Magnitude
-                                <= bedWarsAttackRange() then
+                                <= BedWars.AttackRange() then
                             local flash = new("Highlight", {
                                 Name = "SunsetHitFlash", Adornee = model,
                                 FillColor = BedWars.DamageIndicatorColor,
@@ -5536,10 +5784,10 @@ track(RunService.RenderStepped:Connect(function(delta)
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local camera = workspace.CurrentCamera
-    if not root or not camera or not bedWarsMeleeItem(bedWarsHeldItem()) then return end
+    if not root or not camera or not BedWars.MeleeItem(BedWars.HeldItem()) then return end
     local best, distance
     for _, player in ipairs(Players:GetPlayers()) do
-        if bedWarsEnemy(player) then
+        if BedWars.Enemy(player) then
             local model = player.Character
             local target = model and model:FindFirstChild("HumanoidRootPart")
             local humanoid = model and model:FindFirstChildOfClass("Humanoid")
@@ -5816,6 +6064,7 @@ local healthFill = new("Frame", {
 }, healthBack)
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, healthFill)
 makeDraggable(targetHUD, targetHUD)
+Persistence.HUDFrames.TargetHUD = targetHUD
 
 local sessionClock = os.clock()
 local sessionStore
@@ -5848,6 +6097,7 @@ do
         kitLines[i] = row
     end
     makeDraggable(kitPanel, kitPanel)
+    Persistence.HUDFrames.KitTracker = kitPanel
     local abilityReady = {}
     local minerSeen = {}
     local listenerBound = {}
@@ -5870,7 +6120,7 @@ do
     end
     local function bindKitEvent(name, callback)
         if listenerBound[name] then return end
-        local remote = bedWarsRemote(name)
+        local remote = BedWars.Remote(name)
         if remote and remote:IsA("RemoteEvent") then
             listenerBound[name] = true
             track(remote.OnClientEvent:Connect(callback))
@@ -6152,7 +6402,7 @@ do
         if BedWars.TeamUpgradeBusy then return end
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
-        local inventory = bedWarsInventory()
+        local inventory = BedWars.Inventory()
         if not root or not inventory then return end
         local nearby = false
         for _, npc in ipairs(CollectionService:GetTagged("TeamUpgradeShopkeeper")) do
@@ -6164,7 +6414,7 @@ do
         end
         if not nearby then return end
         local shop = teamShop()
-        local remote = bedWarsRemote("BedwarsPurchaseTeamUpgrade")
+        local remote = BedWars.Remote("BedwarsPurchaseTeamUpgrade")
         local state
         if sessionStore then
             local ok, result = pcall(sessionStore.getState, sessionStore)
@@ -6261,6 +6511,7 @@ for index, title in ipairs({ "Time Played", "Kills", "Beds", "Wins", "Games", "M
     sessionLines[title] = row
 end
 makeDraggable(sessionPanel, sessionPanel)
+Persistence.HUDFrames.SessionInfo = sessionPanel
 
 local function sessionNumber(names)
     local attributes = LocalPlayer:GetAttributes()
@@ -6316,6 +6567,14 @@ local function currentBedWarsKills()
     local value = kills[tostring(LocalPlayer.UserId)] or kills[LocalPlayer.UserId]
     return type(value) == "number" and math.max(0, value) or 0
 end
+local sunsetKillMessages = {
+    "Nice fight from Sunset!", "Sunset says GG!",
+    "Good duel! - Sunset", "Well played! Sunset wins this round.",
+}
+local sunsetBedMessages = {
+    "Bed down! Sunset is here.", "Sunset got the bed!",
+    "Good defense! Sunset got through.",
+}
 do
     function BedWars.KillChatSend(message)
         local chat = game:GetService("TextChatService")
@@ -6428,8 +6687,7 @@ local function updateSession()
             and kills > BedWars.KillChatLastCount then
             for _ = 1, kills - BedWars.KillChatLastCount do
                 table.insert(BedWars.KillChatQueue,
-                    math.random(1, 2) == 1 and "Mogged By SunSet <3"
-                        or "Killed By Sunset <3")
+                    sunsetKillMessages[math.random(#sunsetKillMessages)])
             end
         end
         BedWars.KillChatLastCount = kills
@@ -6446,9 +6704,13 @@ local function updateSession()
             local previous = session.SourceValues[title]
             if previous and value > previous then
                 session[title] = session[title] + value - previous
+                if title == "Beds" and BedWars.KillChatOn then
+                    table.insert(BedWars.KillChatQueue,
+                        sunsetBedMessages[math.random(#sunsetBedMessages)])
+                end
                 if title == "Wins" then
                     if BedWars.KillChatOn then
-                        table.insert(BedWars.KillChatQueue, "gg frinkin ez")
+                        table.insert(BedWars.KillChatQueue, "GG! Sunset had fun.")
                     end
                     BedWars.WebhookSend("Match won")
                 end
@@ -6488,18 +6750,29 @@ track(UIS.InputBegan:Connect(function(input, processed)
     local node = mouse.Target
     local model = node and node:FindFirstAncestorOfClass("Model")
     local player = model and Players:GetPlayerFromCharacter(model)
-    if player and bedWarsEnemy(player) then
+    if player and BedWars.Enemy(player) then
         BedWars.TargetModel = model
         BedWars.TargetLastAt = os.clock()
     end
 end))
 task.spawn(function()
     while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.TargetHUDOn
+            and not anyMenuVisible() then
+            local mouse = LocalPlayer:GetMouse()
+            local node = mouse.Target
+            local hovered = node and node:FindFirstAncestorOfClass("Model")
+            local hoveredPlayer = hovered and Players:GetPlayerFromCharacter(hovered)
+            if hoveredPlayer and BedWars.Enemy(hoveredPlayer) then
+                BedWars.TargetModel = hovered
+                BedWars.TargetLastAt = os.clock()
+            end
+        end
         local model = BedWars.TargetModel
         local humanoid = model and model:FindFirstChildOfClass("Humanoid")
         local player = model and Players:GetPlayerFromCharacter(model)
         local visible = Settings.SelectedGame == "BedWars" and BedWars.TargetHUDOn
-            and player and bedWarsEnemy(player) and humanoid
+            and player and BedWars.Enemy(player) and humanoid
             and os.clock() - (BedWars.TargetLastAt or 0) < 3
         targetHUD.Visible = visible == true
         if visible then
@@ -6757,7 +7030,7 @@ track(RunService.Heartbeat:Connect(function()
     local fightTarget = false
     if BedWars.WaterFightOn then
         for _, player in ipairs(Players:GetPlayers()) do
-            if bedWarsEnemy(player) then
+            if BedWars.Enemy(player) then
                 local other = player.Character
                 local otherRoot = other and other:FindFirstChild("HumanoidRootPart")
                 local otherHumanoid = other and other:FindFirstChildOfClass("Humanoid")
@@ -6818,7 +7091,7 @@ task.spawn(function()
                         and sprintWalkSpeed or humanoid.WalkSpeed
                     BedWars.SprintFallbackSpeed = nil
                 end
-                local controller = bedWarsSprintController()
+                local controller = BedWars.SprintController()
                 if controller and controller.blockSprint ~= true then
                     if controller.sprinting ~= true then
                         local start = controller.startSprinting or controller.startSprint
@@ -6911,7 +7184,7 @@ do
     Elements.Toggle(speedSection, "Speed", false, function(on)
         BedWars.SpeedOn = on
     end)
-    Elements.Slider(speedSection, "Speed", 1, 23, 23, "studs",
+    Elements.Slider(speedSection, "Move Speed", 1, 23, 23, "studs",
         function(value) BedWars.SpeedValue = value end)
     Elements.Toggle(speedSection, "Wall Check", true, function(on)
         BedWars.SpeedWallCheck = on
@@ -7336,6 +7609,10 @@ do
         local jump = gameSection(gameName, MainTab.Left, "Infinite Jump")
         Elements.Toggle(jump, "Infinite Jump", false, function(on)
             BedWars.InfiniteJumpOn = on
+            BedWars.InfiniteJumpCount = 0
+        end)
+        Elements.Slider(jump, "Max Air Jumps", 1, 5, 5, " jumps", function(value)
+            BedWars.InfiniteJumpMax = value
         end)
     end
     do
@@ -7349,7 +7626,7 @@ do
     end
     do
         local zoom = gameSection(gameName, PlayerTab.Right, "Zoom Unlocker")
-        Elements.Toggle(zoom, "Zoom Unlocker", false, function(on)
+        zoomUnlockToggle = Elements.Toggle(zoom, "Zoom Unlocker", false, function(on)
             BedWars.ZoomUnlockOn = on
         end)
         Elements.Slider(zoom, "Max Zoom", 50, 500, 500, "studs", function(value)
@@ -7381,29 +7658,52 @@ do
             end
         end)
     end
-    do
-        local webhook = gameSection(gameName, SettingsTab.Right, "Webhook")
-        Elements.Toggle(webhook, "Webhook", false, function(on)
-            BedWars.WebhookOn = on
-            if on then task.delay(0.25, function()
-                if BedWars.WebhookOn then BedWars.WebhookSend("Client started") end
-            end) end
+    -- Private webhook URL is supplied by the executor or a local file, not the UI.
+    BedWars.WebhookUrl = type(ENV.SunsetWebhookUrl) == "string"
+        and ENV.SunsetWebhookUrl or ""
+    if BedWars.WebhookUrl == "" and typeof(readfile) == "function" then
+        local ok, value = pcall(readfile, "SunsetConfigs/Webhook.txt")
+        if ok and type(value) == "string" then BedWars.WebhookUrl = value end
+    end
+    if BedWars.WebhookUrl == "" then
+        local old = ENV.SunsetSettingsSnapshot
+        if (type(old) ~= "table" or old.Game ~= "BedWars")
+            and typeof(readfile) == "function" then
+            local ok, value = pcall(function()
+                return HttpService:JSONDecode(readfile("SunsetConfigs/SunsetAuto_BedWars.json"))
+            end)
+            if ok then old = value end
+        end
+        if type(old) == "table" and old.Game == "BedWars"
+            and type(old.Controls) == "table" then
+            for _, control in ipairs(old.Controls) do
+                if control.Key == "Sunset/BedWars/Webhook/Discord URL"
+                    and type(control.Value) == "string" then
+                    BedWars.WebhookUrl = control.Value
+                    break
+                end
+            end
+        end
+    end
+    if BedWars.WebhookUrl ~= "" then
+        if typeof(writefile) == "function" then
+            pcall(function()
+                if typeof(makefolder) == "function" then
+                    pcall(makefolder, "SunsetConfigs")
+                end
+                writefile("SunsetConfigs/Webhook.txt", BedWars.WebhookUrl)
+            end)
+        end
+        task.delay(0.25, function()
+            if BedWars.Running then BedWars.WebhookSend("Client started") end
         end)
-        BedWars.WebhookInput = Elements.TextBox(webhook, "Discord URL",
-            "Paste webhook URL locally", function(value)
-                BedWars.WebhookUrl = value
-            end, "", false):FindFirstChildOfClass("TextBox")
-        Elements.Button(webhook, "Test Webhook", function()
-            BedWars.WebhookSend("Test event", true)
-        end)
-        BedWars.WebhookStatus = Elements.Label(webhook, "Not tested")
     end
     do
-        local spotify = gameSection(gameName, SettingsTab.Right, "Spotify HUD")
-        Elements.Toggle(spotify, "Spotify HUD", false, function(on)
+        local spotify = gameSection(gameName, VisualsTab.Right, "Music Overlay")
+        Elements.Toggle(spotify, "Music Overlay", false, function(on)
             BedWars.SpotifyHUDOn = on
         end)
-        Elements.Label(spotify, "Shows the desktop Spotify song via the local bridge")
+        Elements.Label(spotify, "Shows desktop music via the local bridge")
     end
     do
         local waterSpeed = gameSection(gameName, Tabs["Dev Tools"].Left, "Water Speed")
@@ -7626,7 +7926,7 @@ makeDraggable(Window, TitleBar)
 
 -- BedWars uses a compact module board. It drives the same controls as the
 -- classic menu, so keybinds, callbacks, and saved configurations stay shared.
-local function bedWarsKitCatalog()
+function BedWars.KitCatalog()
     local names = {}
     local ids = {}
     local seenIds = {}
@@ -7676,7 +7976,7 @@ local function bedWarsKitCatalog()
     table.sort(names)
     return names, ids
 end
-local function buildBedWarsUI()
+function BedWars.BuildUI()
     local accent = Color3.fromRGB(255, 132, 92)
     local gold = Color3.fromRGB(255, 196, 119)
     local dark = Color3.fromRGB(24, 17, 24)
@@ -7685,11 +7985,12 @@ local function buildBedWarsUI()
     local muted = Color3.fromRGB(192, 169, 174)
     BedWarsUI = new("Frame", {
         Name = "BedWarsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(1955, 650),
+        Size = UDim2.fromOffset(1955, 770),
         Position = UDim2.new(0.5, 0, 0, 12),
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
+    Persistence.HUDFrames.BedWarsMenu = BedWarsUI
     local boardScale = new("UIScale", { Scale = 1 }, BedWarsUI)
     local openingScale = new("NumberValue", { Value = 1 }, BedWarsUI)
     local function fitBoard()
@@ -7697,7 +7998,7 @@ local function buildBedWarsUI()
         if not camera then return end
         boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
             (camera.ViewportSize.X - 32) / 1955,
-            (camera.ViewportSize.Y - 32) / 650))
+            (camera.ViewportSize.Y - 32) / 770))
     end
     fitBoard()
     track(RunService.Heartbeat:Connect(fitBoard))
@@ -7739,13 +8040,27 @@ local function buildBedWarsUI()
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchHandle)
     local searchBox = new("TextBox", {
         Position = UDim2.fromOffset(36, 3),
-        Size = UDim2.new(1, -45, 1, -6),
+        Size = UDim2.new(1, -75, 1, -6),
         BackgroundTransparency = 1, BorderSizePixel = 0,
         Font = Enum.Font.GothamMedium, TextSize = 15,
         TextColor3 = Color3.fromRGB(255, 239, 232),
         PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
     }, searchFrame)
+    Settings.ActiveSearchBox = searchBox
+    local clearSearch = new("TextButton", {
+        Position = UDim2.new(1, -30, 0, 3), Size = UDim2.fromOffset(26, 30),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "×",
+        Font = Enum.Font.GothamBold, TextSize = 19, TextColor3 = muted,
+        AutoButtonColor = false, Visible = false,
+    }, searchFrame)
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        clearSearch.Visible = searchBox.Text ~= ""
+    end)
+    clearSearch.MouseButton1Click:Connect(function()
+        searchBox.Text = ""
+        searchBox:CaptureFocus()
+    end)
     local closeButton = new("TextButton", {
         Position = UDim2.new(1, -48, 0, 17),
         Size = UDim2.fromOffset(32, 36),
@@ -7755,11 +8070,11 @@ local function buildBedWarsUI()
     }, header)
     new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
     closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
-    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
+    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset", "LOBBY" }
     local columns = {}
     for index, name in ipairs(categoryOrder) do
-        local x = 20 + (index - 1) * 215
-        local y = 74
+        local x = name == "LOBBY" and 20 or 20 + (index - 1) * 215
+        local y = name == "LOBBY" and 620 or 74
         local col = new("Frame", {
             Name = name, Position = UDim2.fromOffset(x, y),
             Size = UDim2.fromOffset(200, 250), Active = true,
@@ -7838,7 +8153,7 @@ local function buildBedWarsUI()
         end)
     end
 
-    local kitNames, kitIds = bedWarsKitCatalog()
+    local kitNames, kitIds = BedWars.KitCatalog()
     local kitSelected = table.find(kitNames, "Miner") and "Miner" or kitNames[1]
     do
         local column = columns.KIT
@@ -7857,29 +8172,37 @@ local function buildBedWarsUI()
             Position = UDim2.fromOffset(9, 88), Size = UDim2.new(1, -18, 0, 32),
             BackgroundColor3 = cardColor, BorderSizePixel = 0,
             Font = Enum.Font.GothamMedium, TextSize = 13,
-            TextColor3 = gold, Text = kitSelected or "Kits unavailable",
+            TextColor3 = gold, Text = kitSelected and ("CHOOSE KIT  ·  " .. kitSelected)
+                or "Kits unavailable",
             TextXAlignment = Enum.TextXAlignment.Center,
-            AutoButtonColor = false, ZIndex = 30,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            AutoButtonColor = false, ZIndex = 110,
         }, column.Frame)
         new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitButton)
         local kitOptions = new("ScrollingFrame", {
-            Position = UDim2.fromOffset(9, 125), Size = UDim2.new(1, -18, 0, 230),
+            Position = UDim2.fromOffset(-101, 125), Size = UDim2.fromOffset(400, 310),
             BackgroundColor3 = dark, BorderSizePixel = 0,
             ScrollBarThickness = 3, ScrollBarImageColor3 = accent,
             CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-            Visible = false, ZIndex = 40,
+            Visible = false, ZIndex = 120,
         }, column.Frame)
-        new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitOptions)
-        new("UIListLayout", { SortOrder = Enum.SortOrder.Name }, kitOptions)
+        new("UICorner", { CornerRadius = UDim.new(0, 13) }, kitOptions)
+        border(kitOptions, accent)
+        new("UIPadding", { PaddingTop = UDim.new(0, 8),
+            PaddingLeft = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8) }, kitOptions)
+        new("UIGridLayout", { SortOrder = Enum.SortOrder.Name,
+            CellSize = UDim2.fromOffset(186, 40),
+            CellPadding = UDim2.fromOffset(6, 6) }, kitOptions)
         local optionButtons = {}
         for _, kitName in ipairs(kitNames) do
             local option = new("TextButton", {
-                Name = kitName, Size = UDim2.new(1, -3, 0, 29),
+                Name = kitName, Size = UDim2.fromOffset(186, 40),
                 BackgroundColor3 = cardColor, BorderSizePixel = 0,
                 Font = Enum.Font.GothamMedium, TextSize = 13,
                 TextColor3 = Color3.fromRGB(255, 237, 230),
-                Text = kitName, AutoButtonColor = false, ZIndex = 41,
+                Text = kitName, AutoButtonColor = false, ZIndex = 121,
             }, kitOptions)
+            new("UICorner", { CornerRadius = UDim.new(0, 9) }, option)
             optionButtons[kitName] = option
         end
         kitSearch:GetPropertyChangedSignal("Text"):Connect(function()
@@ -7887,7 +8210,7 @@ local function buildBedWarsUI()
             for kitName, option in pairs(optionButtons) do
                 option.Visible = query == "" or kitName:lower():find(query, 1, true) ~= nil
             end
-            kitOptions.Visible = true
+            kitOptions.Visible = query ~= "" and not column.Collapsed
         end)
         kitButton.MouseButton1Click:Connect(function()
             kitOptions.Visible = not kitOptions.Visible
@@ -7896,7 +8219,10 @@ local function buildBedWarsUI()
         column.KitSelect = function(callback)
             local function choose(kitName)
                 kitSelected = kitName
-                kitButton.Text = kitName
+                kitButton.Text = "CHOOSE KIT  ·  " .. kitName
+                for name, option in pairs(optionButtons) do
+                    option.BackgroundColor3 = name == kitName and accent or cardColor
+                end
                 kitSearch.Text = ""
                 kitOptions.Visible = false
                 callback()
@@ -8181,10 +8507,10 @@ local function buildBedWarsUI()
         { "Dev Tools", "Water Speed", "Dev Tools", "BedWars", "Water Speed", "Water Speed" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
         { "Sunset", "Notifications", "Sunset", "BedWars", "Notifications", "Notifications" },
-        { "Sunset", "Webhook", "Sunset", "BedWars", "Webhook", "Webhook" },
-        { "Sunset", "Spotify HUD", "Sunset", "BedWars", "Spotify HUD", "Spotify HUD" },
+        { "Visuals", "Music Overlay", "Visuals", "BedWars", "Music Overlay", "Music Overlay" },
         { "Sunset", "Module List", "Sunset", "BedWars", "Module List", "Module List" },
         { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+        { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
         { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
         { "Sunset", "Colors", "Sunset", "All", "Colors" },
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
@@ -8225,8 +8551,7 @@ local function buildBedWarsUI()
         ["Bed Protector"] = "Places wool around your verified team bed.",
         ["Bed Alarm"] = "Alerts when an enemy approaches your team bed.",
         ["Notifications"] = "Shows Sunset alerts for friends, staff, and enabled features.",
-        ["Webhook"] = "Optional private match events; enter a URL each session.",
-        ["Spotify HUD"] = "Shows your desktop Spotify song in a draggable HUD.",
+        ["Music Overlay"] = "Shows your desktop media with artwork and playback time.",
         ["Fly"] = "Voidware-style Fly with balloon lift and a timed fallback.",
         ["Launch"] = "Launch yourself from a nearby cannon using its game action.",
         ["Speed"] = "Moves faster with wall checking and optional auto jump.",
@@ -8423,6 +8748,7 @@ local function buildBedWarsUI()
         Size = UDim2.fromOffset(205, 24),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
+    Persistence.HUDFrames.ModuleList = moduleList
     local moduleBrand = label(moduleList, "SUNSET.WTF", 18,
         gold, Enum.TextXAlignment.Right)
     moduleBrand.Font = Enum.Font.GothamBold
@@ -8539,12 +8865,155 @@ local function buildBedWarsUI()
     makeDraggable(BedWarsUI, dragHandle)
 end
 if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
-    buildBedWarsUI()
+    BedWars.BuildUI()
 end
 
--- Rivals starts with a clean game page. Only shared Sunset controls are exposed;
--- BedWars cards and kit controls remain exclusive to the BedWars board.
-local function buildRivalsUI()
+-- Rivals targeting is isolated from BedWars. Executor hooks stay installed across
+-- reinjection, but the active resolver is replaced or cleared on unload.
+function RivalsAim.Setup()
+    local function firing()
+        return RivalsAim.Enabled and not anyMenuVisible()
+            and (UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+                or UIS.TouchEnabled)
+    end
+    local function closestTarget()
+        if not firing() then return nil end
+        local camera = workspace.CurrentCamera
+        if not camera then return nil end
+        local center = camera.ViewportSize * 0.5
+        local closest, score = nil, RivalsAim.Radius
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer
+                and (not LocalPlayer.Team or player.Team ~= LocalPlayer.Team) then
+                local character = player.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                local part = character and (character:FindFirstChild("Head")
+                    or character:FindFirstChild("UpperTorso")
+                    or character:FindFirstChild("HumanoidRootPart"))
+                if humanoid and humanoid.Health > 0 and part and part:IsA("BasePart") then
+                    local point, onScreen = camera:WorldToViewportPoint(part.Position)
+                    if onScreen and point.Z > 0 then
+                        local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
+                        if distance < score then
+                            closest, score = part, distance
+                        end
+                    end
+                end
+            end
+        end
+        return closest
+    end
+    local function redirect(origin, direction)
+        if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3"
+            or direction.Magnitude < 50 then return nil end
+        local camera = workspace.CurrentCamera
+        if not camera or (origin - camera.CFrame.Position).Magnitude > 20
+            or direction.Unit:Dot(camera.CFrame.LookVector) < 0.75 then return nil end
+        local part = closestTarget()
+        if not part then return nil end
+        local toward = part.Position - origin
+        if toward.Magnitude > direction.Magnitude then return nil end
+        return toward.Unit * direction.Magnitude
+    end
+
+    local state = ENV.SunsetRivalsAimHook
+    if type(state) ~= "table" then
+        state = {}
+        ENV.SunsetRivalsAimHook = state
+    end
+    state.Resolve = redirect
+    state.Select = closestTarget
+    if typeof(hookmetamethod) == "function"
+        and typeof(newcclosure) == "function"
+        and typeof(checkcaller) == "function" then
+        if not state.NamecallHooked and typeof(getnamecallmethod) == "function" then
+            local previous
+            local ok = pcall(function()
+                previous = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+                    if not checkcaller() then
+                        local method = getnamecallmethod()
+                        if self == workspace and (method == "Raycast"
+                            or method == "FindPartOnRay"
+                            or method == "FindPartOnRayWithIgnoreList") then
+                            local args = { ... }
+                            local argCount = select("#", ...)
+                            local origin, direction
+                            if method == "Raycast" then
+                                origin, direction = args[1], args[2]
+                            elseif typeof(args[1]) == "Ray" then
+                                origin, direction = args[1].Origin, args[1].Direction
+                            end
+                            local corrected = state.Resolve and state.Resolve(origin, direction)
+                            if corrected then
+                                if method == "Raycast" then args[2] = corrected
+                                else args[1] = Ray.new(origin, corrected) end
+                                return previous(self, unpack(args, 1, argCount))
+                            end
+                        elseif self == workspace.CurrentCamera
+                            and (method == "ViewportPointToRay"
+                                or method == "ScreenPointToRay") and state.Select then
+                            local ray = previous(self, ...)
+                            if typeof(ray) == "Ray" then
+                                local part = state.Select()
+                                if part then
+                                    return Ray.new(ray.Origin,
+                                        (part.Position - ray.Origin).Unit)
+                                end
+                            end
+                            return ray
+                        end
+                    end
+                    return previous(self, ...)
+                end))
+            end)
+            state.NamecallHooked = ok and typeof(previous) == "function"
+        end
+        if not state.MouseHooked then
+            local mouse = LocalPlayer:GetMouse()
+            local previous
+            local ok = pcall(function()
+                previous = hookmetamethod(game, "__index", newcclosure(function(self, key)
+                    if self == mouse and not checkcaller() and state.Select
+                        and (key == "Hit" or key == "Target") then
+                        local part = state.Select()
+                        if part then
+                            return key == "Target" and part or CFrame.new(part.Position)
+                        end
+                    end
+                    return previous(self, key)
+                end))
+            end)
+            state.MouseHooked = ok and typeof(previous) == "function"
+        end
+    end
+    RivalsAim.Available = state.NamecallHooked == true or state.MouseHooked == true
+
+    local overlay = new("ScreenGui", {
+        Name = "SunsetRivalsFOV", ResetOnSpawn = false,
+        IgnoreGuiInset = true, DisplayOrder = 2147483646,
+    }, PlayerGui)
+    local circle = new("Frame", {
+        Name = "FOVCircle", AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(300, 300),
+        Visible = false, BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, overlay)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, circle)
+    local stroke = new("UIStroke", {
+        Color = Color3.fromRGB(255, 174, 117),
+        Thickness = 1.5, Transparency = 0.08,
+    }, circle)
+    track(RunService.RenderStepped:Connect(function()
+        circle.Visible = RivalsAim.FOVVisible and Settings.SelectedGame == "Rivals"
+            and not anyMenuVisible()
+        circle.Size = UDim2.fromOffset(RivalsAim.Radius * 2, RivalsAim.Radius * 2)
+        stroke.Enabled = circle.Visible
+    end))
+    track({ Disconnect = function() overlay:Destroy() end })
+end
+
+-- Only Rivals controls are exposed here; BedWars cards stay on their own board.
+function RivalsAim.BuildUI()
     local accent = Color3.fromRGB(255, 132, 92)
     local gold = Color3.fromRGB(255, 196, 119)
     local columnColor = Color3.fromRGB(34, 25, 34)
@@ -8552,11 +9021,12 @@ local function buildRivalsUI()
     local muted = Color3.fromRGB(192, 169, 174)
     RivalsUI = new("Frame", {
         Name = "RivalsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(485, 270),
+        Size = UDim2.fromOffset(485, 310),
         Position = UDim2.new(0.5, 0, 0, 12),
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
+    Persistence.HUDFrames.RivalsMenu = RivalsUI
     local boardScale = new("UIScale", { Scale = 1 }, RivalsUI)
     local openingScale = new("NumberValue", { Value = 1 }, RivalsUI)
     local function fitBoard()
@@ -8564,7 +9034,7 @@ local function buildRivalsUI()
         if not camera then return end
         boardScale.Scale = openingScale.Value * math.max(0.4, math.min(1,
             (camera.ViewportSize.X - 24) / 485,
-            (camera.ViewportSize.Y - 24) / 270))
+            (camera.ViewportSize.Y - 24) / 310))
     end
     fitBoard()
     track(RunService.Heartbeat:Connect(fitBoard))
@@ -8613,13 +9083,27 @@ local function buildRivalsUI()
     }, searchFrame)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchHandle)
     local searchBox = new("TextBox", {
-        Position = UDim2.fromOffset(36, 3), Size = UDim2.new(1, -45, 1, -6),
+        Position = UDim2.fromOffset(36, 3), Size = UDim2.new(1, -75, 1, -6),
         BackgroundTransparency = 1, BorderSizePixel = 0,
         Font = Enum.Font.GothamMedium, TextSize = 15,
         TextColor3 = Color3.fromRGB(255, 239, 232),
         PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
     }, searchFrame)
+    Settings.ActiveSearchBox = searchBox
+    local clearSearch = new("TextButton", {
+        Position = UDim2.new(1, -30, 0, 3), Size = UDim2.fromOffset(26, 30),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "×",
+        Font = Enum.Font.GothamBold, TextSize = 19, TextColor3 = muted,
+        AutoButtonColor = false, Visible = false,
+    }, searchFrame)
+    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        clearSearch.Visible = searchBox.Text ~= ""
+    end)
+    clearSearch.MouseButton1Click:Connect(function()
+        searchBox.Text = ""
+        searchBox:CaptureFocus()
+    end)
     local closeButton = new("TextButton", {
         Position = UDim2.new(1, -48, 0, 17), Size = UDim2.fromOffset(32, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
@@ -8632,7 +9116,7 @@ local function buildRivalsUI()
     local function column(name, x, width)
         local frame = new("Frame", {
             Name = name, Position = UDim2.fromOffset(x, 111),
-            Size = UDim2.fromOffset(width, 145), Active = true,
+            Size = UDim2.fromOffset(width, 185), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
         }, RivalsUI)
         new("UICorner", { CornerRadius = UDim.new(0, 12) }, frame)
@@ -8657,28 +9141,25 @@ local function buildRivalsUI()
         }, frame)
         return frame, count
     end
-    local rivalsColumn = column("Rivals", 20, 200)
-    local empty = label(rivalsColumn, "No Rivals modules yet", 13, muted)
-    empty.Font = Enum.Font.GothamMedium
-    empty.Position = UDim2.fromOffset(12, 56)
-    empty.Size = UDim2.new(1, -24, 0, 22)
+    local combatColumn, combatCount = column("Combat", 20, 200)
     local sunsetColumn, sunsetCount = column("Sunset", 235, 230)
 
-    local watermarkControl
+    local watermarkControl, menuBlurControl
     for _, control in ipairs(ConfigControls) do
         if control.Key == "Sunset/All/Watermark/Enabled" then
             watermarkControl = control
-            break
+        elseif control.Key == "Sunset/All/Menu Blur/Enabled" then
+            menuBlurControl = control
         end
     end
     local cards = {}
-    local function addCard(name, index, click, value)
+    local function addCard(category, parent, name, index, click, value)
         local card = new("TextButton", {
             Name = name, Position = UDim2.fromOffset(9, 51 + (index - 1) * 39),
             Size = UDim2.new(1, -18, 0, 35),
             BackgroundColor3 = cardColor, BorderSizePixel = 0,
             Text = "", AutoButtonColor = false,
-        }, sunsetColumn)
+        }, parent)
         new("UICorner", { CornerRadius = UDim.new(0, 10) }, card)
         local caption = label(card, name, 14, Color3.fromRGB(255, 237, 230))
         caption.Font = Enum.Font.GothamMedium
@@ -8691,13 +9172,36 @@ local function buildRivalsUI()
         card.MouseButton1Click:Connect(click)
         card.MouseEnter:Connect(function() card.BackgroundColor3 = Color3.fromRGB(70, 45, 57) end)
         card.MouseLeave:Connect(function() card.BackgroundColor3 = cardColor end)
-        table.insert(cards, { Name = string.lower(name), Card = card,
+        table.insert(cards, { Category = category, Name = string.lower(name), Card = card,
             State = state, Value = value })
     end
-    addCard("Watermark", 1, function()
+    addCard("Combat", combatColumn, "Silent Aim", 1, function()
+        if RivalsAim.Available then RivalsAim.Enabled = not RivalsAim.Enabled end
+    end, function()
+        if not RivalsAim.Available then return "N/A" end
+        return RivalsAim.Enabled and "ON" or "OFF"
+    end)
+    addCard("Combat", combatColumn, "FOV Circle", 2, function()
+        RivalsAim.FOVVisible = not RivalsAim.FOVVisible
+    end, function() return RivalsAim.FOVVisible and "ON" or "OFF" end)
+    local radiusCard
+    addCard("Combat", combatColumn, "FOV Radius", 3, function()
+        RivalsAim.Radius = math.min(400, RivalsAim.Radius + 25)
+    end, function() return tostring(RivalsAim.Radius) .. " PX" end)
+    radiusCard = cards[#cards].Card
+    radiusCard.MouseButton2Click:Connect(function()
+        RivalsAim.Radius = math.max(50, RivalsAim.Radius - 25)
+    end)
+    local radiusHint = label(combatColumn, "Left +25  ·  Right -25", 11, muted)
+    radiusHint.Position = UDim2.fromOffset(10, 168)
+    radiusHint.Size = UDim2.new(1, -20, 0, 14)
+    addCard("Sunset", sunsetColumn, "Watermark", 1, function()
         if watermarkControl then watermarkControl.Set(not watermarkControl.Get()) end
     end, function() return watermarkControl and watermarkControl.Get() and "ON" or "OFF" end)
-    addCard("Menu Key", 2, function()
+    addCard("Sunset", sunsetColumn, "Menu Blur", 2, function()
+        if menuBlurControl then menuBlurControl.Set(not menuBlurControl.Get()) end
+    end, function() return Settings.MenuBlurOn and "ON" or "OFF" end)
+    addCard("Sunset", sunsetColumn, "Menu Key", 3, function()
         if listeningFor then return end
         listeningFor = {
             GetBind = menuKeyControl.GetBind,
@@ -8706,15 +9210,21 @@ local function buildRivalsUI()
     end, function() return listeningFor and "PRESS KEY" or keyName(Settings.MenuKey) end)
     local function refresh()
         local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
-        local count = 0
+        local counts = { Combat = 0, Sunset = 0 }
         for _, entry in ipairs(cards) do
             entry.Card.Visible = query == ""
                 or string.find(entry.Name, query, 1, true) ~= nil
-            if entry.Card.Visible then count += 1 end
+                or string.find(string.lower(entry.Category), query, 1, true) ~= nil
+            if entry.Card.Visible then
+                entry.Card.Position = UDim2.fromOffset(9,
+                    51 + counts[entry.Category] * 39)
+                counts[entry.Category] += 1
+            end
             entry.State.Text = entry.Value()
         end
-        sunsetCount.Text = tostring(count)
-        empty.Visible = query == "" or string.find("rivals", query, 1, true) ~= nil
+        combatCount.Text = tostring(counts.Combat)
+        sunsetCount.Text = tostring(counts.Sunset)
+        radiusHint.Visible = radiusCard.Visible
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refresh)
     track(RunService.Heartbeat:Connect(function()
@@ -8728,7 +9238,8 @@ local function buildRivalsUI()
     makeDraggable(RivalsUI, dragHandle)
 end
 if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
-    buildRivalsUI()
+    RivalsAim.Setup()
+    RivalsAim.BuildUI()
 end
 
 -- ============================================================
@@ -8736,6 +9247,11 @@ end
 -- ============================================================
 ENV.SunsetUnload = function()
     Persistence.Save()
+    RivalsAim.Enabled = false
+    if type(ENV.SunsetRivalsAimHook) == "table" then
+        ENV.SunsetRivalsAimHook.Resolve = nil
+        ENV.SunsetRivalsAimHook.Select = nil
+    end
     GhostPulse.Stop()
     Fun.Running = false
     Fun.Enabled = false
@@ -8753,6 +9269,7 @@ ENV.SunsetUnload = function()
     end
     table.clear(Connections)
     if Gui then Gui:Destroy() end
+    if Settings.MenuBlurEffect then Settings.MenuBlurEffect:Destroy() end
     ENV.SunsetLoading = nil
     ENV.SunsetUnload = nil
 end
@@ -8864,11 +9381,6 @@ do
                 if child:IsA("UIStroke") then child.Enabled = false end
                 if child:IsA("Frame") then child.Visible = false end
             end
-            if detectedGame == "BedWars" then
-                BedWarsUI.Visible = true
-            else
-                RivalsUI.Visible = true
-            end
             Window.Visible = false
             onMenuVisibility()
         end
@@ -8915,6 +9427,12 @@ task.delay(0.45, function()
     task.wait(0.35)
     if loading.Overlay.Parent then loading.Overlay:Destroy() end
     if ENV.SunsetLoading == loading then ENV.SunsetLoading = nil end
+    if detectedGame == "BedWars" and BedWarsUI then
+        BedWarsUI.Visible = true
+    elseif detectedGame == "Rivals" and RivalsUI then
+        RivalsUI.Visible = true
+    end
+    onMenuVisibility()
 end)
 end
 

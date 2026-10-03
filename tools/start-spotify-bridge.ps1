@@ -10,10 +10,7 @@ try {
 }
 
 $bridge = Join-Path $PSScriptRoot 'spotify-bridge.ps1'
-$runner = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
-if (-not $runner) {
-    $runner = (Get-Command powershell.exe -ErrorAction Stop).Source
-}
+$runner = (Get-Command powershell.exe -ErrorAction Stop).Source
 
 $process = Start-Process -FilePath $runner -ArgumentList @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$bridge`""
