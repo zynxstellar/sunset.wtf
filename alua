@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-own-bed-list-k222"
+local SUNSET_BUILD = "20261003-auto-reply-k223"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -940,18 +940,27 @@ function Elements.MultiSelect(parent, text, options, callback)
     return holder
 end
 
-function Elements.TextBox(parent, text, placeholder, callback)
+function Elements.TextBox(parent, text, placeholder, callback, default, saveValue)
     local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1 }, parent)
     label(holder, text)
     local box = new("TextBox", {
         Size = UDim2.new(1, 0, 0, 18), Position = UDim2.fromOffset(0, 18),
         BackgroundColor3 = T.element, BorderSizePixel = 0,
-        Text = "", PlaceholderText = placeholder or "", PlaceholderColor3 = T.dim,
+        Text = default or "", PlaceholderText = placeholder or "", PlaceholderColor3 = T.dim,
         Font = T.font, TextSize = 13, TextColor3 = T.text, ClearTextOnFocus = false,
     }, holder)
     border(box, T.border)
     new("UIPadding", { PaddingLeft = UDim.new(0, 4) }, box)
     box.FocusLost:Connect(function() if callback then task.spawn(callback, box.Text) end end)
+    if saveValue then
+        table.insert(ConfigControls, { Kind = "text", Key = configKey(parent, text),
+            Get = function() return box.Text end,
+            Set = function(value)
+                if type(value) ~= "string" then return end
+                box.Text = value
+                if callback then task.spawn(callback, value) end
+            end, Box = parent.Parent })
+    end
     return holder
 end
 
@@ -3526,6 +3535,7 @@ BedWars = {
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
     FakeLagOn = false, FakeLagHold = 0.18, FakeLagRelease = 0.08,
     KillChatOn = false, KillChatQueue = {},
+    AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Sunset.wtf <3",
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
@@ -6020,6 +6030,51 @@ do
         end
     end)
 end
+do
+    local chat = game:GetService("TextChatService")
+    local lastByPlayer = {}
+    local lastGlobal = -100
+    local lastSeen = {}
+    local function onMessage(player, message)
+        if not BedWars.Running or not BedWars.AutoReplyOn
+            or Settings.SelectedGame ~= "BedWars"
+            or not player or player == LocalPlayer or type(message) ~= "string" then return end
+        local lower = message:lower()
+        if lower == "" then return end
+        if BedWars.AutoReplyMode == "Mentions" then
+            local username = LocalPlayer.Name:lower()
+            local display = LocalPlayer.DisplayName:lower()
+            if not lower:find(username, 1, true)
+                and (#display < 3 or not lower:find(display, 1, true)) then return end
+        end
+        local reply = tostring(BedWars.AutoReplyText or "")
+            :gsub("^%s+", ""):gsub("%s+$", ""):sub(1, 180)
+        if reply == "" then return end
+        local now = os.clock()
+        local id = player.UserId
+        local seen = lastSeen[id]
+        if seen and seen.Text == lower and now - seen.Time < 2 then return end
+        lastSeen[id] = { Text = lower, Time = now }
+        if now - (lastByPlayer[id] or -100) < 8 or now - lastGlobal < 2 then return end
+        lastByPlayer[id] = now
+        lastGlobal = now
+        task.spawn(BedWars.KillChatSend, reply)
+    end
+    track(chat.MessageReceived:Connect(function(message)
+        local source = message.TextSource
+        local channel = message.TextChannel
+        if not source or (channel and channel.Name ~= "RBXGeneral") then return end
+        onMessage(Players:GetPlayerByUserId(source.UserId), message.Text)
+    end))
+    local function listen(player)
+        if player == LocalPlayer then return end
+        track(player.Chatted:Connect(function(message)
+            onMessage(player, message)
+        end))
+    end
+    for _, player in ipairs(Players:GetPlayers()) do listen(player) end
+    track(Players.PlayerAdded:Connect(listen))
+end
 local function updateSession()
     local session = BedWars.Session
     local now = os.clock()
@@ -6603,6 +6658,17 @@ do
             BedWars.KillChatLastCount = currentBedWarsKills()
             if not on then table.clear(BedWars.KillChatQueue) end
         end)
+    end
+    do
+        local replySection = gameSection(gameName, FunTab.Right, "Auto Reply")
+        Elements.Toggle(replySection, "Auto Reply", false, function(on)
+            BedWars.AutoReplyOn = on
+        end)
+        Elements.Dropdown(replySection, "Reply To", { "Mentions", "All Chat" },
+            "Mentions", function(mode) BedWars.AutoReplyMode = mode end)
+        Elements.TextBox(replySection, "Message", "Message to send", function(value)
+            BedWars.AutoReplyText = value
+        end, "Sunset.wtf <3", true)
     end
     do
         local fightSection = gameSection(gameName, MiscTab.Right, "Water Fight")
@@ -7339,6 +7405,7 @@ local function buildBedWarsUI()
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
         { "Fun", "Kill Chat", "Fun", "BedWars", "Kill Chat", "Kill Chat" },
+        { "Fun", "Auto Reply", "Fun", "BedWars", "Auto Reply", "Auto Reply" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
         { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
