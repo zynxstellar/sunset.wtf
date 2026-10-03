@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-settings-persist-j211"
+local SUNSET_BUILD = "20261002-session-info-j212"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -395,6 +395,9 @@ do
         end
         local data = { Version = 1, Game = gameName, Controls = saved,
             MenuKey = Settings.MenuKey.Name }
+        if gameName == "BedWars" and BedWars and BedWars.Session then
+            data.Session = BedWars.Session
+        end
         ENV.SunsetSettingsSnapshot = data
         if typeof(writefile) ~= "function" then return true end
         local ok, encoded = pcall(HttpService.JSONEncode, HttpService, data)
@@ -418,6 +421,32 @@ do
         end
         if type(data) ~= "table" or data.Game ~= gameName
             or type(data.Controls) ~= "table" then return false end
+        if gameName == "BedWars" and BedWars and BedWars.Session
+            and type(data.Session) == "table" then
+            local target = BedWars.Session
+            for _, key in ipairs({ "Seconds", "Kills", "Beds", "Wins", "Games", "LastKillCount" }) do
+                local value = data.Session[key]
+                if type(value) == "number" and value >= 0 and value < 1000000000 then
+                    target[key] = value
+                end
+            end
+            if type(data.Session.LastJobId) == "string" then
+                target.LastJobId = data.Session.LastJobId
+            end
+            if type(data.Session.SourceValues) == "table" then
+                for _, key in ipairs({ "Beds", "Wins" }) do
+                    local value = data.Session.SourceValues[key]
+                    if type(value) == "number" and value >= 0 then
+                        target.SourceValues[key] = value
+                    end
+                end
+            end
+            if type(data.Session.Observed) == "table" then
+                for _, key in ipairs({ "Kills", "Beds", "Wins" }) do
+                    target.Observed[key] = data.Session.Observed[key] == true
+                end
+            end
+        end
         local byKey = {}
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
@@ -3492,6 +3521,8 @@ BedWars = {
     WallCheck = false, ProjectileWallCheck = false,
     TargetHUDOn = false, SessionInfoOn = false,
     AutoClickOn = false, AutoClickCPS = 10, AntiAFKOn = false,
+    Session = { Seconds = 0, Kills = 0, Beds = 0, Wins = 0, Games = 0,
+        LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
 }
 local sprintController
 local sprintActionName = "SunsetAlwaysSprint"
@@ -4795,8 +4826,8 @@ local healthFill = new("Frame", {
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, healthFill)
 makeDraggable(targetHUD, targetHUD)
 
-local sessionStarted = os.clock()
-local sessionBaseline = {}
+local sessionClock = os.clock()
+local sessionStore
 local sessionPanel = new("Frame", {
     Name = "BedWarsSessionInfo", Visible = false,
     Position = UDim2.new(0, 15, 1, -205),
@@ -4857,30 +4888,78 @@ local function sessionMap()
     return "Unknown"
 end
 local sessionFields = {
-    Kills = { "Kills", "kills", "KillCount" },
     Beds = { "BedsBroken", "BedBreaks", "Beds" },
     Wins = { "Wins", "wins", "WinCount" },
-    Games = { "GamesPlayed", "MatchesPlayed", "Games" },
 }
-for title, names in pairs(sessionFields) do
-    sessionBaseline[title] = sessionNumber(names)
+local function currentBedWarsKills()
+    if not sessionStore then
+        local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+        local ts = scripts and scripts:FindFirstChild("TS")
+        local ui = ts and ts:FindFirstChild("ui")
+        local module = ui and ui:FindFirstChild("store")
+        if module then
+            local ok, exports = pcall(require, module)
+            if ok and type(exports) == "table" then
+                sessionStore = exports.ClientStore
+            end
+        end
+    end
+    if not sessionStore then return nil end
+    local ok, state = pcall(function() return sessionStore:getState() end)
+    if not ok or type(state) ~= "table" then return nil end
+    local bedwars = state.Bedwars
+    local kills = type(bedwars) == "table" and bedwars.kills
+    if type(kills) ~= "table" then return nil end
+    local value = kills[tostring(LocalPlayer.UserId)] or kills[LocalPlayer.UserId]
+    return type(value) == "number" and math.max(0, value) or 0
+end
+local function updateSession()
+    local session = BedWars.Session
+    local now = os.clock()
+    session.Seconds = session.Seconds + math.max(0, math.min(5, now - sessionClock))
+    sessionClock = now
+    local mapName = sessionMap()
+    if mapName ~= "Unknown" and game.JobId ~= "" and session.LastJobId ~= game.JobId then
+        session.LastJobId = game.JobId
+        session.LastKillCount = 0
+        session.Games = session.Games + 1
+    end
+    local kills = currentBedWarsKills()
+    if kills ~= nil then
+        session.Observed.Kills = true
+        if kills > session.LastKillCount then
+            session.Kills = session.Kills + kills - session.LastKillCount
+        end
+        session.LastKillCount = kills
+    end
+    for title, names in pairs(sessionFields) do
+        local value = sessionNumber(names)
+        if value ~= nil then
+            session.Observed[title] = true
+            local previous = session.SourceValues[title]
+            if previous and value > previous then
+                session[title] = session[title] + value - previous
+            end
+            session.SourceValues[title] = value
+        end
+    end
+    return mapName
 end
 task.spawn(function()
     while BedWars.Running do
+        local mapName = updateSession()
         sessionPanel.Visible = Settings.SelectedGame == "BedWars" and BedWars.SessionInfoOn
         if sessionPanel.Visible then
-            local seconds = math.floor(os.clock() - sessionStarted)
+            local session = BedWars.Session
+            local seconds = math.floor(session.Seconds)
             sessionLines["Time Played"].Text = string.format("Time Played: %02d:%02d:%02d",
                 math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
-            for title, names in pairs(sessionFields) do
-                local value = sessionNumber(names)
-                if value ~= nil and sessionBaseline[title] == nil then
-                    sessionBaseline[title] = value
-                end
-                sessionLines[title].Text = title .. ": " .. (value == nil and "--"
-                    or tostring(math.max(0, value - (sessionBaseline[title] or 0))))
+            for _, title in ipairs({ "Kills", "Beds", "Wins" }) do
+                sessionLines[title].Text = title .. ": " ..
+                    (session.Observed[title] and tostring(session[title]) or "--")
             end
-            sessionLines.Map.Text = "Map: " .. sessionMap()
+            sessionLines.Games.Text = "Games: " .. tostring(session.Games)
+            sessionLines.Map.Text = "Map: " .. mapName:gsub("^to%d+_", ""):gsub("-", " ")
         end
         task.wait(1)
     end
@@ -6168,6 +6247,7 @@ if detectedGame then
     AutoReinject.ready = true
     if AutoReinject.enabled and AutoReinject.Queue then AutoReinject.Queue() end
 end
+
 ]========]
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
 environment.SunsetEmbeddedSource = source
