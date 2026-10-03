@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-fake-lag-k217"
+local SUNSET_BUILD = "20261002-kill-chat-k218"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3525,6 +3525,7 @@ BedWars = {
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
     FakeLagOn = false, FakeLagHold = 0.18, FakeLagRelease = 0.08,
+    KillChatOn = false, KillChatQueue = {},
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
@@ -5729,6 +5730,12 @@ function BedWars.Stop()
     BedWars.VoidWaterOn = false
     BedWars.WaterFightOn = false
     BedWars.AutoPlayAgainOn = false
+    BedWars.KillChatOn = false
+    table.clear(BedWars.KillChatQueue)
+    if BedWars.KillChatDeathConnection then
+        BedWars.KillChatDeathConnection:Disconnect()
+        BedWars.KillChatDeathConnection = nil
+    end
     BedWars.VoidWater.Clear()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
@@ -5873,6 +5880,56 @@ local function currentBedWarsKills()
     local value = kills[tostring(LocalPlayer.UserId)] or kills[LocalPlayer.UserId]
     return type(value) == "number" and math.max(0, value) or 0
 end
+do
+    function BedWars.KillChatSend(message)
+        local chat = game:GetService("TextChatService")
+        local channels = chat:FindFirstChild("TextChannels")
+        local general = channels and channels:FindFirstChild("RBXGeneral")
+        if general and general:IsA("TextChannel") then
+            return pcall(function() general:SendAsync(message) end)
+        end
+        local legacy = game:GetService("ReplicatedStorage")
+            :FindFirstChild("DefaultChatSystemChatEvents")
+        local say = legacy and legacy:FindFirstChild("SayMessageRequest")
+        if say and say:IsA("RemoteEvent") then
+            return pcall(function() say:FireServer(message, "All") end)
+        end
+        return false
+    end
+    function BedWars.KillChatBind(character)
+        if BedWars.KillChatDeathConnection then
+            BedWars.KillChatDeathConnection:Disconnect()
+            BedWars.KillChatDeathConnection = nil
+        end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+            or character:WaitForChild("Humanoid", 10)
+        if not humanoid or not BedWars.Running
+            or character ~= LocalPlayer.Character then return end
+        BedWars.KillChatDeathConnection = humanoid.Died:Connect(function()
+            if Settings.SelectedGame == "BedWars" and BedWars.KillChatOn then
+                table.insert(BedWars.KillChatQueue,
+                    math.random(1, 2) == 1 and "Only Died To A Game Bug!"
+                        or "Reinjecting ♻️")
+            end
+        end)
+    end
+    track(LocalPlayer.CharacterAdded:Connect(function(character)
+        task.spawn(BedWars.KillChatBind, character)
+    end))
+    if LocalPlayer.Character then task.spawn(BedWars.KillChatBind, LocalPlayer.Character) end
+    task.spawn(function()
+        while BedWars.Running do
+            if Settings.SelectedGame == "BedWars" and BedWars.KillChatOn
+                and #BedWars.KillChatQueue > 0 then
+                local message = table.remove(BedWars.KillChatQueue, 1)
+                BedWars.KillChatSend(message)
+                task.wait(1.25)
+            else
+                task.wait(0.2)
+            end
+        end
+    end)
+end
 local function updateSession()
     local session = BedWars.Session
     local now = os.clock()
@@ -5886,6 +5943,15 @@ local function updateSession()
     end
     local kills = currentBedWarsKills()
     if kills ~= nil then
+        if BedWars.KillChatOn and BedWars.KillChatLastCount ~= nil
+            and kills > BedWars.KillChatLastCount then
+            for _ = 1, kills - BedWars.KillChatLastCount do
+                table.insert(BedWars.KillChatQueue,
+                    math.random(1, 2) == 1 and "Mogged By SunSet <3"
+                        or "Killed By Sunset <3")
+            end
+        end
+        BedWars.KillChatLastCount = kills
         session.Observed.Kills = true
         if kills > session.LastKillCount then
             session.Kills = session.Kills + kills - session.LastKillCount
@@ -6432,6 +6498,14 @@ do
             bedWarsReleaseScaffoldItem()
         end
     end)
+    do
+        local chatSection = gameSection(gameName, FunTab.Left, "Kill Chat")
+        Elements.Toggle(chatSection, "Kill Chat", false, function(on)
+            BedWars.KillChatOn = on
+            BedWars.KillChatLastCount = currentBedWarsKills()
+            if not on then table.clear(BedWars.KillChatQueue) end
+        end)
+    end
     do
         local fightSection = gameSection(gameName, MiscTab.Right, "Water Fight")
         Elements.Toggle(fightSection, "Water Fight", false, function(on)
@@ -7164,6 +7238,7 @@ local function buildBedWarsUI()
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
+        { "Fun", "Kill Chat", "Fun", "BedWars", "Kill Chat", "Kill Chat" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
         { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
