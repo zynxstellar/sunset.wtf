@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-water-fight-k216"
+local SUNSET_BUILD = "20261002-fake-lag-k217"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3524,6 +3524,7 @@ BedWars = {
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
+    FakeLagOn = false, FakeLagHold = 0.18, FakeLagRelease = 0.08,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
@@ -5669,7 +5670,52 @@ track(RunService.PreSimulation:Connect(function(delta)
     end
     root.CFrame += advance
 end))
+do
+    function BedWars.SleepingSetter()
+        if typeof(sethiddenproperty) == "function" then return sethiddenproperty end
+        if typeof(ENV.sethiddenproperty) == "function" then
+            return ENV.sethiddenproperty
+        end
+        return nil
+    end
+    function BedWars.FakeLagReset()
+        local setter = BedWars.SleepingSetter()
+        if setter and BedWars.FakeLagRoot and BedWars.FakeLagRoot.Parent then
+            pcall(setter, BedWars.FakeLagRoot, "NetworkIsSleeping", false)
+        end
+        BedWars.FakeLagRoot = nil
+    end
+    track(RunService.Heartbeat:Connect(function()
+        if not BedWars.Running then return end
+        local active = Settings.SelectedGame == "BedWars" and BedWars.FakeLagOn
+        local character = LocalPlayer.Character
+        local root = active and character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = active and character and character:FindFirstChildOfClass("Humanoid")
+        if root ~= BedWars.FakeLagRoot then BedWars.FakeLagReset() end
+        if not root or not humanoid or humanoid.Health <= 0 then return end
+        local setter = BedWars.SleepingSetter()
+        if not setter then
+            BedWars.FakeLagOn = false
+            if BedWars.FakeLagToggle then BedWars.FakeLagToggle.Set(false) end
+            warn("Sunset Fake Lag: this executor does not support sethiddenproperty")
+            return
+        end
+        BedWars.FakeLagRoot = root
+        local cycle = BedWars.FakeLagHold + BedWars.FakeLagRelease
+        local sleeping = ((os.clock() - (BedWars.FakeLagStarted or os.clock()))
+            % cycle) < BedWars.FakeLagHold
+        local ok = pcall(setter, root, "NetworkIsSleeping", sleeping)
+        if not ok then
+            BedWars.FakeLagReset()
+            BedWars.FakeLagOn = false
+            if BedWars.FakeLagToggle then BedWars.FakeLagToggle.Set(false) end
+            warn("Sunset Fake Lag: executor cannot set NetworkIsSleeping")
+        end
+    end))
+end
 function BedWars.Stop()
+    BedWars.FakeLagOn = false
+    BedWars.FakeLagReset()
     BedWars.FOVOn = false
     RunService:UnbindFromRenderStep("SunsetBedWarsFOV")
     if bedWarsFOVSignal then bedWarsFOVSignal:Disconnect() end
@@ -6403,6 +6449,15 @@ do
         Elements.Toggle(replaySection, "Auto Play Again", false, function(on)
             BedWars.AutoPlayAgainOn = on
         end)
+        local lagSection = gameSection(gameName, MiscTab.Left, "Fake Lag")
+        BedWars.FakeLagToggle = Elements.Toggle(lagSection, "Fake Lag", false,
+            function(on)
+                BedWars.FakeLagOn = on
+                BedWars.FakeLagStarted = os.clock()
+                if not on then BedWars.FakeLagReset() end
+            end)
+        Elements.Slider(lagSection, "Freeze Time", 0.08, 0.4, 0.18,
+            "seconds", function(value) BedWars.FakeLagHold = value end, 0.01)
     end
     local pickupSection = gameSection(gameName, PlayerTab.Right, "Pickup Range")
     Elements.Toggle(pickupSection, "Pickup Range", false, function(on)
@@ -7100,6 +7155,7 @@ local function buildBedWarsUI()
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
+        { "Misc", "Fake Lag", "Misc", "BedWars", "Fake Lag", "Fake Lag" },
         { "Misc", "Water Fight", "Misc", "BedWars", "Water Fight", "Water Fight" },
         { "Misc", "Auto Play Again", "Misc", "BedWars", "Auto Play Again", "Auto Play Again" },
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
