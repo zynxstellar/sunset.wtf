@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-session-info-j212"
+local SUNSET_BUILD = "20261002-void-water-j213"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -534,7 +534,7 @@ local Binds = {}          -- { [toggleObj] = Enum.KeyCode }
 -- listeningFor is shared with the early menu listener.
 
 local function keyName(key)
-    if not key then return "[NONE]" end
+    if not key then return "-" end
     local symbols = {
         LeftBracket = "[", RightBracket = "]", Semicolon = ";",
         Quote = "'", Comma = ",", Period = ".", Slash = "/",
@@ -549,10 +549,10 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     border(box, T.border)
     local l = label(row, text)
     l.Position = UDim2.fromOffset(18, 0)
-    l.Size = UDim2.new(1, noBind and -20 or -78, 1, 0)
+    l.Size = UDim2.new(1, noBind and -20 or -60, 1, 0)
 
     local bindBtn = new("TextButton", {
-        Size = UDim2.fromOffset(56, 14), Position = UDim2.new(1, -56, 0, 1),
+        Size = UDim2.fromOffset(40, 14), Position = UDim2.new(1, -40, 0, 1),
         BackgroundColor3 = T.element, BorderSizePixel = 0,
         Text = keyName(defaultKey), Font = T.font, TextSize = 11, TextColor3 = T.dim,
         AutoButtonColor = false,
@@ -594,7 +594,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
         if noBind then return end
         if listeningFor then listeningFor.SetBind(listeningFor.GetBind()) end
         listeningFor = obj
-        bindBtn.Text = "[...]"
+        bindBtn.Text = "..."
         bindBtn.TextColor3 = T.red
     end)
     obj._bindBtn = bindBtn
@@ -777,15 +777,25 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     border(number, T.border)
     local plus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -26, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
     local minus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -12, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
-    local bar = new("TextButton", { Size = UDim2.new(1, 0, 0, 10), Position = UDim2.fromOffset(0, 26), BackgroundColor3 = T.element, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, holder)
+    local bar = new("TextButton", { Size = UDim2.new(1, 0, 0, 8), Position = UDim2.fromOffset(0, 27), BackgroundColor3 = T.element, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, holder)
     border(bar, T.border)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, bar)
     local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.red, BorderSizePixel = 0 }, bar)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
+    local knob = new("Frame", {
+        Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(0, 0.5), BackgroundColor3 = T.red,
+        BorderSizePixel = 0, ZIndex = bar.ZIndex + 2,
+    }, bar)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
     local function set(raw, initial)
         local updated = sliderNumber(raw, min, max, value, step)
         local changed = updated ~= value
         value = updated
         number.Text = tostring(value)
-        fill.Size = UDim2.fromScale(max > min and (value - min) / (max - min) or 0, 1)
+        local fraction = max > min and (value - min) / (max - min) or 0
+        fill.Size = UDim2.fromScale(fraction, 1)
+        knob.Position = UDim2.fromScale(fraction, 0.5)
         if callback and (changed or initial) then task.spawn(callback, value) end
     end
     number.FocusLost:Connect(function() set(number.Text) end)
@@ -3378,7 +3388,6 @@ do
             ["Visuals/BedWars/BedWars Map/Bed Color"] = "Visuals/BedWars/Bed Outline/Bed Color",
             ["Visuals/BedWars/World Outlines/Iron Ore"] = "Visuals/BedWars/Iron Ore Outline/Iron Ore Outline",
             ["Visuals/BedWars/World Outlines/Enchant Tables"] = "Visuals/BedWars/Enchant Tables/Enchant Tables",
-            ["Visuals/BedWars/World Outlines/Dropped Items"] = "Visuals/BedWars/Dropped Items/Dropped Items",
             ["Fun/All/Rainbow Footsteps/Rainbow Footsteps"] = "Fun/All/Colored Footsteps/Colored Footsteps",
         }
         for i, item in ipairs(data.Controls or {}) do
@@ -3511,10 +3520,12 @@ end
 -- remotes are fired, so the controls remain useful after entering a match.
 BedWars = {
     PlayersOn = false, BedsOn = false, TeamCheck = true,
-    OutlineOre = false, OutlineEnchant = false, OutlineDrops = false,
+    OutlineOre = false, OutlineEnchant = false,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
-    SprintOn = false, AntiVoidOn = false,
+    SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
+    VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
+    AutoBedRange = 18, AutoBedBreakCover = true,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
     UseTeamBedColors = true,
@@ -3524,6 +3535,67 @@ BedWars = {
     Session = { Seconds = 0, Kills = 0, Beds = 0, Wins = 0, Games = 0,
         LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
 }
+BedWars.VoidWater = {}
+do
+local voidWaterSnapshot, voidWaterCorner, voidWaterCenter
+local voidWaterTop
+local voidWaterTerrain = workspace.Terrain
+function BedWars.VoidWater.Clear()
+    if voidWaterSnapshot and voidWaterCorner then
+        pcall(function()
+            voidWaterTerrain:PasteRegion(voidWaterSnapshot, voidWaterCorner, true)
+        end)
+        voidWaterSnapshot:Destroy()
+    end
+    voidWaterSnapshot, voidWaterCorner, voidWaterCenter, voidWaterTop = nil, nil, nil, nil
+end
+function BedWars.VoidWater.Place(position, surfaceY)
+    if voidWaterCenter and voidWaterTop == surfaceY
+        and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
+            < math.min(24, BedWars.VoidWaterWidth / 4) then
+        return
+    end
+    BedWars.VoidWater.Clear()
+    local width = math.floor(BedWars.VoidWaterWidth / 4) * 4
+    local depth = math.floor(BedWars.VoidWaterDepth / 4) * 4
+    local x = math.floor((position.X - width / 2) / 4) * 4
+    local y = math.floor((surfaceY - depth) / 4) * 4
+    local z = math.floor((position.Z - width / 2) / 4) * 4
+    local lower = Vector3.new(x, y, z)
+    local upper = lower + Vector3.new(width, depth, width)
+    local region = Region3.new(lower, upper)
+    local corner = Vector3int16.new(x / 4, y / 4, z / 4)
+    local gridRegion = Region3int16.new(corner,
+        Vector3int16.new(upper.X / 4, upper.Y / 4, upper.Z / 4))
+    local ok, snapshot = pcall(function()
+        return voidWaterTerrain:CopyRegion(gridRegion)
+    end)
+    if not ok or not snapshot then return end
+    local filled = pcall(function()
+        local materials, occupancies = voidWaterTerrain:ReadVoxels(region, 4)
+        for i = 1, #materials do
+            for j = 1, #materials[i] do
+                for k = 1, #materials[i][j] do
+                    if materials[i][j][k] == Enum.Material.Air
+                        or occupancies[i][j][k] == 0 then
+                        materials[i][j][k] = Enum.Material.Water
+                        occupancies[i][j][k] = 1
+                    end
+                end
+            end
+        end
+        voidWaterTerrain:WriteVoxels(region, 4, materials, occupancies)
+    end)
+    if not filled then
+        pcall(function() voidWaterTerrain:PasteRegion(snapshot, corner, true) end)
+        snapshot:Destroy()
+        return
+    end
+    voidWaterSnapshot, voidWaterCorner = snapshot, corner
+    voidWaterCenter = Vector2.new(x + width / 2, z + width / 2)
+    voidWaterTop = surfaceY
+end
+end
 local sprintController
 local sprintActionName = "SunsetAlwaysSprint"
 local function bindBedWarsSprintKey()
@@ -4450,7 +4522,7 @@ local function bedWarsAutoOreStep()
     BedWars.ItemBusy = false
 end
 
-local bedWarsMarks = { Players = {}, Beds = {}, Ores = {}, Enchants = {}, Drops = {} }
+local bedWarsMarks = { Players = {}, Beds = {}, Ores = {}, Enchants = {} }
 local bedCandidates, oreCandidates, enchantCandidates = {}, {}, {}
 local function indexBedWarsMapNode(node)
     if node:IsA("BasePart") and node.Name:lower() == "bed" then
@@ -4540,13 +4612,21 @@ local function bedWarsToolTier(name)
     end
     return 0
 end
-local function bedWarsBedTool(inventory)
+local function bedWarsBedTool(inventory, block)
     local best, bestKind, bestTier
+    local blockName = block and block.Name:lower() or "bed"
+    local preferred = blockName:find("wool", 1, true) and "shear"
+        or (blockName:find("stone", 1, true) or blockName:find("ceramic", 1, true)
+            or blockName:find("obsidian", 1, true)) and "pickaxe" or "axe"
     for _, item in ipairs(inventory:GetChildren()) do
         local name = item.Name:lower()
-        local kind = name:find("axe", 1, true) and not name:find("pickaxe", 1, true) and 3
-            or name:find("pickaxe", 1, true) and 2
-            or name:find("shear", 1, true) and 1 or 0
+        local toolKind = name:find("pickaxe", 1, true) and "pickaxe"
+            or name:find("axe", 1, true) and "axe"
+            or name:find("shear", 1, true) and "shear" or nil
+        local kind = toolKind == preferred and 4
+            or toolKind == "axe" and 3
+            or toolKind == "pickaxe" and 2
+            or toolKind == "shear" and 1 or 0
         local tier = bedWarsToolTier(name)
         if kind > 0 and (not best or kind > bestKind
             or kind == bestKind and tier > bestTier) then
@@ -4555,8 +4635,26 @@ local function bedWarsBedTool(inventory)
     end
     return best or bedWarsHeldItem()
 end
+local function bedWarsRayToBedTarget(breaker, root, bed)
+    if not oreSelectorChecked then
+        bedWarsRayToOre(breaker, bed)
+    end
+    local selector = breaker.clientManager and breaker.clientManager:getBlockSelector()
+    local origin = root.Position + Vector3.new(0, 1, 0)
+    local direction = bed.Position - origin
+    if selector and oreSelectorMode and direction.Magnitude > 0.01 then
+        local ray = Ray.new(origin, direction.Unit * math.min(18, breaker.range or 18))
+        local ok, info = pcall(selector.getMouseInfo, selector, oreSelectorMode,
+            { ray = ray, range = breaker.range })
+        if ok and info and info.target and info.target.blockInstance then
+            return ray, info.target.blockInstance
+        end
+    end
+    local ray = bedWarsRayToOre(breaker, bed)
+    return ray, ray and bed or nil
+end
 bedWarsNearbyEnemyBed = function(root)
-    local nearest, distance = nil, 18
+    local nearest, distance = nil, BedWars.AutoBedRange
     local ownTeam = LocalPlayer.Team
     if not ownTeam then return nil end
     for bed in pairs(bedCandidates) do
@@ -4583,17 +4681,15 @@ local function bedWarsAutoBedStep()
     local bed = bedWarsNearbyEnemyBed(root)
     local inventory = bedWarsInventory()
     if not bed or not inventory then return end
-    local tool = bedWarsBedTool(inventory)
-    if not tool or tool.Parent ~= inventory then return end
     local breaker = bedWarsBlockBreaker()
     if not breaker then return end
     BedWars.ItemBusy = true
     local previous = bedWarsHeldItem()
+    local lastTool
     local ok, err = pcall(function()
-        if not bedWarsEquip(tool) then return end
         while BedWars.Running and BedWars.AutoBedOn and bed:IsDescendantOf(workspace)
             and bed.Transparency < 0.95 and LocalPlayer.Character == character
-            and humanoid.Health > 0 and tool.Parent == inventory do
+            and humanoid.Health > 0 do
             local currentTeam = LocalPlayer.Team
             local bedColor, verified = bedWarsTeamColor(bed)
             if not currentTeam or not verified then break end
@@ -4601,11 +4697,20 @@ local function bedWarsAutoBedStep()
             if math.abs(bedColor.R - ownColor.R) < 0.08
                 and math.abs(bedColor.G - ownColor.G) < 0.08
                 and math.abs(bedColor.B - ownColor.B) < 0.08 then break end
-            if (bed.Position - root.Position).Magnitude > 18 then break end
+            if (bed.Position - root.Position).Magnitude > BedWars.AutoBedRange then break end
+            local ray, target = bedWarsRayToBedTarget(breaker, root, bed)
+            if not ray or not target then break end
+            if target ~= bed and not BedWars.AutoBedBreakCover then break end
+            if target.Name:lower() == "bed" then
+                local targetColor, targetVerified = bedWarsTeamColor(target)
+                if not targetVerified then break end
+                if (targetColor - ownColor).Magnitude < 0.14 then break end
+            end
+            local tool = bedWarsBedTool(inventory, target)
+            if not tool or tool.Parent ~= inventory then break end
             if bedWarsHeldItem() ~= tool and not bedWarsEquip(tool) then break end
-            local origin = root.Position + Vector3.new(0, 1, 0)
-            local direction = bed.Position - origin
-            if direction.Magnitude > 0.01 then
+            lastTool = tool
+            if bedWarsHeldItem() == tool then
                 local cleanup = { Tasks = {} }
                 function cleanup:GiveTask(taskItem) table.insert(self.Tasks, taskItem) end
                 function cleanup:DoCleaning()
@@ -4614,15 +4719,15 @@ local function bedWarsAutoBedStep()
                     end
                     table.clear(self.Tasks)
                 end
-                breaker:hitBlock(cleanup, Ray.new(origin, direction.Unit * 18))
+                breaker:hitBlock(cleanup, ray)
                 task.delay(0.25, function() cleanup:DoCleaning() end)
             end
-            task.wait(0.22)
+            task.wait(math.max(0.25, tonumber(breaker.cooldown) or 0.3))
         end
     end)
     if not ok then warn("Sunset Auto Bed: " .. tostring(err)) end
-    if previous and previous ~= tool and previous.Parent == inventory
-        and bedWarsHeldItem() == tool then
+    if previous and previous ~= lastTool and previous.Parent == inventory
+        and bedWarsHeldItem() == lastTool then
         pcall(bedWarsEquip, previous)
     end
     BedWars.ItemBusy = false
@@ -4691,10 +4796,9 @@ local function refreshBedWarsMap()
     if not BedWars.BedsOn then clearBedWarsMarks("Beds") end
     if not BedWars.OutlineOre then clearBedWarsMarks("Ores") end
     if not BedWars.OutlineEnchant then clearBedWarsMarks("Enchants") end
-    if not BedWars.OutlineDrops then clearBedWarsMarks("Drops") end
     if not BedWars.BedsOn and not BedWars.OutlineOre
-        and not BedWars.OutlineEnchant and not BedWars.OutlineDrops then return end
-    local seenBeds, seenOres, seenEnchants, seenDrops = {}, {}, {}, {}
+        and not BedWars.OutlineEnchant then return end
+    local seenBeds, seenOres, seenEnchants = {}, {}, {}
     local count = 0
     if BedWars.BedsOn then
         for node in pairs(bedCandidates) do
@@ -4737,25 +4841,13 @@ local function refreshBedWarsMap()
             end
         end
     end
-    if BedWars.OutlineDrops then
-        count = 0
-        for _, node in ipairs(CollectionService:GetTagged("ItemDrop")) do
-            if (node:IsA("BasePart") or node:IsA("Model"))
-                and node:IsDescendantOf(workspace) then
-                seenDrops[node] = true
-                setBedWarsMark("Drops", node, Color3.fromRGB(99, 218, 255))
-                count += 1
-                if count >= 120 then break end
-            end
-        end
-    end
     for target, mark in pairs(bedWarsMarks.Beds) do
         if not seenBeds[target] or not target.Parent then
             mark:Destroy()
             bedWarsMarks.Beds[target] = nil
         end
     end
-    for kind, seen in pairs({ Ores = seenOres, Enchants = seenEnchants, Drops = seenDrops }) do
+    for kind, seen in pairs({ Ores = seenOres, Enchants = seenEnchants }) do
         for target, mark in pairs(bedWarsMarks[kind]) do
             if not seen[target] or not target.Parent then
                 mark:Destroy()
@@ -4771,6 +4863,8 @@ function BedWars.Stop()
     BedWars.ScaffoldOn = false
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
+    BedWars.VoidWaterOn = false
+    BedWars.VoidWater.Clear()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
     BedWars.AutoBedOn = false
@@ -5145,28 +5239,38 @@ local function bedWarsSafeGround(position, character)
 end
 track(RunService.Heartbeat:Connect(function()
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
-    if not BedWars.AntiVoidOn then return end
+    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if root ~= BedWars.SafeRoot then
+        BedWars.VoidWater.Clear()
         BedWars.SafeRoot = root
         BedWars.LastSafeCFrame = nil
+        BedWars.WaterGroundY = nil
     end
     if not root or not humanoid or humanoid.Health <= 0 then return end
-    local hit, solidGround = bedWarsSafeGround(root.Position, character)
-    local grounded = humanoid.FloorMaterial ~= Enum.Material.Air and solidGround
+    local _, solidGround = bedWarsSafeGround(root.Position, character)
+    local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
+        and humanoid.FloorMaterial ~= Enum.Material.Water and solidGround
     if grounded then
         BedWars.LastSafeCFrame = root.CFrame
-    elseif BedWars.LastSafeCFrame
-        and (not hit or root.Position.Y - hit.Position.Y > 20)
-        and root.AssemblyLinearVelocity.Y < -8
-        and root.Position.Y < BedWars.LastSafeCFrame.Position.Y - 7
-        and os.clock() - (BedWars.LastVoidRescue or 0) > 0.8 then
-        BedWars.LastVoidRescue = os.clock()
-        root.CFrame = BedWars.LastSafeCFrame + Vector3.new(0, 2.5, 0)
-        root.AssemblyLinearVelocity = Vector3.zero
-        root.AssemblyAngularVelocity = Vector3.zero
+        BedWars.WaterGroundY = root.Position.Y
+    end
+    if BedWars.VoidWaterOn and BedWars.WaterGroundY
+        and root.Position.Y < BedWars.WaterGroundY - 5 then
+        BedWars.VoidWater.Place(root.Position,
+            math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4)
+    end
+    -- Keep a walker away from an unsupported edge. This does not teleport or
+    -- inject velocity, which previously caused server corrections and deaths.
+    if BedWars.AntiVoidOn and grounded and not BedWars.VoidWaterOn then
+        local move = humanoid.MoveDirection
+        if move.Magnitude > 0.05 then
+            local _, supported = bedWarsSafeGround(root.Position + move.Unit * 3.5,
+                character)
+            if not supported then humanoid:Move(Vector3.zero, false) end
+        end
     end
 end))
 task.spawn(function()
@@ -5242,6 +5346,24 @@ do
         BedWars.LastSafeCFrame = nil
         BedWars.SafeRoot = nil
     end)
+    local waterSection = gameSection(gameName, MainTab.Right, "Void Water")
+    Elements.Toggle(waterSection, "Void Water", false, function(on)
+        BedWars.VoidWaterOn = on
+        BedWars.WaterGroundY = nil
+        if not on then BedWars.VoidWater.Clear() end
+    end)
+    Elements.Slider(waterSection, "Width", 32, 128, 96, "studs", function(value)
+        BedWars.VoidWaterWidth = value
+        BedWars.VoidWater.Clear()
+    end, 4)
+    Elements.Slider(waterSection, "Depth", 48, 192, 96, "studs", function(value)
+        BedWars.VoidWaterDepth = value
+        BedWars.VoidWater.Clear()
+    end, 4)
+    Elements.Slider(waterSection, "Surface Gap", 1, 8, 3, "studs", function(value)
+        BedWars.VoidWaterGap = value
+        BedWars.VoidWater.Clear()
+    end)
     local killAuraSection = gameSection(gameName, AimTab.Left, "Kill Aura")
     Elements.Toggle(killAuraSection, "Kill Aura", false, function(on)
         BedWars.AuraOn = on
@@ -5295,6 +5417,12 @@ do
     Elements.Toggle(autoBedSection, "Auto Bed", false, function(on)
         BedWars.AutoBedOn = on
     end)
+    Elements.Slider(autoBedSection, "Reach", 6, 18, 18, "studs", function(value)
+        BedWars.AutoBedRange = value
+    end)
+    Elements.Toggle(autoBedSection, "Break Cover", true, function(on)
+        BedWars.AutoBedBreakCover = on
+    end, nil, true)
     local bedSection = gameSection(gameName, VisualsTab.Right, "Bed Outline")
     Elements.Toggle(bedSection, "Bed Outline", false, function(on) BedWars.BedsOn = on end)
     Elements.Toggle(bedSection, "Team Bed Colors", true, function(on)
@@ -5310,10 +5438,6 @@ do
     local enchantSection = gameSection(gameName, VisualsTab.Right, "Enchant Tables")
     Elements.Toggle(enchantSection, "Enchant Tables", false, function(on)
         BedWars.OutlineEnchant = on
-    end)
-    local droppedSection = gameSection(gameName, VisualsTab.Right, "Dropped Items")
-    Elements.Toggle(droppedSection, "Dropped Items", false, function(on)
-        BedWars.OutlineDrops = on
     end)
     local targetSection = gameSection(gameName, VisualsTab.Left, "Target HUD")
     Elements.Toggle(targetSection, "Target HUD", false, function(on)
@@ -5427,6 +5551,10 @@ track(RunService.RenderStepped:Connect(function()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    local camera = workspace.CurrentCamera
+    local head = character:FindFirstChild("Head")
+    local firstPerson = camera and head
+        and (camera.CFrame.Position - head.Position).Magnitude < 1.35
     if #orbitParts == 0 then
         for i = 1, 6 do
             local orb = new("Part", {
@@ -5449,6 +5577,7 @@ track(RunService.RenderStepped:Connect(function()
         orb.Color = Fun.OrbitRainbow
             and Color3.fromHSV((time * 0.06 + i / 6) % 1, 0.85, 1)
             or Fun.OrbitColor
+        orb.LocalTransparencyModifier = firstPerson and 1 or 0
     end
 end))
 task.spawn(function()
@@ -5705,32 +5834,30 @@ local function buildBedWarsUI()
         homeParent, homePosition, homeSize = activeContent.Parent,
             activeContent.Position, activeContent.Size
         activeContent.Parent = holder
-        activeContent.Position = UDim2.fromOffset(11, 38)
+        activeContent.Position = UDim2.fromOffset(11, 10)
         activeContent.Size = UDim2.new(1, -22, 0, 0)
         local layout = activeContent:FindFirstChildOfClass("UIListLayout")
         if layout then layout.Padding = UDim.new(0, 10) end
         activeHolder, activeColumn = holder, column
         column.OpenHolder = holder
         holder.Visible = true
-        -- A module column is narrower than the classic menu. Keep the toggle
-        -- name and its keybind on separate lines so neither covers the other.
+        holder.BackgroundTransparency = 1
+        TweenService:Create(holder, TweenInfo.new(0.18, Enum.EasingStyle.Quad,
+            Enum.EasingDirection.Out), { BackgroundTransparency = 0 }):Play()
+        -- Keep the keybind beside its toggle in the narrow BedWars column.
         for _, option in ipairs(ConfigControls) do
             if option.Box == box and option.Kind == "toggle" and option.Row then
                 local row = option.Row
                 local toggleName = row:FindFirstChildOfClass("TextLabel")
                 local bindButton = row:FindFirstChildOfClass("TextButton")
                 if toggleName and bindButton and bindButton.Visible then
-                    row.Size = UDim2.new(1, 0, 0, 34)
-                    toggleName.Size = UDim2.new(1, -20, 0, 17)
+                    row.Size = UDim2.new(1, 0, 0, 22)
+                    toggleName.Size = UDim2.new(1, -61, 0, 20)
                     toggleName.TextTruncate = Enum.TextTruncate.AtEnd
-                    bindButton.Position = UDim2.new(1, -76, 0, 18)
-                    bindButton.Size = UDim2.fromOffset(76, 14)
-                    bindButton.TextScaled = true
-                    if not bindButton:FindFirstChildOfClass("UITextSizeConstraint") then
-                        new("UITextSizeConstraint", {
-                            MinTextSize = 9, MaxTextSize = 12,
-                        }, bindButton)
-                    end
+                    bindButton.Position = UDim2.new(1, -40, 0, 3)
+                    bindButton.Size = UDim2.fromOffset(40, 16)
+                    bindButton.TextScaled = false
+                    bindButton.TextSize = 10
                 end
             end
         end
@@ -5740,26 +5867,27 @@ local function buildBedWarsUI()
                 local number = top and top:FindFirstChildOfClass("TextBox")
                 local bar = row:FindFirstChildOfClass("TextButton")
                 if number and bar then
-                    row.Size = UDim2.new(1, 0, 0, 60)
-                    top.Size = UDim2.new(1, 0, 0, 44)
+                    row.Size = UDim2.new(1, 0, 0, 44)
+                    top.Size = UDim2.new(1, 0, 0, 24)
                     local title = top:FindFirstChildOfClass("TextLabel")
                     if title then
-                        title.Size = UDim2.new(1, 0, 0, 18)
+                        title.Size = UDim2.new(1, -76, 0, 22)
                         title.TextTruncate = Enum.TextTruncate.AtEnd
                     end
-                    number.Position = UDim2.fromOffset(0, 20)
-                    number.Size = UDim2.fromOffset(70, 20)
-                    new("UICorner", { CornerRadius = UDim.new(0, 6) }, number)
+                    number.Position = UDim2.new(1, -76, 0, 1)
+                    number.Size = UDim2.fromOffset(44, 20)
+                    if not number:FindFirstChildOfClass("UICorner") then
+                        new("UICorner", { CornerRadius = UDim.new(0, 8) }, number)
+                    end
                     for _, button in ipairs(top:GetChildren()) do
                         if button:IsA("TextButton") then
                             button.Position = button.Text == "+"
-                                and UDim2.new(1, -43, 0, 20)
-                                or UDim2.new(1, -20, 0, 20)
-                            button.Size = UDim2.fromOffset(18, 20)
+                                and UDim2.new(1, -27, 0, 1)
+                                or UDim2.new(1, -13, 0, 1)
+                            button.Size = UDim2.fromOffset(12, 20)
                         end
                     end
-                    bar.Position = UDim2.fromOffset(0, 48)
-                    new("UICorner", { CornerRadius = UDim.new(0, 5) }, bar)
+                    bar.Position = UDim2.fromOffset(0, 31)
                 end
             end
         end
@@ -5767,7 +5895,9 @@ local function buildBedWarsUI()
             if descendant:IsA("TextLabel") or descendant:IsA("TextButton")
                 or descendant:IsA("TextBox") then
                 descendant.Font = Enum.Font.GothamMedium
-                descendant.TextSize = math.max(descendant.TextSize, 13)
+                descendant.TextSize = descendant:IsA("TextButton")
+                    and descendant.Size.X.Offset == 40 and 10
+                    or math.max(descendant.TextSize, 13)
                 if descendant:IsA("TextBox") then
                     descendant.TextSize = math.max(descendant.TextSize, 15)
                 end
@@ -5855,6 +5985,7 @@ local function buildBedWarsUI()
         { "Combat", "Auto Clicker", "Combat", "BedWars", "Auto Clicker", "Auto Clicker" },
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
+        { "Movement", "Void Water", "Movement", "BedWars", "Void Water", "Void Water" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
         { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
@@ -5864,7 +5995,6 @@ local function buildBedWarsUI()
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
         { "Visuals", "Iron Ore Outline", "Visuals", "BedWars", "Iron Ore Outline", "Iron Ore Outline" },
         { "Visuals", "Enchant Tables", "Visuals", "BedWars", "Enchant Tables", "Enchant Tables" },
-        { "Visuals", "Dropped Items", "Visuals", "BedWars", "Dropped Items", "Dropped Items" },
         { "Visuals", "Target HUD", "Visuals", "BedWars", "Target HUD", "Target HUD" },
         { "Visuals", "Session Info", "Visuals", "BedWars", "Session Info", "Session Info" },
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
@@ -5916,30 +6046,19 @@ local function buildBedWarsUI()
                 BackgroundColor3 = columnColor, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
-            new("UICorner", { CornerRadius = UDim.new(0, 7) }, card)
+            new("UICorner", { CornerRadius = UDim.new(0, 10) }, card)
             local holder
             if hasSettings then
                 holder = new("Frame", {
                     Name = name .. "Settings", Visible = false,
                     Size = UDim2.new(1, -3, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundColor3 = Color3.fromRGB(28, 20, 29),
+                    BackgroundColor3 = Color3.fromRGB(29, 21, 31),
                     BorderSizePixel = 0, LayoutOrder = index * 2 + 1,
                 }, columns[category].List)
-                new("UICorner", { CornerRadius = UDim.new(0, 11) }, holder)
-                border(holder, Color3.fromRGB(107, 67, 77))
-                new("UIPadding", { PaddingBottom = UDim.new(0, 12) }, holder)
-                local settingsTitle = label(holder, string.upper(name) .. " SETTINGS", 11, gold)
-                settingsTitle.Font = Enum.Font.GothamBold
-                settingsTitle.Position = UDim2.fromOffset(11, 9)
-                settingsTitle.Size = UDim2.new(1, -22, 0, 17)
-                settingsTitle.TextTruncate = Enum.TextTruncate.AtEnd
-                new("Frame", {
-                    Position = UDim2.fromOffset(11, 30),
-                    Size = UDim2.new(1, -22, 0, 1),
-                    BackgroundColor3 = Color3.fromRGB(91, 57, 68),
-                    BorderSizePixel = 0,
-                }, holder)
+                new("UICorner", { CornerRadius = UDim.new(0, 12) }, holder)
+                border(holder, Color3.fromRGB(88, 59, 70))
+                new("UIPadding", { PaddingBottom = UDim.new(0, 11) }, holder)
                 track(holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
                     if holder.Visible then columns[category].Reflow() end
                 end))
@@ -6060,8 +6179,14 @@ local function buildBedWarsUI()
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
                     entry.Gradient.Enabled = active
-                    entry.Card.BackgroundColor3 = active and Color3.new(1, 1, 1)
+                    local targetColor = active and Color3.new(1, 1, 1)
                         or (entry.Hovered() and cardColor or columnColor)
+                    if entry.LastColor ~= targetColor then
+                        entry.LastColor = targetColor
+                        TweenService:Create(entry.Card, TweenInfo.new(0.18,
+                            Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            { BackgroundColor3 = targetColor }):Play()
+                    end
                     entry.Name.TextColor3 = active and dark
                         or Color3.fromRGB(255, 237, 230)
                     entry.Options.TextColor3 = active and dark or muted
