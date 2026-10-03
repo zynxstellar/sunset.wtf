@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-executor-webhook-k230"
+local SUNSET_BUILD = "20261003-crosshair-movement-k231"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -69,6 +69,7 @@ local Settings = {
     MenuKey        = Enum.KeyCode.RightShift,
     FlyEnabled     = false,
     FlySpeed       = 50,
+    NoclipEnabled  = false,
     EspEnabled     = false,
     EspNames       = true,
     EspTeamCheck   = true,
@@ -2543,11 +2544,13 @@ do
     end
     Elements.Toggle(s, "Noclip", false, function(on)
         enabled = on
+        Settings.NoclipEnabled = on
         if on then applyNoclip() else restoreCollision() end
     end)
     track(RunService.Stepped:Connect(applyNoclip))
     track({ Disconnect = function()
         enabled = false
+        Settings.NoclipEnabled = false
         restoreCollision()
     end })
 end
@@ -3574,7 +3577,7 @@ BedWars = {
     FakeLagOn = false,
     KillChatOn = false, KillChatQueue = {},
     AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Sunset.wtf <3",
-    SafeWalkOn = false, InfiniteJumpOn = false,
+    InfiniteJumpOn = false,
     GravityOn = false, GravityValue = 90,
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
@@ -3613,6 +3616,7 @@ BedWars = {
     SpeedAutoJump = false, SpeedAlwaysJump = false,
     FlyOn = false, FlyMode = "Normal", FlySpeed = 23, FlyVerticalSpeed = 12,
     FlyWallCheck = true, FlyTPDown = true, FlyProgressOn = true,
+    FlyDuration = 2,
     HitBoxesOn = false, HitBoxesExpand = 14.4,
     BedProtectorOn = false, BedProtectorLayers = 1, ProtectBeds = {},
     FastConsumeOn = false, FastConsumeFactor = 0.4,
@@ -3678,12 +3682,28 @@ do
         if not ok or type(name) ~= "string" or name == "" then return "Unknown" end
         return name:sub(1, 80)
     end
-    function BedWars.WebhookSend(event)
-        if not BedWars.WebhookOn then return end
-        local url = BedWars.WebhookUrl
-        if type(url) ~= "string" or not url:match(
-            "^https://discord%.com/api/webhooks/%d+/[%w_-]+$") then return end
-        if os.clock() - (BedWars.LastWebhook or -math.huge) < 4 then return end
+    function BedWars.WebhookSend(event, report)
+        local function status(message)
+            if BedWars.WebhookStatus and BedWars.WebhookStatus.Parent then
+                BedWars.WebhookStatus.Text = message
+            end
+            if report then BedWars.Notify("Webhook", message, true) end
+        end
+        if not BedWars.WebhookOn then
+            status("Enable Webhook first")
+            return false
+        end
+        local input = BedWars.WebhookInput
+        local entered = input and input.Parent and input.Text or BedWars.WebhookUrl
+        local url = type(entered) == "string"
+            and entered:match("^%s*(.-)%s*$") or ""
+        if not url:match("^https://discord%.com/api/webhooks/%d+/[%w_-]+$") then
+            status("Enter a valid Discord webhook URL")
+            return false
+        end
+        if not report and os.clock() - (BedWars.LastWebhook or -math.huge) < 4 then
+            return false
+        end
         BedWars.LastWebhook = os.clock()
         local body = HttpService:JSONEncode({
             username = "Sunset",
@@ -3702,16 +3722,34 @@ do
         task.spawn(function()
             local requestFn = type(ENV.request) == "function" and ENV.request
                 or type(ENV.http_request) == "function" and ENV.http_request
+                or type(request) == "function" and request
+                or type(http_request) == "function" and http_request
+                or type(ENV.syn) == "table" and type(ENV.syn.request) == "function"
+                    and ENV.syn.request
+                or nil
+            local ok, response
             if requestFn then
-                pcall(requestFn, { Url = url, Method = "POST",
+                ok, response = pcall(requestFn, { Url = url, Method = "POST",
                     Headers = { ["Content-Type"] = "application/json" }, Body = body })
             else
-                pcall(function()
-                    HttpService:RequestAsync({ Url = url, Method = "POST",
+                ok, response = pcall(function()
+                    return HttpService:RequestAsync({ Url = url, Method = "POST",
                         Headers = { ["Content-Type"] = "application/json" }, Body = body })
                 end)
             end
+            local code = ok and type(response) == "table"
+                and tonumber(response.StatusCode or response.status_code
+                    or response.Status) or nil
+            if ok and ((code and code >= 200 and code < 300)
+                or (not code and type(response) == "table"
+                    and response.Success == true)) then
+                status("Sent successfully" .. (code and " (HTTP " .. code .. ")" or ""))
+            else
+                status(code and "Failed (HTTP " .. code .. ")"
+                    or "Failed: no successful HTTP response")
+            end
         end)
+        return true
     end
 end
 do
@@ -3735,7 +3773,6 @@ do
     function BedWars.StopExtraMovement()
         BedWars.GravityOn = false
         BedWars.ZoomUnlockOn = false
-        BedWars.SafeWalkOn = false
         BedWars.InfiniteJumpOn = false
         clearGravity()
         restoreZoom()
@@ -3776,22 +3813,6 @@ do
                 (workspace.Gravity - BedWars.GravityValue) * root.AssemblyMass, 0)
         else
             clearGravity()
-        end
-        if BedWars.SafeWalkOn and root and humanoid and humanoid.Health > 0
-            and humanoid.FloorMaterial ~= Enum.Material.Air
-            and humanoid.MoveDirection.Magnitude > 0.05 then
-            local ray = RaycastParams.new()
-            ray.FilterType = Enum.RaycastFilterType.Exclude
-            ray.FilterDescendantsInstances = { character }
-            local feet = root.Position - Vector3.new(0, 2, 0)
-            local move = humanoid.MoveDirection.Unit
-            if workspace:Raycast(feet, Vector3.new(0, -4, 0), ray)
-                and not workspace:Raycast(feet + move * 2.6,
-                    Vector3.new(0, -4, 0), ray) then
-                humanoid:Move(Vector3.zero, false)
-                local velocity = root.AssemblyLinearVelocity
-                root.AssemblyLinearVelocity = Vector3.new(0, velocity.Y, 0)
-            end
         end
         if BedWars.ZoomUnlockOn then
             if not zoomSnapshot then
@@ -4259,6 +4280,7 @@ local function bedWarsMeleeItem(item)
     return string.find(name, "sword", 1, true) ~= nil
         or string.find(name, "blade", 1, true) ~= nil
         or string.find(name, "scythe", 1, true) ~= nil
+        or name == "frosty_hammer"
 end
 local function bedWarsBestSword()
     local inventory = bedWarsInventory()
@@ -4302,11 +4324,11 @@ end
 function BedWars.HoldingAbility()
     local item = bedWarsHeldItem()
     if not item then return false end
+    if bedWarsMeleeItem(item) or bedWarsWoolItem(item) then return false end
     if item:GetAttribute("Ability") == true
         or item:GetAttribute("IsAbility") == true
         or item:GetAttribute("ItemType") == "ability"
         or CollectionService:HasTag(item, "Ability") then return true end
-    if bedWarsMeleeItem(item) or bedWarsWoolItem(item) then return false end
     local name = string.lower(item.Name)
     if name:find("pickaxe", 1, true) or name:match("_axe$")
         or name:find("bow", 1, true)
@@ -4348,11 +4370,24 @@ local function bedWarsVisible(character, target, origin, targetRoot, checkWalls)
     return false
 end
 local swordHitRemote, lastSwordRemoteLookup = nil, -math.huge
+function BedWars.ReleaseAuraItem()
+    local previous, sword = BedWars.AuraPreviousItem, BedWars.AuraSwordItem
+    if not previous then return end
+    if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem then return end
+    BedWars.AuraPreviousItem = nil
+    BedWars.AuraSwordItem = nil
+    if previous.Parent == bedWarsInventory() and bedWarsHeldItem() == sword then
+        BedWars.ItemBusy = true
+        pcall(bedWarsEquip, previous)
+        BedWars.ItemBusy = false
+    end
+end
 local function bedWarsAuraStep()
     if BedWars.ItemBusy then return end
-    if BedWars.HoldingAbility() then
-        BedWars.AuraStatus = "Ability equipped"
-        return
+    if BedWars.AuraPreviousItem and not BedWars.ScaffoldPreviousItem
+        and bedWarsHeldItem() ~= BedWars.AuraSwordItem then
+        BedWars.AuraPreviousItem = nil
+        BedWars.AuraSwordItem = nil
     end
     if BedWars.ScaffoldOn and BedWars.BridgingNeeded
         and os.clock() - BedWars.BridgingNeeded < 0.55 then return end
@@ -4417,6 +4452,7 @@ local function bedWarsAuraStep()
     end
     if #targets == 0 then
         BedWars.AuraStatus = "No enemy in sword range"
+        BedWars.ReleaseAuraItem()
         return
     end
     -- BedWars validates SwordHit against the item actually equipped.
@@ -4426,13 +4462,23 @@ local function bedWarsAuraStep()
             BedWars.AuraStatus = "Using held item"
             return
         end
+        if BedWars.ScaffoldPreviousItem then return end
         local sword = bedWarsBestSword()
         BedWars.AuraStatus = sword and "Equipping sword" or "No sword found"
         if sword then
             BedWars.ItemBusy = true
+            if weapon and not BedWars.AuraPreviousItem then
+                BedWars.AuraPreviousItem = weapon
+            end
             local ok = bedWarsEquip(sword)
             BedWars.ItemBusy = false
-            if not ok then BedWars.AuraStatus = "Sword equip failed" end
+            if ok then
+                BedWars.AuraSwordItem = sword
+            else
+                BedWars.AuraPreviousItem = nil
+                BedWars.AuraSwordItem = nil
+                BedWars.AuraStatus = "Sword equip failed"
+            end
         end
         return
     end
@@ -4688,7 +4734,8 @@ end
 local scaffoldPauseUntil = 0
 local function bedWarsScaffoldStep()
     if BedWars.ItemBusy then return end
-    if BedWars.HoldingAbility() then return end
+    if BedWars.HoldingAbility()
+        and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
     if os.clock() < scaffoldPauseUntil then return end
     if BedWars.ProjectilePriorityUntil
         and os.clock() < BedWars.ProjectilePriorityUntil then return end
@@ -5552,6 +5599,63 @@ BedWars.HealthDisplay = new("TextLabel", {
     TextSize = 17, TextColor3 = Color3.fromRGB(255, 210, 137),
     TextStrokeTransparency = 0.25, Visible = false,
 }, BedWars.CrosshairGui)
+BedWars.MovementHud = new("Frame", {
+    Name = "SunsetMovementHud", AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0.5, 42),
+    Size = UDim2.fromOffset(132, 0), BackgroundTransparency = 1,
+    BorderSizePixel = 0, Visible = false,
+}, BedWars.CrosshairGui)
+new("UIListLayout", {
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    Padding = UDim.new(0, 4),
+}, BedWars.MovementHud)
+BedWars.MovementRows = {}
+for _, spec in ipairs({
+    { "Fly", Color3.fromRGB(255, 131, 101) },
+    { "Noclip", Color3.fromRGB(182, 147, 255) },
+    { "Speed", Color3.fromRGB(255, 198, 111) },
+}) do
+    local row = new("Frame", {
+        Name = spec[1], Size = UDim2.fromOffset(116, 23),
+        BackgroundColor3 = Color3.fromRGB(28, 21, 31),
+        BackgroundTransparency = 0.08, BorderSizePixel = 0,
+        Visible = false,
+    }, BedWars.MovementHud)
+    new("UICorner", { CornerRadius = UDim.new(0, 7) }, row)
+    border(row, Color3.fromRGB(89, 66, 77))
+    local accent = new("Frame", {
+        Position = UDim2.fromOffset(5, 5), Size = UDim2.fromOffset(3, 13),
+        BackgroundColor3 = spec[2], BorderSizePixel = 0,
+    }, row)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, accent)
+    local title = label(row, spec[1], 12, spec[2], Enum.TextXAlignment.Center)
+    title.Font = Enum.Font.GothamBold
+    title.Position = UDim2.fromOffset(10, 3)
+    title.Size = UDim2.new(1, -16, 0, 17)
+    BedWars.MovementRows[spec[1]] = row
+end
+function BedWars.UpdateMovementHud()
+    local active = {}
+    if BedWars.FlyOn then table.insert(active, "Fly") end
+    if Settings.NoclipEnabled then table.insert(active, "Noclip") end
+    if BedWars.SpeedOn then table.insert(active, "Speed") end
+    table.sort(active, function(a, b)
+        return #a == #b and a < b or #a > #b
+    end)
+    for _, row in pairs(BedWars.MovementRows) do row.Visible = false end
+    for order, name in ipairs(active) do
+        local row = BedWars.MovementRows[name]
+        row.LayoutOrder = order
+        row.Visible = true
+    end
+    BedWars.MovementHud.Visible = Settings.SelectedGame == "BedWars"
+        and not anyMenuVisible() and #active > 0
+    BedWars.MovementHud.Size = UDim2.fromOffset(132,
+        math.max(0, #active * 27 - 4))
+    BedWars.HealthDisplay.Position = UDim2.new(0.5, 0, 0.5,
+        BedWars.MovementHud.Visible and (52 + #active * 27) or 24)
+end
 BedWars.FlyProgress = new("Frame", {
     Name = "SunsetFlyProgress", AnchorPoint = Vector2.new(0.5, 1),
     Position = UDim2.new(0.5, 0, 1, -170),
@@ -5576,42 +5680,6 @@ for _, spec in ipairs({
     new("Frame", { Position = UDim2.fromOffset(spec.x, spec.y),
         Size = UDim2.fromOffset(spec.w, spec.h), BorderSizePixel = 0,
         BackgroundColor3 = BedWars.CrosshairColor }, bedWarsCrosshair)
-end
-do
-    local nativeGui, nativeEnabled, mouseEnabled
-    function BedWars.SyncCrosshair()
-        local active = BedWars.Running and Settings.SelectedGame == "BedWars"
-            and BedWars.CrosshairOn
-        local found = PlayerGui:FindFirstChild("CrosshairGui")
-        if found ~= nativeGui then
-            if nativeGui and nativeGui.Parent and nativeEnabled ~= nil then
-                nativeGui.Enabled = nativeEnabled
-            end
-            nativeGui, nativeEnabled = found, nil
-        end
-        if active then
-            if nativeGui and nativeGui:IsA("ScreenGui") then
-                if nativeEnabled == nil then nativeEnabled = nativeGui.Enabled end
-                nativeGui.Enabled = false
-            end
-            if not anyMenuVisible() then
-                if mouseEnabled == nil then mouseEnabled = UIS.MouseIconEnabled end
-                UIS.MouseIconEnabled = false
-            elseif mouseEnabled ~= nil then
-                UIS.MouseIconEnabled = mouseEnabled
-                mouseEnabled = nil
-            end
-        else
-            if nativeGui and nativeGui.Parent and nativeEnabled ~= nil then
-                nativeGui.Enabled = nativeEnabled
-            end
-            nativeEnabled = nil
-            if mouseEnabled ~= nil then
-                UIS.MouseIconEnabled = mouseEnabled
-                mouseEnabled = nil
-            end
-        end
-    end
 end
 local function bedWarsRestoreExtras()
     for key in pairs(bedWarsPatched) do bedWarsRestorePatch(key) end
@@ -5658,8 +5726,8 @@ local function bedWarsRestoreExtras()
     bedWarsHitBoxFunction, bedWarsHitBoxOriginal = nil, nil
     bedWarsCrosshair.Visible = false
     BedWars.CrosshairOn = false
-    BedWars.SyncCrosshair()
     BedWars.HealthDisplay.Visible = false
+    BedWars.MovementHud.Visible = false
     BedWars.FlyProgress.Visible = false
 end
 BedWars.LastDrop = 0
@@ -6211,8 +6279,10 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.FlyProgress.Visible = active and BedWars.FlyProgressOn
             and BedWars.FlyAirStart ~= nil
         if BedWars.FlyProgress.Visible then
-            local remain = math.max(0, 2.6 - (os.clock() - BedWars.FlyAirStart))
-            BedWars.FlyProgressFill.Size = UDim2.fromScale(remain / 2.6, 1)
+            local remain = math.max(0, BedWars.FlyDuration
+                - (os.clock() - BedWars.FlyAirStart))
+            BedWars.FlyProgressFill.Size = UDim2.fromScale(
+                remain / BedWars.FlyDuration, 1)
             BedWars.FlyProgressText.Text = string.format("%.1fs", remain)
         end
     end
@@ -6429,7 +6499,7 @@ track(RunService.Heartbeat:Connect(function()
     end
     bedWarsCrosshair.Visible = BedWars.CrosshairOn
         and Settings.SelectedGame == "BedWars"
-    BedWars.SyncCrosshair()
+    BedWars.UpdateMovementHud()
     BedWars.HealthDisplay.Visible = BedWars.HealthDisplayOn
         and Settings.SelectedGame == "BedWars"
     if BedWars.HealthDisplay.Visible then
@@ -6604,7 +6674,7 @@ track(RunService.PreSimulation:Connect(function(delta)
         end
         root.CFrame += advance
         if not ballooned and BedWars.FlyTPDown and BedWars.FlyAirStart
-            and os.clock() - BedWars.FlyAirStart > 2 then
+            and os.clock() - BedWars.FlyAirStart > BedWars.FlyDuration then
             if BedWars.FlyReturnY and os.clock() >= (BedWars.FlyReturnAt or 0) then
                 root.CFrame = CFrame.lookAlong(Vector3.new(root.Position.X,
                     BedWars.FlyReturnY, root.Position.Z), root.CFrame.LookVector)
@@ -6721,6 +6791,7 @@ function BedWars.Stop()
     if bedWarsFOVSignal then bedWarsFOVSignal:Disconnect() end
     bedWarsRestoreExtras()
     bedWarsReleaseScaffoldItem()
+    BedWars.ReleaseAuraItem()
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
@@ -7641,6 +7712,8 @@ task.spawn(function()
         if Settings.SelectedGame == "BedWars" and BedWars.AuraOn then
             local ok, err = pcall(bedWarsAuraStep)
             if not ok then BedWars.AuraStatus = "Aura error: " .. tostring(err):sub(1, 55) end
+        else
+            BedWars.ReleaseAuraItem()
         end
         task.wait(0.3)
     end
@@ -8317,12 +8390,6 @@ do
         Settings.ModuleListOn = on
     end, nil, true)
     do
-        local safe = gameSection(gameName, MainTab.Left, "Safe Walk")
-        Elements.Toggle(safe, "Safe Walk", false, function(on)
-            BedWars.SafeWalkOn = on
-        end)
-    end
-    do
         local jump = gameSection(gameName, MainTab.Left, "Infinite Jump")
         Elements.Toggle(jump, "Infinite Jump", false, function(on)
             BedWars.InfiniteJumpOn = on
@@ -8379,8 +8446,14 @@ do
                 if BedWars.WebhookOn then BedWars.WebhookSend("Client started") end
             end) end
         end)
-        Elements.TextBox(webhook, "Discord URL", "Paste webhook URL locally",
-            function(value) BedWars.WebhookUrl = value end, "", false)
+        BedWars.WebhookInput = Elements.TextBox(webhook, "Discord URL",
+            "Paste webhook URL locally", function(value)
+                BedWars.WebhookUrl = value
+            end, "", false):FindFirstChildOfClass("TextBox")
+        Elements.Button(webhook, "Test Webhook", function()
+            BedWars.WebhookSend("Test event", true)
+        end)
+        BedWars.WebhookStatus = Elements.Label(webhook, "Not tested")
     end
     do
         local waterSpeed = gameSection(gameName, Tabs["Dev Tools"].Left, "Water Speed")
@@ -9060,7 +9133,6 @@ local function buildBedWarsUI()
         { "Movement", "Launch", "Movement", "BedWars", "Launch", "Launch" },
         { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
         { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
-        { "Movement", "Safe Walk", "Movement", "BedWars", "Safe Walk", "Safe Walk" },
         { "Movement", "Infinite Jump", "Movement", "BedWars", "Infinite Jump", "Infinite Jump" },
         { "Movement", "Gravity", "Movement", "BedWars", "Gravity", "Gravity" },
         { "Movement", "Auto Balloon", "Movement", "BedWars", "Auto Balloon", "Auto Balloon" },
@@ -9180,7 +9252,6 @@ local function buildBedWarsUI()
         ["Marcel Abilities"] = "Shows exposed ability progress and ready alerts.",
         ["Sophia Abilities"] = "Shows exposed ability progress and ready alerts.",
         ["Void Regent Abilities"] = "Shows exposed ability progress and ready alerts.",
-        ["Safe Walk"] = "Stops movement at an unsupported edge while grounded.",
         ["Infinite Jump"] = "Press jump again in the air to jump repeatedly.",
         ["Gravity"] = "Adjusts gravity on your character locally.",
         ["Zoom Unlocker"] = "Allows the camera to zoom farther out.",
