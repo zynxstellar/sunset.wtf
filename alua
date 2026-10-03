@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-auto-reply-k223"
+local SUNSET_BUILD = "20261003-devtools-motion-k224"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -121,6 +121,38 @@ for _, name in ipairs({ "MenuUI", "EspGui" }) do
 end
 
 local Gui = new("ScreenGui", { Name = "MenuUI", DisplayOrder = 2147483647, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, PlayerGui)
+ENV.SunsetLoading = {}
+ENV.SunsetLoading.Overlay = new("Frame", {
+    Name = "SunsetLoading", Size = UDim2.fromScale(1, 1),
+    BackgroundColor3 = Color3.fromRGB(19, 13, 24),
+    BackgroundTransparency = 0.13, BorderSizePixel = 0,
+    ZIndex = 1000,
+}, Gui)
+ENV.SunsetLoading.Logo = label(ENV.SunsetLoading.Overlay, "SUNSET.WTF", 45,
+    Color3.fromRGB(255, 202, 135), Enum.TextXAlignment.Center)
+ENV.SunsetLoading.Logo.Font = Enum.Font.GothamBold
+ENV.SunsetLoading.Logo.Position = UDim2.new(0.5, -200, 0.37, 0)
+ENV.SunsetLoading.Logo.Size = UDim2.fromOffset(400, 56)
+ENV.SunsetLoading.Logo.ZIndex = 1001
+ENV.SunsetLoading.Status = label(ENV.SunsetLoading.Overlay, "Preparing Sunset...", 16,
+    Color3.fromRGB(255, 232, 217), Enum.TextXAlignment.Center)
+ENV.SunsetLoading.Status.Font = Enum.Font.GothamMedium
+ENV.SunsetLoading.Status.Position = UDim2.new(0.5, -200, 0.52, 0)
+ENV.SunsetLoading.Status.Size = UDim2.fromOffset(400, 24)
+ENV.SunsetLoading.Status.ZIndex = 1001
+ENV.SunsetLoading.Track = new("Frame", {
+    Position = UDim2.new(0.5, -150, 0.58, 0), Size = UDim2.fromOffset(300, 5),
+    BackgroundColor3 = Color3.fromRGB(59, 45, 55), BorderSizePixel = 0,
+    ZIndex = 1001,
+}, ENV.SunsetLoading.Overlay)
+new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Track)
+ENV.SunsetLoading.Fill = new("Frame", {
+    Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = Color3.fromRGB(255, 146, 78),
+    BorderSizePixel = 0, ZIndex = 1002,
+}, ENV.SunsetLoading.Track)
+new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
+TweenService:Create(ENV.SunsetLoading.Fill, TweenInfo.new(1.2, Enum.EasingStyle.Quad,
+    Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.88, 1) }):Play()
 
 local Window = new("Frame", {
     Name = "Window", Visible = true,
@@ -284,7 +316,7 @@ end
 local Tabs, currentTab = {}, nil
 local function makeTab(name)
     local btn = new("TextButton", {
-        Size = UDim2.new(1 / 7, -6, 0, 26),
+        Size = UDim2.new(1 / 8, -6, 0, 26),
         BackgroundColor3 = T.inner,
         BorderSizePixel = 0,
         Text = name,
@@ -2178,6 +2210,7 @@ local VisualsTab = makeTab("Visuals")
 local AimTab = makeTab("Combat")
 local MiscTab = makeTab("Misc")
 local FunTab = makeTab("Fun")
+makeTab("Dev Tools")
 local SettingsTab = makeTab("Sunset")
 -- ---- Aim
 Settings.AimEnabled = false
@@ -3536,6 +3569,10 @@ BedWars = {
     FakeLagOn = false, FakeLagHold = 0.18, FakeLagRelease = 0.08,
     KillChatOn = false, KillChatQueue = {},
     AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Sunset.wtf <3",
+    SafeWalkOn = false, InfiniteJumpOn = false,
+    GravityOn = false, GravityValue = 90,
+    NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
+    ReportDetectorOn = false,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
@@ -3568,6 +3605,295 @@ BedWars = {
     Session = { Seconds = 0, Kills = 0, Beds = 0, Wins = 0, Games = 0,
         LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
 }
+do
+    local gravityRoot, gravityAttachment, gravityForce
+    local zoomSnapshot
+    local lastJump = 0
+    local function clearGravity()
+        if gravityForce then gravityForce:Destroy() gravityForce = nil end
+        if gravityAttachment then gravityAttachment:Destroy() gravityAttachment = nil end
+        gravityRoot = nil
+    end
+    local function restoreZoom()
+        if not zoomSnapshot then return end
+        LocalPlayer.CameraMaxZoomDistance = math.max(
+            LocalPlayer.CameraMinZoomDistance, zoomSnapshot.Max)
+        LocalPlayer.CameraMinZoomDistance = zoomSnapshot.Min
+        LocalPlayer.CameraMaxZoomDistance = zoomSnapshot.Max
+        if not anyMenuVisible() then LocalPlayer.CameraMode = zoomSnapshot.Mode end
+        zoomSnapshot = nil
+    end
+    function BedWars.StopExtraMovement()
+        BedWars.GravityOn = false
+        BedWars.ZoomUnlockOn = false
+        BedWars.SafeWalkOn = false
+        BedWars.InfiniteJumpOn = false
+        clearGravity()
+        restoreZoom()
+    end
+    track(UIS.JumpRequest:Connect(function()
+        if not BedWars.Running or not BedWars.InfiniteJumpOn
+            or Settings.SelectedGame ~= "BedWars"
+            or os.clock() - lastJump < 0.22 then return end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not root or humanoid.Health <= 0 or humanoid.SeatPart
+            or humanoid.FloorMaterial ~= Enum.Material.Air then return end
+        lastJump = os.clock()
+        local jumpSpeed = humanoid.UseJumpPower and humanoid.JumpPower
+            or math.sqrt(2 * workspace.Gravity * humanoid.JumpHeight)
+        root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X,
+            math.max(jumpSpeed, 35), root.AssemblyLinearVelocity.Z)
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end))
+    track(RunService.Heartbeat:Connect(function()
+        if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if BedWars.GravityOn and root and humanoid and humanoid.Health > 0 then
+            if gravityRoot ~= root or not gravityForce or not gravityForce.Parent then
+                clearGravity()
+                gravityRoot = root
+                gravityAttachment = new("Attachment", { Name = "SunsetGravity" }, root)
+                gravityForce = new("VectorForce", {
+                    Name = "SunsetGravityForce", Attachment0 = gravityAttachment,
+                    RelativeTo = Enum.ActuatorRelativeTo.World,
+                    ApplyAtCenterOfMass = true,
+                }, root)
+            end
+            gravityForce.Force = Vector3.new(0,
+                (workspace.Gravity - BedWars.GravityValue) * root.AssemblyMass, 0)
+        else
+            clearGravity()
+        end
+        if BedWars.SafeWalkOn and root and humanoid and humanoid.Health > 0
+            and humanoid.FloorMaterial ~= Enum.Material.Air
+            and humanoid.MoveDirection.Magnitude > 0.05 then
+            local ray = RaycastParams.new()
+            ray.FilterType = Enum.RaycastFilterType.Exclude
+            ray.FilterDescendantsInstances = { character }
+            local feet = root.Position - Vector3.new(0, 2, 0)
+            local move = humanoid.MoveDirection.Unit
+            if workspace:Raycast(feet, Vector3.new(0, -4, 0), ray)
+                and not workspace:Raycast(feet + move * 2.6,
+                    Vector3.new(0, -4, 0), ray) then
+                humanoid:Move(Vector3.zero, false)
+                local velocity = root.AssemblyLinearVelocity
+                root.AssemblyLinearVelocity = Vector3.new(0, velocity.Y, 0)
+            end
+        end
+        if BedWars.ZoomUnlockOn then
+            if not zoomSnapshot then
+                zoomSnapshot = { Min = LocalPlayer.CameraMinZoomDistance,
+                    Max = LocalPlayer.CameraMaxZoomDistance, Mode = LocalPlayer.CameraMode }
+            end
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            LocalPlayer.CameraMinZoomDistance = 0.5
+            LocalPlayer.CameraMaxZoomDistance = BedWars.ZoomDistance
+        else
+            restoreZoom()
+        end
+    end))
+end
+do
+    local tags = {}
+    local function clearTags()
+        for player, tag in pairs(tags) do tag:Destroy() tags[player] = nil end
+    end
+    BedWars.ClearNameTags = clearTags
+    task.spawn(function()
+        while BedWars.Running do
+            if BedWars.NameTagsOn and Settings.SelectedGame == "BedWars" then
+                for _, player in ipairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer then
+                        local character = player.Character
+                        local head = character and character:FindFirstChild("Head")
+                        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                        local existing = tags[player]
+                        if head and humanoid and humanoid.Health > 0 then
+                            if not existing or not existing.Parent
+                                or existing.Adornee ~= head then
+                                if existing then existing:Destroy() end
+                                local tag = new("BillboardGui", {
+                                    Name = "SunsetNameTag", Adornee = head,
+                                    AlwaysOnTop = true, Size = UDim2.fromOffset(170, 36),
+                                    StudsOffsetWorldSpace = Vector3.new(0, 2.2, 0),
+                                    MaxDistance = 250,
+                                }, PlayerGui)
+                                local textLabel = label(tag, "", 14,
+                                    Color3.fromRGB(255, 105, 115), Enum.TextXAlignment.Center)
+                                textLabel.Name = "Name"
+                                textLabel.Size = UDim2.fromScale(1, 1)
+                                textLabel.Font = Enum.Font.GothamBold
+                                textLabel.TextStrokeTransparency = 0.25
+                                textLabel.TextStrokeColor3 = Color3.fromRGB(20, 12, 18)
+                                tags[player] = tag
+                                existing = tag
+                            end
+                            local textLabel = existing:FindFirstChild("Name")
+                            if textLabel then
+                                textLabel.Text = player.DisplayName .. "  "
+                                    .. tostring(math.ceil(humanoid.Health)) .. " HP"
+                                textLabel.TextColor3 = player.Team and player.Team == LocalPlayer.Team
+                                    and Color3.fromRGB(104, 255, 143)
+                                    or Color3.fromRGB(255, 115, 122)
+                            end
+                        elseif existing then
+                            existing:Destroy()
+                            tags[player] = nil
+                        end
+                    end
+                end
+                for player, tag in pairs(tags) do
+                    if not player.Parent then tag:Destroy() tags[player] = nil end
+                end
+            else
+                clearTags()
+            end
+            task.wait(0.15)
+        end
+        clearTags()
+    end)
+end
+do
+    local explorer = new("Frame", {
+        Name = "SunsetExplorer", Visible = false, Active = true,
+        Size = UDim2.fromOffset(760, 480),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.fromRGB(29, 21, 31),
+        BorderSizePixel = 0,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 12) }, explorer)
+    border(explorer, Color3.fromRGB(255, 137, 91))
+    local title = label(explorer, "SUNSET  /  EXPLORER", 19,
+        Color3.fromRGB(255, 206, 154))
+    title.Font = Enum.Font.GothamBold
+    title.Position = UDim2.fromOffset(17, 10)
+    title.Size = UDim2.fromOffset(400, 28)
+    title.Active = true
+    local close = new("TextButton", {
+        Position = UDim2.new(1, -42, 0, 8), Size = UDim2.fromOffset(30, 30),
+        Text = "×", Font = Enum.Font.GothamBold, TextSize = 20,
+        TextColor3 = Color3.fromRGB(255, 226, 210),
+        BackgroundColor3 = Color3.fromRGB(55, 38, 48), BorderSizePixel = 0,
+    }, explorer)
+    new("UICorner", { CornerRadius = UDim.new(0, 8) }, close)
+    close.MouseButton1Click:Connect(function() explorer.Visible = false end)
+    local search = new("TextBox", {
+        Position = UDim2.fromOffset(14, 48), Size = UDim2.fromOffset(445, 32),
+        Text = "", PlaceholderText = "Search instances", ClearTextOnFocus = false,
+        Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = Color3.fromRGB(255, 237, 226),
+        PlaceholderColor3 = Color3.fromRGB(170, 148, 154),
+        BackgroundColor3 = Color3.fromRGB(48, 34, 44), BorderSizePixel = 0,
+    }, explorer)
+    new("UICorner", { CornerRadius = UDim.new(0, 8) }, search)
+    local tree = new("ScrollingFrame", {
+        Position = UDim2.fromOffset(14, 88), Size = UDim2.fromOffset(445, 374),
+        BackgroundColor3 = Color3.fromRGB(38, 28, 39), BorderSizePixel = 0,
+        ScrollBarThickness = 4, CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    }, explorer)
+    new("UICorner", { CornerRadius = UDim.new(0, 8) }, tree)
+    new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, tree)
+    local details = label(explorer, "Select an instance to inspect it.", 13,
+        Color3.fromRGB(237, 218, 211))
+    details.Position = UDim2.fromOffset(477, 53)
+    details.Size = UDim2.fromOffset(267, 360)
+    details.TextYAlignment = Enum.TextYAlignment.Top
+    details.TextWrapped = true
+    details.Font = Enum.Font.GothamMedium
+    local copyPath = new("TextButton", {
+        Position = UDim2.fromOffset(477, 428), Size = UDim2.fromOffset(267, 30),
+        Text = "Copy path", Font = Enum.Font.GothamMedium, TextSize = 13,
+        TextColor3 = Color3.fromRGB(255, 231, 215),
+        BackgroundColor3 = Color3.fromRGB(96, 51, 61), BorderSizePixel = 0,
+    }, explorer)
+    new("UICorner", { CornerRadius = UDim.new(0, 8) }, copyPath)
+    local expanded, selected = {}, nil
+    local roots = { workspace, game:GetService("ReplicatedStorage"), Players,
+        Lighting, game:GetService("StarterGui"), game:GetService("SoundService") }
+    local function showDetails(instance)
+        selected = instance
+        local lines = { instance.Name, instance.ClassName, "", instance:GetFullName(),
+            "", "Children: " .. tostring(#instance:GetChildren()) }
+        for name, value in pairs(instance:GetAttributes()) do
+            table.insert(lines, name .. ": " .. tostring(value))
+        end
+        if instance:IsA("BasePart") then
+            table.insert(lines, "Position: " .. tostring(instance.Position))
+            table.insert(lines, "Size: " .. tostring(instance.Size))
+            table.insert(lines, "CanCollide: " .. tostring(instance.CanCollide))
+        end
+        details.Text = table.concat(lines, "\n")
+    end
+    copyPath.MouseButton1Click:Connect(function()
+        if selected and typeof(setclipboard) == "function" then
+            pcall(setclipboard, selected:GetFullName())
+        end
+    end)
+    local render
+    render = function()
+        for _, child in ipairs(tree:GetChildren()) do
+            if child:IsA("GuiObject") then child:Destroy() end
+        end
+        local count = 0
+        local function addRow(instance, depth)
+            if count >= 240 then return end
+            count += 1
+            local children = instance:GetChildren()
+            local row = new("TextButton", {
+                Size = UDim2.new(1, -5, 0, 25), LayoutOrder = count,
+                BackgroundTransparency = count % 2 == 0 and 0.78 or 1,
+                BackgroundColor3 = Color3.fromRGB(85, 54, 70),
+                Text = string.rep("  ", math.min(depth, 12))
+                    .. (#children > 0 and (expanded[instance] and "▾ " or "▸ ") or "  ")
+                    .. instance.Name .. "  [" .. instance.ClassName .. "]",
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Font = Enum.Font.GothamMedium, TextSize = 12,
+                TextColor3 = Color3.fromRGB(245, 225, 216),
+                BorderSizePixel = 0,
+            }, tree)
+            row.MouseButton1Click:Connect(function()
+                showDetails(instance)
+                if #children > 0 then expanded[instance] = not expanded[instance] render() end
+            end)
+            if expanded[instance] then
+                table.sort(children, function(a, b) return a.Name < b.Name end)
+                for _, child in ipairs(children) do addRow(child, depth + 1) end
+            end
+        end
+        local query = search.Text:lower():match("^%s*(.-)%s*$")
+        if query == "" then
+            for _, root in ipairs(roots) do addRow(root, 0) end
+        else
+            local scanned = 0
+            for _, instance in ipairs(game:GetDescendants()) do
+                scanned += 1
+                if instance.Name:lower():find(query, 1, true) then
+                    addRow(instance, 0)
+                end
+                if count >= 120 or scanned >= 25000 then break end
+            end
+        end
+    end
+    search:GetPropertyChangedSignal("Text"):Connect(function()
+        local requested = search.Text
+        task.delay(0.15, function()
+            if explorer.Visible and search.Text == requested then render() end
+        end)
+    end)
+    makeDraggable(explorer, title)
+    function BedWars.OpenExplorer()
+        if BedWarsUI then BedWarsUI.Visible = false end
+        explorer.Visible = true
+        render()
+    end
+end
 BedWars.VoidWater = {}
 do
 local voidWaterSnapshot, voidWaterCorner, voidWaterCenter
@@ -5815,6 +6141,10 @@ do
     end))
 end
 function BedWars.Stop()
+    BedWars.StopExtraMovement()
+    BedWars.NameTagsOn = false
+    BedWars.ClearNameTags()
+    BedWars.ReportDetectorOn = false
     BedWars.FakeLagOn = false
     BedWars.FakeLagReset()
     BedWars.FOVOn = false
@@ -5831,6 +6161,7 @@ function BedWars.Stop()
     BedWars.WaterFightOn = false
     BedWars.AutoPlayAgainOn = false
     BedWars.KillChatOn = false
+    BedWars.AutoReplyOn = false
     table.clear(BedWars.KillChatQueue)
     if BedWars.KillChatDeathConnection then
         BedWars.KillChatDeathConnection:Disconnect()
@@ -6035,12 +6366,24 @@ do
     local lastByPlayer = {}
     local lastGlobal = -100
     local lastSeen = {}
+    BedWars.LastReportByPlayer = {}
     local function onMessage(player, message)
-        if not BedWars.Running or not BedWars.AutoReplyOn
-            or Settings.SelectedGame ~= "BedWars"
+        if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
             or not player or player == LocalPlayer or type(message) ~= "string" then return end
         local lower = message:lower()
         if lower == "" then return end
+        if BedWars.ReportDetectorOn and lower:find("report", 1, true)
+            and os.clock() - (BedWars.LastReportByPlayer[player.UserId] or -100) > 15 then
+            BedWars.LastReportByPlayer[player.UserId] = os.clock()
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "Sunset - Report Chat Alert",
+                    Text = player.DisplayName .. " mentioned reporting in chat",
+                    Duration = 6,
+                })
+            end)
+        end
+        if not BedWars.AutoReplyOn then return end
         if BedWars.AutoReplyMode == "Mentions" then
             local username = LocalPlayer.Name:lower()
             local display = LocalPlayer.DisplayName:lower()
@@ -6818,6 +7161,55 @@ do
     Elements.Toggle(listSection, "Module List", true, function(on)
         Settings.ModuleListOn = on
     end, nil, true)
+    do
+        local safe = gameSection(gameName, MainTab.Left, "Safe Walk")
+        Elements.Toggle(safe, "Safe Walk", false, function(on)
+            BedWars.SafeWalkOn = on
+        end)
+    end
+    do
+        local jump = gameSection(gameName, MainTab.Left, "Infinite Jump")
+        Elements.Toggle(jump, "Infinite Jump", false, function(on)
+            BedWars.InfiniteJumpOn = on
+        end)
+    end
+    do
+        local gravity = gameSection(gameName, MainTab.Right, "Gravity")
+        Elements.Toggle(gravity, "Gravity", false, function(on)
+            BedWars.GravityOn = on
+        end)
+        Elements.Slider(gravity, "Strength", 30, 196, 90, "", function(value)
+            BedWars.GravityValue = value
+        end)
+    end
+    do
+        local zoom = gameSection(gameName, PlayerTab.Right, "Zoom Unlocker")
+        Elements.Toggle(zoom, "Zoom Unlocker", false, function(on)
+            BedWars.ZoomUnlockOn = on
+        end)
+        Elements.Slider(zoom, "Max Zoom", 50, 500, 500, "studs", function(value)
+            BedWars.ZoomDistance = value
+        end)
+    end
+    do
+        local names = gameSection(gameName, VisualsTab.Right, "Name Tags")
+        Elements.Toggle(names, "Name Tags", false, function(on)
+            BedWars.NameTagsOn = on
+            if not on then BedWars.ClearNameTags() end
+        end)
+    end
+    do
+        local reports = gameSection(gameName, MiscTab.Right, "Report Detector")
+        Elements.Toggle(reports, "Report Detector", false, function(on)
+            BedWars.ReportDetectorOn = on
+        end)
+    end
+    do
+        local dex = gameSection(gameName, Tabs["Dev Tools"].Left, "DEX")
+        Elements.Button(dex, "Open Explorer", function()
+            BedWars.OpenExplorer()
+        end)
+    end
     local afkSection = gameSection(gameName, MiscTab.Right, "Anti AFK")
     Elements.Toggle(afkSection, "Anti AFK", false, function(on)
         BedWars.AntiAFKOn = on
@@ -7040,7 +7432,7 @@ local function buildBedWarsUI()
     local muted = Color3.fromRGB(192, 169, 174)
     BedWarsUI = new("Frame", {
         Name = "BedWarsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(1500, 650),
+        Size = UDim2.fromOffset(1740, 650),
         Position = UDim2.new(0.5, 0, 0, 12),
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -7051,7 +7443,7 @@ local function buildBedWarsUI()
         local camera = workspace.CurrentCamera
         if not camera then return end
         boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
-            (camera.ViewportSize.X - 32) / 1500,
+            (camera.ViewportSize.X - 32) / 1740,
             (camera.ViewportSize.Y - 32) / 650))
     end
     fitBoard()
@@ -7075,7 +7467,7 @@ local function buildBedWarsUI()
     subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(580, 17),
+        Position = UDim2.fromOffset(700, 17),
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
@@ -7110,7 +7502,7 @@ local function buildBedWarsUI()
     }, header)
     new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
     closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
-    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Sunset" }
+    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
     local columns = {}
     for index, name in ipairs(categoryOrder) do
         local x = 20 + (index - 1) * 215
@@ -7369,6 +7761,9 @@ local function buildBedWarsUI()
         { "Movement", "Fly", "Movement", "BedWars", "Fly", "Fly" },
         { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
         { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
+        { "Movement", "Safe Walk", "Movement", "BedWars", "Safe Walk", "Safe Walk" },
+        { "Movement", "Infinite Jump", "Movement", "BedWars", "Infinite Jump", "Infinite Jump" },
+        { "Movement", "Gravity", "Movement", "BedWars", "Gravity", "Gravity" },
         { "Movement", "Auto Balloon", "Movement", "BedWars", "Auto Balloon", "Auto Balloon" },
         { "Movement", "Auto Pearl", "Movement", "BedWars", "Auto Pearl", "Auto Pearl" },
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
@@ -7381,8 +7776,10 @@ local function buildBedWarsUI()
         { "Player", "Fast Drop", "Player", "BedWars", "Fast Drop", "Fast Drop" },
         { "Player", "Fast Consume", "Player", "BedWars", "Fast Consume", "Fast Consume" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
+        { "Player", "Zoom Unlocker", "Player", "BedWars", "Zoom Unlocker", "Zoom Unlocker" },
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
+        { "Visuals", "Name Tags", "Visuals", "BedWars", "Name Tags", "Name Tags" },
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
         { "Visuals", "Iron Ore Outline", "Visuals", "BedWars", "Iron Ore Outline", "Iron Ore Outline" },
         { "Visuals", "Enchant Tables", "Visuals", "BedWars", "Enchant Tables", "Enchant Tables" },
@@ -7401,6 +7798,7 @@ local function buildBedWarsUI()
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
         { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
+        { "Misc", "Report Detector", "Misc", "BedWars", "Report Detector", "Report Detector" },
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
@@ -7408,6 +7806,7 @@ local function buildBedWarsUI()
         { "Fun", "Auto Reply", "Fun", "BedWars", "Auto Reply", "Auto Reply" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
         { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
+        { "Dev Tools", "DEX", "Dev Tools", "BedWars", "DEX" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
         { "Sunset", "Module List", "Sunset", "BedWars", "Module List", "Module List" },
         { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
@@ -7444,6 +7843,47 @@ local function buildBedWarsUI()
         end
     end
     local cards = {}
+    local descriptions = {
+        ["Kill Aura"] = "Attacks nearby enemies with the equipped weapon.",
+        ["Projectile Aura"] = "Uses projectiles when no enemy is in sword reach.",
+        ["Scaffold"] = "Places blocks under your bridge path.",
+        ["Bed Protector"] = "Places wool around your verified team bed.",
+        ["Auto Mine"] = "Mines nearby iron ore blocks.",
+        ["Safe Walk"] = "Stops movement at an unsupported edge while grounded.",
+        ["Infinite Jump"] = "Press jump again in the air to jump repeatedly.",
+        ["Gravity"] = "Adjusts gravity on your character locally.",
+        ["Zoom Unlocker"] = "Allows the camera to zoom farther out.",
+        ["Name Tags"] = "Shows player names and health above characters.",
+        ["Report Detector"] = "Alerts on report-related chat. Actual reports are not exposed by Roblox.",
+        ["DEX"] = "Open Sunset's built-in game instance explorer.",
+        ["Auto Reply"] = "Replies to mentions or chat using your saved message.",
+        ["Module List"] = "Shows active modules along the screen edge.",
+    }
+    local tooltip = new("Frame", {
+        Name = "ModuleTooltip", Visible = false,
+        Size = UDim2.fromOffset(270, 54),
+        BackgroundColor3 = Color3.fromRGB(29, 21, 31),
+        BorderSizePixel = 0, ZIndex = 500,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 9) }, tooltip)
+    border(tooltip, Color3.fromRGB(255, 142, 99))
+    local tooltipText = label(tooltip, "", 13,
+        Color3.fromRGB(255, 234, 220))
+    tooltipText.Position = UDim2.fromOffset(10, 7)
+    tooltipText.Size = UDim2.new(1, -20, 1, -14)
+    tooltipText.TextWrapped = true
+    tooltipText.Font = Enum.Font.GothamMedium
+    tooltipText.ZIndex = 501
+    track(RunService.RenderStepped:Connect(function()
+        if not tooltip.Visible then return end
+        if not BedWarsUI.Visible then tooltip.Visible = false return end
+        local mouse = UIS:GetMouseLocation()
+        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+            or Vector2.new(1920, 1080)
+        tooltip.Position = UDim2.fromOffset(
+            math.min(mouse.X + 16, viewport.X - 280),
+            math.min(mouse.Y + 16, viewport.Y - 65))
+    end))
     for index, spec in ipairs(specs) do
         local category, name, tabName, gameName, sectionName, toggleName =
             spec[1], spec[2], spec[3], spec[4], spec[5], spec[6]
@@ -7536,9 +7976,14 @@ local function buildBedWarsUI()
             local hovered = false
             card.MouseEnter:Connect(function()
                 hovered = true
+                tooltipText.Text = descriptions[name]
+                    or ("Click to " .. (control and "toggle" or "open")
+                        .. ". Right-click for settings.")
+                tooltip.Visible = true
             end)
             card.MouseLeave:Connect(function()
                 hovered = false
+                tooltip.Visible = false
             end)
             local searchText = string.lower(category .. " " .. name .. " " .. sectionName)
             for _, descendant in ipairs(box:GetDescendants()) do
@@ -7579,32 +8024,42 @@ local function buildBedWarsUI()
     new("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
-        Padding = UDim.new(0, 4),
+        Padding = UDim.new(0, 2),
     }, moduleList)
+    local moduleBrand = label(moduleList, "SUNSET.WTF", 20,
+        Color3.fromRGB(255, 207, 92), Enum.TextXAlignment.Right)
+    moduleBrand.Font = Enum.Font.GothamBold
+    moduleBrand.Size = UDim2.fromOffset(205, 29)
+    moduleBrand.LayoutOrder = -1000000
+    moduleBrand.TextStrokeTransparency = 0.6
     for index, entry in ipairs(cards) do
-        if entry.Control and entry.Category ~= "Sunset" then
+        if entry.Control and entry.Category ~= "Sunset"
+            and entry.Category ~= "Dev Tools" then
             local textWidth = math.ceil(game:GetService("TextService"):GetTextSize(
-                entry.Name.Text, 13, Enum.Font.GothamMedium,
+                entry.Name.Text, 16, Enum.Font.GothamBold,
                 Vector2.new(1000, 25)).X)
+            local shade = math.clamp((205 - textWidth) / 160, 0, 1)
+            local textColor = Color3.fromHSV(0.15 * (1 - shade), 0.88, 1)
             local row = new("Frame", {
                 Visible = false, Size = UDim2.fromOffset(
-                    textWidth + 60, 25),
+                    textWidth + 20, 25),
                 LayoutOrder = -textWidth * 1000 + index,
-                BackgroundColor3 = columnColor,
+                BackgroundColor3 = Color3.fromRGB(20, 21, 23),
+                BackgroundTransparency = 0.24,
                 BorderSizePixel = 0,
             }, moduleList)
-            new("UICorner", { CornerRadius = UDim.new(0, 7) }, row)
-            border(row, Color3.fromRGB(112, 73, 78))
             new("Frame", {
-                Position = UDim2.fromOffset(0, 4),
-                Size = UDim2.fromOffset(3, 17),
-                BackgroundColor3 = accent, BorderSizePixel = 0,
+                Position = UDim2.new(1, -3, 0, 0),
+                Size = UDim2.fromOffset(3, 25),
+                BackgroundColor3 = textColor, BorderSizePixel = 0,
             }, row)
-            local textLabel = label(row, entry.Name.Text, 13,
-                Color3.fromRGB(255, 237, 230))
-            textLabel.Font = Enum.Font.GothamMedium
-            textLabel.Position = UDim2.fromOffset(11, 3)
-            textLabel.Size = UDim2.new(1, -17, 1, -6)
+            local textLabel = label(row, entry.Name.Text, 16,
+                textColor, Enum.TextXAlignment.Right)
+            textLabel.Font = Enum.Font.GothamBold
+            textLabel.Position = UDim2.fromOffset(6, 1)
+            textLabel.Size = UDim2.new(1, -14, 1, -2)
+            textLabel.TextStrokeTransparency = 0.55
+            textLabel.TextStrokeColor3 = Color3.fromRGB(8, 10, 13)
             textLabel.TextTruncate = Enum.TextTruncate.None
             entry.ModuleRow = row
         end
@@ -7673,6 +8128,7 @@ ENV.SunsetUnload = function()
     end
     table.clear(Connections)
     if Gui then Gui:Destroy() end
+    ENV.SunsetLoading = nil
     ENV.SunsetUnload = nil
 end
 
@@ -7808,6 +8264,30 @@ if detectedGame then
     ENV.SunsetAutoReinject = AutoReinject.enabled
     AutoReinject.ready = true
     if AutoReinject.enabled and AutoReinject.Queue then AutoReinject.Queue() end
+end
+ENV.SunsetLoading.Status.Text = detectedGame and ("Ready for " .. detectedGame) or "Sunset ready"
+do
+local loading = ENV.SunsetLoading
+task.delay(0.45, function()
+    if not loading.Overlay.Parent then return end
+    TweenService:Create(loading.Fill, TweenInfo.new(0.22),
+        { Size = UDim2.fromScale(1, 1) }):Play()
+    task.wait(0.25)
+    if not loading.Overlay.Parent then return end
+    TweenService:Create(loading.Overlay, TweenInfo.new(0.32),
+        { BackgroundTransparency = 1 }):Play()
+    for _, object in ipairs({ loading.Logo, loading.Status }) do
+        TweenService:Create(object, TweenInfo.new(0.32),
+            { TextTransparency = 1 }):Play()
+    end
+    TweenService:Create(loading.Track, TweenInfo.new(0.32),
+        { BackgroundTransparency = 1 }):Play()
+    TweenService:Create(loading.Fill, TweenInfo.new(0.32),
+        { BackgroundTransparency = 1 }):Play()
+    task.wait(0.35)
+    if loading.Overlay.Parent then loading.Overlay:Destroy() end
+    if ENV.SunsetLoading == loading then ENV.SunsetLoading = nil end
+end)
 end
 
 ]========]
