@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-sunset-list-k226"
+local SUNSET_BUILD = "20261003-kit-miner-antivoid-k227"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -648,9 +648,8 @@ track(UIS.InputBegan:Connect(function(i, gp)
     if listeningFor then
         local t = listeningFor
         listeningFor = nil
-        if i.KeyCode == Enum.KeyCode.Escape then
-            t.SetBind(t.GetBind())
-        elseif i.KeyCode == Enum.KeyCode.Backspace then
+        if i.KeyCode == Enum.KeyCode.Escape
+            or i.KeyCode == Enum.KeyCode.Backspace then
             t.SetBind(nil)
         elseif i.KeyCode ~= Enum.KeyCode.Unknown then
             local accepted = t.SetBind(i.KeyCode)
@@ -3563,8 +3562,9 @@ end
 BedWars = {
     PlayersOn = false, BedsOn = false, TeamCheck = true,
     OutlineOre = false, OutlineEnchant = false,
-    Running = true, AuraOn = false, ScaffoldOn = false, ScaffoldExpand = 2,
-    ScaffoldVoidRescue = true, AuraStatus = "Off",
+    Running = true, AuraOn = false, ScaffoldOn = false,
+    ScaffoldVoidRescue = true, ScaffoldTowerOn = true,
+    ScaffoldTowerSpeed = 38, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
     FakeLagOn = false, FakeLagHold = 0.18, FakeLagRelease = 0.08,
@@ -3573,9 +3573,9 @@ BedWars = {
     SafeWalkOn = false, InfiniteJumpOn = false,
     GravityOn = false, GravityValue = 90,
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
-    ReportDetectorOn = false,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
+    InstantMinerOn = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
@@ -3593,10 +3593,8 @@ BedWars = {
     StaffDetectorOn = false, TrapDisablerOn = false,
     SpeedOn = false, SpeedValue = 23, SpeedWallCheck = true,
     SpeedAutoJump = false, SpeedAlwaysJump = false,
-    FlyOn = false, FlySpeed = 23, FlyVerticalSpeed = 50,
-    FlyWallCheck = true, FlyPopBalloons = true,
-    FlyTPDown = true, FlyProgressOn = true, FlyMobileButtons = true,
-    HeatseekerFlyOn = false, HeatseekerWallCheck = true,
+    FlyOn = false, FlyMode = "Normal", FlySpeed = 23, FlyVerticalSpeed = 12,
+    FlyWallCheck = true, FlyTPDown = true, FlyProgressOn = true,
     HitBoxesOn = false, HitBoxesExpand = 14.4,
     BedProtectorOn = false, BedProtectorLayers = 1, ProtectBeds = {},
     FastConsumeOn = false, FastConsumeFactor = 0.4,
@@ -4071,6 +4069,51 @@ local function bedWarsRemote(name, blockEngine)
         return found
     end
     return nil
+end
+do
+local function bedWarsCurrentKit()
+    local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+    local module = scripts and scripts:FindFirstChild("miner-controller", true)
+    local storage = game:GetService("ReplicatedStorage")
+    local include = storage:FindFirstChild("rbxts_include")
+    local runtimeModule = include and include:FindFirstChild("RuntimeLib")
+    if module and runtimeModule then
+        local ok, kit = pcall(function()
+            local runtime = require(runtimeModule)
+            local knit = runtime.import(module, storage, "rbxts_include",
+                "node_modules", "@easy-games", "knit", "src").KnitClient
+            return knit.Controllers.KitController:getKit(LocalPlayer)
+        end)
+        if ok and kit then return tostring(kit) end
+    end
+    return tostring(LocalPlayer:GetAttribute("Kit")
+        or LocalPlayer:GetAttribute("EquippedKit") or "")
+end
+function BedWars.InstantMinerStep()
+    if string.lower(bedWarsCurrentKit()) ~= "miner" then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0 then return end
+    local remote = bedWarsRemote("DestroyPetrifiedPlayer", false)
+    if not remote then return end
+    for _, part in ipairs(CollectionService:GetTagged("MinerInteraction")) do
+        local statue = part.Parent
+        local id = statue and statue:IsA("Model") and statue:GetAttribute("PetrifyId")
+        if id and part:IsA("BasePart") and (root.Position - part.Position).Magnitude <= 6
+            and teamRelation(statue) == "enemy" then
+            BedWars.MinerAttempts = BedWars.MinerAttempts or {}
+            if os.clock() - (BedWars.MinerAttempts[id] or -math.huge) >= 0.8 then
+                BedWars.MinerAttempts[id] = os.clock()
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer({ petrifyId = id })
+                elseif remote:IsA("RemoteFunction") then
+                    task.spawn(function() pcall(remote.InvokeServer, remote, { petrifyId = id }) end)
+                end
+            end
+        end
+    end
+end
 end
 local function bedWarsHeldItem()
     local character = LocalPlayer.Character
@@ -4602,6 +4645,9 @@ local function bedWarsScaffoldStep()
     end
     if not root or not humanoid or humanoid.Health <= 0
         or not remote or not remote:IsA("RemoteFunction") then return end
+    local towerRequested = BedWars.ScaffoldTowerOn
+        and UIS:IsKeyDown(Enum.KeyCode.Space)
+        and not UIS:GetFocusedTextBox()
     local feetY = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
     local overlap = OverlapParams.new()
     overlap.FilterType = Enum.RaycastFilterType.Exclude
@@ -4624,32 +4670,26 @@ local function bedWarsScaffoldStep()
         return grid
     end
     local function hasNeighbor(candidate)
+        local center = candidate * 3
         for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
             Vector3.new(0, 3, 0), Vector3.new(0, -3, 0),
-            Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-            local center = candidate * 3 + offset
-            for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center),
-                Vector3.new(2.6, 2.6, 2.6), overlap)) do
-                if part.CanCollide then return true end
-            end
+            Vector3.new(0, 0, 3), Vector3.new(0, 0, -3),
+            Vector3.new(3, 0, 3), Vector3.new(3, 0, -3),
+            Vector3.new(-3, 0, 3), Vector3.new(-3, 0, -3) }) do
+            if workspace:Raycast(center, offset, ray) then return true end
         end
         return false
     end
     local grid = emptyCell(root.Position)
-    if grid and BedWars.ScaffoldVoidRescue
-        and root.AssemblyLinearVelocity.Y < -8
-        and not hasNeighbor(grid) then grid = nil end
-    if humanoid.MoveDirection.Magnitude >= 0.05 then
-        -- Fill the nearest missing cell first so every forward placement has
-        -- a real neighboring bridge block for the server to accept.
-        for step = 1, math.clamp(BedWars.ScaffoldExpand, 1, 6) do
-            local candidate = emptyCell(root.Position
-                + humanoid.MoveDirection.Unit * (step * 3))
-            if candidate and hasNeighbor(candidate) then
-                grid = candidate
-                if step == 1 or not BedWars.SpeedOn then break end
-            end
-        end
+    if grid and not hasNeighbor(grid) then grid = nil end
+    if not grid and not towerRequested
+        and humanoid.MoveDirection.Magnitude >= 0.05 then
+        local velocity = root.AssemblyLinearVelocity
+        local horizontal = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+        local lead = math.clamp(horizontal * 0.12 + 1.5, 2.5, 4.5)
+        local candidate = emptyCell(root.Position
+            + humanoid.MoveDirection.Unit * lead)
+        if candidate and hasNeighbor(candidate) then grid = candidate end
     end
     if not grid and BedWars.ScaffoldVoidRescue
         and root.AssemblyLinearVelocity.Y < -8 then
@@ -4687,8 +4727,8 @@ local function bedWarsScaffoldStep()
     local now = os.clock()
     BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
     if BedWars.ScaffoldInFlight[key]
-        or (BedWars.ScaffoldAttempts[key] or 0) + 0.05 > now
-        or (BedWars.ScaffoldPending or 0) >= 6 then return end
+        or (BedWars.ScaffoldAttempts[key] or 0) + 0.22 > now
+        or (BedWars.ScaffoldPending or 0) >= 3 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldInFlight[key] = true
     BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
@@ -4716,12 +4756,18 @@ local function bedWarsScaffoldStep()
                 -- Keep the wool equipped, but do not stall the next block on
                 -- this RemoteFunction's round-trip.
                 task.spawn(function()
-                    pcall(function()
-                        remote:InvokeServer({ blockType = item.Name, position = grid })
+                    local ok, result = pcall(function()
+                        return remote:InvokeServer({ blockType = item.Name, position = grid })
                     end)
+                    if ok and result ~= false and towerRequested
+                        and BedWars.ScaffoldOn and root.Parent then
+                        local velocity = root.AssemblyLinearVelocity
+                        root.AssemblyLinearVelocity = Vector3.new(velocity.X,
+                            math.max(velocity.Y, BedWars.ScaffoldTowerSpeed), velocity.Z)
+                    end
                     finishPlacement()
                 end)
-                task.wait(0.03)
+                task.wait(0.01)
                 return
             end
         end)
@@ -5361,18 +5407,22 @@ local bedWarsObservedHealth = setmetatable({}, { __mode = "k" })
 local bedWarsOriginalFOV
 local bedWarsFOVCamera, bedWarsFOVSignal
 local bedWarsHitBoxFunction, bedWarsHitBoxOriginal
+BedWars.CrosshairGui = new("ScreenGui", {
+    Name = "SunsetCenteredCrosshair", ResetOnSpawn = false,
+    IgnoreGuiInset = true, DisplayOrder = 2147483647,
+}, PlayerGui)
 local bedWarsCrosshair = new("Frame", {
     Name = "SunsetBedWarsCrosshair", AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(18, 18),
     BackgroundTransparency = 1, Visible = false,
-}, Gui)
+}, BedWars.CrosshairGui)
 BedWars.HealthDisplay = new("TextLabel", {
     Name = "SunsetHealthDisplay", AnchorPoint = Vector2.new(0.5, 0),
     Position = UDim2.new(0.5, 0, 0.5, 24), Size = UDim2.fromOffset(180, 28),
     BackgroundTransparency = 1, Text = "", Font = Enum.Font.GothamBold,
     TextSize = 17, TextColor3 = Color3.fromRGB(255, 210, 137),
     TextStrokeTransparency = 0.25, Visible = false,
-}, Gui)
+}, BedWars.CrosshairGui)
 BedWars.FlyProgress = new("Frame", {
     Name = "SunsetFlyProgress", AnchorPoint = Vector2.new(0.5, 1),
     Position = UDim2.new(0.5, 0, 1, -170),
@@ -5390,27 +5440,6 @@ BedWars.FlyProgressText = new("TextLabel", {
     BackgroundTransparency = 1, Text = "", Font = Enum.Font.GothamBold,
     TextSize = 15, TextColor3 = Color3.fromRGB(255, 226, 203),
 }, BedWars.FlyProgress)
-BedWars.FlyMobileGui = new("ScreenGui", {
-    Name = "SunsetFlyControls", ResetOnSpawn = false,
-    IgnoreGuiInset = true, Enabled = false,
-}, PlayerGui)
-for _, spec in ipairs({ { "Up", "↑", -140 }, { "Down", "↓", -70 } }) do
-    local button = new("TextButton", {
-        Name = spec[1], Size = UDim2.fromOffset(60, 60),
-        Position = UDim2.new(0.9, -70, 0.7, spec[3]),
-        BackgroundColor3 = Color3.fromRGB(24, 20, 30),
-        BackgroundTransparency = 0.2, BorderSizePixel = 0,
-        Text = spec[2], Font = Enum.Font.GothamBold, TextSize = 30,
-        TextColor3 = Color3.fromRGB(255, 220, 192),
-    }, BedWars.FlyMobileGui)
-    new("UICorner", { CornerRadius = UDim.new(0, 8) }, button)
-    track(button.MouseButton1Down:Connect(function()
-        BedWars[spec[1] .. "Held"] = true
-    end))
-    track(button.MouseButton1Up:Connect(function()
-        BedWars[spec[1] .. "Held"] = false
-    end))
-end
 for _, spec in ipairs({
     { x = 8, y = 0, w = 2, h = 6 }, { x = 8, y = 12, w = 2, h = 6 },
     { x = 0, y = 8, w = 6, h = 2 }, { x = 12, y = 8, w = 6, h = 2 },
@@ -5465,7 +5494,6 @@ local function bedWarsRestoreExtras()
     bedWarsCrosshair.Visible = false
     BedWars.HealthDisplay.Visible = false
     BedWars.FlyProgress.Visible = false
-    BedWars.FlyMobileGui.Enabled = false
 end
 BedWars.LastDrop = 0
 BedWars.LastTrigger = 0
@@ -5950,7 +5978,7 @@ track(RunService.Heartbeat:Connect(function()
     else
         bedWarsRestorePatch("TrapDisabler")
     end
-    if BedWars.FlyOn or BedWars.HeatseekerFlyOn then
+    if BedWars.FlyOn then
         local balloon = bedWarsController("BalloonController")
         bedWarsPatch("FlyBalloon", balloon, "deflateBalloon", function()
             return function() end
@@ -5973,7 +6001,7 @@ track(RunService.Heartbeat:Connect(function()
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local ballooned = character and (character:GetAttribute("InflatedBalloons") or 0) > 0
-        local active = (BedWars.FlyOn or BedWars.HeatseekerFlyOn)
+        local active = BedWars.FlyOn
         if not active or ballooned or not humanoid then
             BedWars.FlyAirStart = nil
             BedWars.FlyReturnY = nil
@@ -5983,8 +6011,6 @@ track(RunService.Heartbeat:Connect(function()
         else
             BedWars.FlyAirStart = BedWars.FlyAirStart or os.clock()
         end
-        BedWars.FlyMobileGui.Enabled = active and BedWars.FlyMobileButtons
-            and UIS.TouchEnabled
         BedWars.FlyProgress.Visible = active and BedWars.FlyProgressOn
             and BedWars.FlyAirStart ~= nil
         if BedWars.FlyProgress.Visible then
@@ -6314,15 +6340,13 @@ track(RunService.RenderStepped:Connect(function(delta)
 end))
 track(RunService.PreSimulation:Connect(function(delta)
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
-        or (not BedWars.SpeedOn and not BedWars.FlyOn
-            and not BedWars.HeatseekerFlyOn) then return end
+        or (not BedWars.SpeedOn and not BedWars.FlyOn) then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid or humanoid.Health <= 0
         or humanoid:GetState() == Enum.HumanoidStateType.Climbing then return end
-    if BedWars.SpeedOn and not BedWars.FlyOn
-        and not BedWars.HeatseekerFlyOn then
+    if BedWars.SpeedOn and not BedWars.FlyOn then
         local knockback = bedWarsController("StatefulEntityKnockbackController")
         if knockback then
             if BedWars.SpeedKnockbackController ~= knockback then
@@ -6333,21 +6357,20 @@ track(RunService.PreSimulation:Connect(function(delta)
         end
     end
     local direction = humanoid.MoveDirection
-    if BedWars.FlyOn or BedWars.HeatseekerFlyOn then
+    if BedWars.FlyOn then
         local ballooned = (character:GetAttribute("InflatedBalloons") or 0) > 0
         if typeof(isnetworkowner) == "function" then
             local ok, owned = pcall(isnetworkowner, root)
             if ok and not owned then return end
         end
         local up = (UIS:IsKeyDown(Enum.KeyCode.Space)
-            or UIS:IsKeyDown(Enum.KeyCode.ButtonA) or BedWars.UpHeld) and 1 or 0
+            or UIS:IsKeyDown(Enum.KeyCode.ButtonA)) and 1 or 0
         local down = (UIS:IsKeyDown(Enum.KeyCode.LeftShift)
-            or UIS:IsKeyDown(Enum.KeyCode.ButtonL2) or BedWars.DownHeld) and 1 or 0
+            or UIS:IsKeyDown(Enum.KeyCode.ButtonL2)) and 1 or 0
         local velocity = root.AssemblyLinearVelocity
         local horizontal = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
         local advance = direction * math.max(BedWars.FlySpeed - horizontal, 0) * delta
-        if (BedWars.FlyOn and BedWars.FlyWallCheck)
-            or (BedWars.HeatseekerFlyOn and BedWars.HeatseekerWallCheck) then
+        if BedWars.FlyMode == "Normal" and BedWars.FlyWallCheck then
             local ray = RaycastParams.new()
             ray.FilterType = Enum.RaycastFilterType.Exclude
             ray.FilterDescendantsInstances = { character }
@@ -6379,7 +6402,8 @@ track(RunService.PreSimulation:Connect(function(delta)
         end
         root.AssemblyLinearVelocity = direction * horizontal
             + Vector3.new(0, 1.95
-                + (ballooned and (math.floor(os.clock() / 0.2) % 2 == 0 and 6 or -6) or 0)
+                + (BedWars.FlyMode == "Heatseeker" and ballooned
+                    and (math.floor(os.clock() / 0.2) % 2 == 0 and 6 or -6) or 0)
                 + (up - down) * BedWars.FlyVerticalSpeed, 0)
         return
     end
@@ -6464,11 +6488,10 @@ do
     end))
 end
 function BedWars.Stop()
-    if BedWars.FlyMobileGui then BedWars.FlyMobileGui:Destroy() end
+    if BedWars.CrosshairGui then BedWars.CrosshairGui:Destroy() end
     BedWars.StopExtraMovement()
     BedWars.NameTagsOn = false
     BedWars.ClearNameTags()
-    BedWars.ReportDetectorOn = false
     BedWars.FakeLagOn = false
     BedWars.FakeLagReset()
     BedWars.FOVOn = false
@@ -6494,6 +6517,7 @@ function BedWars.Stop()
     BedWars.VoidWater.Clear()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
+    BedWars.InstantMinerOn = false
     BedWars.AutoBedOn = false
     BedWars.TargetHUDOn = false
     BedWars.SessionInfoOn = false
@@ -6690,23 +6714,11 @@ do
     local lastByPlayer = {}
     local lastGlobal = -100
     local lastSeen = {}
-    BedWars.LastReportByPlayer = {}
     local function onMessage(player, message)
         if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
             or not player or player == LocalPlayer or type(message) ~= "string" then return end
         local lower = message:lower()
         if lower == "" then return end
-        if BedWars.ReportDetectorOn and lower:find("report", 1, true)
-            and os.clock() - (BedWars.LastReportByPlayer[player.UserId] or -100) > 15 then
-            BedWars.LastReportByPlayer[player.UserId] = os.clock()
-            pcall(function()
-                game:GetService("StarterGui"):SetCore("SendNotification", {
-                    Title = "Sunset - Report Chat Alert",
-                    Text = player.DisplayName .. " mentioned reporting in chat",
-                    Duration = 6,
-                })
-            end)
-        end
         if not BedWars.AutoReplyOn then return end
         if BedWars.AutoReplyMode == "Mentions" then
             local username = LocalPlayer.Name:lower()
@@ -7011,6 +7023,14 @@ task.spawn(function()
 end)
 task.spawn(function()
     while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.InstantMinerOn then
+            pcall(BedWars.InstantMinerStep)
+        end
+        task.wait(0.1)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.AutoBedOn then
             pcall(bedWarsAutoBedStep)
         end
@@ -7027,7 +7047,7 @@ task.spawn(function()
             or os.clock() - BedWars.BridgingNeeded > (BedWars.SpeedOn and 0.9 or 0.55)) then
             bedWarsReleaseScaffoldItem()
         end
-        task.wait(BedWars.SpeedOn and 0.02 or 0.05)
+        task.wait(0.02)
     end
 end)
 local function bedWarsSafeGround(position, character)
@@ -7099,14 +7119,17 @@ track(RunService.Heartbeat:Connect(function()
             BedWars.VoidWater.Clear()
         end
     end
-    -- Keep a walker away from an unsupported edge. This does not teleport or
-    -- inject velocity, which previously caused server corrections and deaths.
-    if BedWars.AntiVoidOn and grounded and not BedWars.VoidWaterOn then
-        local move = humanoid.MoveDirection
-        if move.Magnitude > 0.05 then
-            local _, supported = bedWarsSafeGround(root.Position + move.Unit * 3.5,
-                character)
-            if not supported then humanoid:Move(Vector3.zero, false) end
+    -- Restore the original last-safe-position rescue when falling into the void.
+    if BedWars.AntiVoidOn and not grounded and BedWars.LastSafeCFrame then
+        local hit = bedWarsSafeGround(root.Position, character)
+        if (not hit or root.Position.Y - hit.Position.Y > 20)
+            and root.AssemblyLinearVelocity.Y < -8
+            and root.Position.Y < BedWars.LastSafeCFrame.Position.Y - 7
+            and os.clock() - (BedWars.LastVoidRescue or 0) > 0.8 then
+            BedWars.LastVoidRescue = os.clock()
+            root.CFrame = BedWars.LastSafeCFrame + Vector3.new(0, 2.5, 0)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
         end
     end
 end))
@@ -7183,44 +7206,27 @@ do
         BedWars.NoSlowdownOn = on
     end)
     local flySection = gameSection(gameName, MainTab.Right, "Fly")
-    local flyToggle, heatseekerToggle
-    flyToggle = Elements.Toggle(flySection, "Fly", false, function(on)
+    Elements.Toggle(flySection, "Fly", false, function(on)
         BedWars.FlyOn = on
-        if on and heatseekerToggle then heatseekerToggle.Set(false) end
-        if not on and not BedWars.HeatseekerFlyOn and BedWars.FlyPopBalloons then
-            bedWarsRestorePatch("FlyBalloon")
-            local balloon = bedWarsController("BalloonController")
-            if balloon and type(balloon.deflateBalloon) == "function" then
-                for _ = 1, 3 do pcall(balloon.deflateBalloon, balloon) end
-            end
-        end
     end)
+    local flyWallToggle
+    Elements.Dropdown(flySection, "Mode", { "Normal", "Heatseeker" },
+        "Normal", function(mode)
+            BedWars.FlyMode = mode
+            if flyWallToggle then flyWallToggle._row.Visible = mode == "Normal" end
+        end)
     Elements.Slider(flySection, "Speed", 1, 23, 23, "studs",
         function(value) BedWars.FlySpeed = value end)
-    Elements.Slider(flySection, "Vertical Speed", 1, 150, 50, "studs",
+    Elements.Slider(flySection, "Vertical Speed", 1, 80, 12, "studs",
         function(value) BedWars.FlyVerticalSpeed = value end)
-    Elements.Toggle(flySection, "Wall Check", true, function(on)
+    flyWallToggle = Elements.Toggle(flySection, "Normal Wall Check", true, function(on)
         BedWars.FlyWallCheck = on
-    end, nil, true)
-    Elements.Toggle(flySection, "Pop Balloons", true, function(on)
-        BedWars.FlyPopBalloons = on
     end, nil, true)
     Elements.Toggle(flySection, "Progress Bar", true, function(on)
         BedWars.FlyProgressOn = on
     end, nil, true)
     Elements.Toggle(flySection, "TP Down", true, function(on)
         BedWars.FlyTPDown = on
-    end, nil, true)
-    Elements.Toggle(flySection, "Mobile Buttons", true, function(on)
-        BedWars.FlyMobileButtons = on
-    end, nil, true)
-    local heatseekerSection = gameSection(gameName, MainTab.Right, "Heatseeker Fly")
-    heatseekerToggle = Elements.Toggle(heatseekerSection, "Heatseeker Fly", false, function(on)
-        BedWars.HeatseekerFlyOn = on
-        if on and flyToggle then flyToggle.Set(false) end
-    end)
-    Elements.Toggle(heatseekerSection, "Wall Check", true, function(on)
-        BedWars.HeatseekerWallCheck = on
     end, nil, true)
     local speedSection = gameSection(gameName, MainTab.Right, "Speed")
     Elements.Toggle(speedSection, "Speed", false, function(on)
@@ -7368,9 +7374,11 @@ do
             bedWarsReleaseScaffoldItem()
         end
     end)
-    Elements.Slider(scaffoldSection, "Expand", 1, 6, 2, "blocks", function(value)
-        BedWars.ScaffoldExpand = value
-    end)
+    Elements.Toggle(scaffoldSection, "Tower", true, function(on)
+        BedWars.ScaffoldTowerOn = on
+    end, nil, true)
+    Elements.Slider(scaffoldSection, "Tower Speed", 20, 45, 38, "studs",
+        function(value) BedWars.ScaffoldTowerSpeed = value end)
     Elements.Toggle(scaffoldSection, "Void Rescue", true, function(on)
         BedWars.ScaffoldVoidRescue = on
     end, nil, true)
@@ -7484,6 +7492,12 @@ do
         BedWars.AutoOreOn = on
         if not on then clearActiveOreHighlight() end
     end)
+    do
+        local minerSection = gameSection(gameName, PlayerTab.Left, "Instant Miner")
+        Elements.Toggle(minerSection, "Instant Miner", false, function(on)
+            BedWars.InstantMinerOn = on
+        end)
+    end
     local autoBedSection = gameSection(gameName, PlayerTab.Right, "Auto Bed")
     Elements.Toggle(autoBedSection, "Auto Bed", false, function(on)
         BedWars.AutoBedOn = on
@@ -7598,12 +7612,6 @@ do
         Elements.Toggle(names, "Name Tags", false, function(on)
             BedWars.NameTagsOn = on
             if not on then BedWars.ClearNameTags() end
-        end)
-    end
-    do
-        local reports = gameSection(gameName, MiscTab.Right, "Report Detector")
-        Elements.Toggle(reports, "Report Detector", false, function(on)
-            BedWars.ReportDetectorOn = on
         end)
     end
     do
@@ -7825,6 +7833,35 @@ makeDraggable(Window, TitleBar)
 
 -- BedWars uses a compact module board. It drives the same controls as the
 -- classic menu, so keybinds, callbacks, and saved configurations stay shared.
+local function bedWarsKitCatalog()
+    local names = {}
+    local ids = {}
+    local storage = game:GetService("ReplicatedStorage")
+    local ts = storage:FindFirstChild("TS")
+    local games = ts and ts:FindFirstChild("games")
+    local bedwars = games and games:FindFirstChild("bedwars")
+    local kitFolder = bedwars and bedwars:FindFirstChild("kit")
+    local module = kitFolder and kitFolder:FindFirstChild("bedwars-kit")
+    local ok, result = false, nil
+    if module then ok, result = pcall(require, module) end
+    local enum = ok and type(result) == "table"
+        and (result.BedwarsKit or result)
+    if type(enum) == "table" then
+        for key, value in pairs(enum) do
+            if type(key) == "string" and type(value) == "string" then
+                local display = key:gsub("_", " "):lower():gsub("(%a)([%w']*)", function(first, rest)
+                    return first:upper() .. rest
+                end)
+                if not ids[display] then
+                    ids[display] = value
+                    table.insert(names, display)
+                end
+            end
+        end
+        table.sort(names)
+    end
+    return names, ids
+end
 local function buildBedWarsUI()
     local accent = Color3.fromRGB(255, 132, 92)
     local gold = Color3.fromRGB(255, 196, 119)
@@ -7834,7 +7871,7 @@ local function buildBedWarsUI()
     local muted = Color3.fromRGB(192, 169, 174)
     BedWarsUI = new("Frame", {
         Name = "BedWarsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(1740, 650),
+        Size = UDim2.fromOffset(1955, 650),
         Position = UDim2.new(0.5, 0, 0, 12),
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -7845,7 +7882,7 @@ local function buildBedWarsUI()
         local camera = workspace.CurrentCamera
         if not camera then return end
         boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
-            (camera.ViewportSize.X - 32) / 1740,
+            (camera.ViewportSize.X - 32) / 1955,
             (camera.ViewportSize.Y - 32) / 650))
     end
     fitBoard()
@@ -7869,7 +7906,7 @@ local function buildBedWarsUI()
     subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(700, 17),
+        Position = UDim2.fromOffset(808, 17),
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
@@ -7904,7 +7941,7 @@ local function buildBedWarsUI()
     }, header)
     new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
     closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
-    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
+    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
     local columns = {}
     for index, name in ipairs(categoryOrder) do
         local x = 20 + (index - 1) * 215
@@ -7964,6 +8001,8 @@ local function buildBedWarsUI()
                 and column.OpenHolder.AbsoluteSize.Y + 7 or 0
             column.Frame.Size = UDim2.fromOffset(200,
                 column.Collapsed and 44
+                    or name == "KIT" and math.min(540,
+                        math.max(176, 140 + column.VisibleCount * 36 + extra))
                     or math.min(540, 65 + column.VisibleCount * 36 + extra))
         end
         columns[name].Reflow = reflow
@@ -7971,8 +8010,95 @@ local function buildBedWarsUI()
             local column = columns[name]
             column.Collapsed = not column.Collapsed
             column.List.Visible = not column.Collapsed
+            if name == "KIT" and column.KitControls then
+                for _, control in ipairs(column.KitControls) do
+                    control.Visible = not column.Collapsed
+                        and control ~= column.KitControls[3]
+                end
+                if column.KitEmpty then
+                    column.KitEmpty.Visible = not column.Collapsed
+                        and column.VisibleCount == 0
+                end
+            end
             reflow()
         end)
+    end
+
+    local kitNames, kitIds = bedWarsKitCatalog()
+    local kitSelected = table.find(kitNames, "Miner") and "Miner" or kitNames[1]
+    do
+        local column = columns.KIT
+        column.List.Position = UDim2.fromOffset(9, 132)
+        column.List.Size = UDim2.new(1, -18, 1, -141)
+        local kitSearch = new("TextBox", {
+            Position = UDim2.fromOffset(9, 51), Size = UDim2.new(1, -18, 0, 31),
+            BackgroundColor3 = cardColor, BorderSizePixel = 0,
+            Font = Enum.Font.GothamMedium, TextSize = 13,
+            TextColor3 = Color3.fromRGB(255, 237, 230),
+            PlaceholderColor3 = muted, PlaceholderText = "Search kits",
+            ClearTextOnFocus = false, Text = "", ZIndex = 30,
+        }, column.Frame)
+        new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitSearch)
+        local kitButton = new("TextButton", {
+            Position = UDim2.fromOffset(9, 88), Size = UDim2.new(1, -18, 0, 32),
+            BackgroundColor3 = cardColor, BorderSizePixel = 0,
+            Font = Enum.Font.GothamMedium, TextSize = 13,
+            TextColor3 = gold, Text = kitSelected or "Kits unavailable",
+            TextXAlignment = Enum.TextXAlignment.Center,
+            AutoButtonColor = false, ZIndex = 30,
+        }, column.Frame)
+        new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitButton)
+        local kitOptions = new("ScrollingFrame", {
+            Position = UDim2.fromOffset(9, 125), Size = UDim2.new(1, -18, 0, 230),
+            BackgroundColor3 = dark, BorderSizePixel = 0,
+            ScrollBarThickness = 3, ScrollBarImageColor3 = accent,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = false, ZIndex = 40,
+        }, column.Frame)
+        new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitOptions)
+        new("UIListLayout", { SortOrder = Enum.SortOrder.Name }, kitOptions)
+        local optionButtons = {}
+        for _, kitName in ipairs(kitNames) do
+            local option = new("TextButton", {
+                Name = kitName, Size = UDim2.new(1, -3, 0, 29),
+                BackgroundColor3 = cardColor, BorderSizePixel = 0,
+                Font = Enum.Font.GothamMedium, TextSize = 13,
+                TextColor3 = Color3.fromRGB(255, 237, 230),
+                Text = kitName, AutoButtonColor = false, ZIndex = 41,
+            }, kitOptions)
+            optionButtons[kitName] = option
+        end
+        kitSearch:GetPropertyChangedSignal("Text"):Connect(function()
+            local query = kitSearch.Text:lower()
+            for kitName, option in pairs(optionButtons) do
+                option.Visible = query == "" or kitName:lower():find(query, 1, true) ~= nil
+            end
+            kitOptions.Visible = true
+        end)
+        kitButton.MouseButton1Click:Connect(function()
+            kitOptions.Visible = not kitOptions.Visible
+        end)
+        column.KitControls = { kitSearch, kitButton, kitOptions }
+        column.KitSelect = function(callback)
+            for kitName, option in pairs(optionButtons) do
+                option.MouseButton1Click:Connect(function()
+                    kitSelected = kitName
+                    kitButton.Text = kitName
+                    kitSearch.Text = ""
+                    kitOptions.Visible = false
+                    callback()
+                end)
+            end
+        end
+        column.KitId = function() return kitSelected and kitIds[kitSelected] end
+        column.KitEmpty = new("TextLabel", {
+            Position = UDim2.fromOffset(10, 132),
+            Size = UDim2.new(1, -20, 0, 32),
+            BackgroundTransparency = 1, BorderSizePixel = 0,
+            Font = Enum.Font.GothamMedium, TextSize = 12,
+            TextColor3 = muted, TextWrapped = true, Visible = false,
+            Text = "", ZIndex = 2,
+        }, column.Frame)
     end
 
     local activeContent, homeParent, homePosition, homeSize, activeHolder, activeColumn
@@ -8161,7 +8287,6 @@ local function buildBedWarsUI()
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Speed", "Movement", "BedWars", "Speed", "Speed" },
         { "Movement", "Fly", "Movement", "BedWars", "Fly", "Fly" },
-        { "Movement", "Heatseeker Fly", "Movement", "BedWars", "Heatseeker Fly", "Heatseeker Fly" },
         { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
         { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
         { "Movement", "Safe Walk", "Movement", "BedWars", "Safe Walk", "Safe Walk" },
@@ -8173,6 +8298,7 @@ local function buildBedWarsUI()
         { "Movement", "Void Water", "Movement", "BedWars", "Void Water", "Void Water" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
+        { "KIT", "Instant Miner", "Player", "BedWars", "Instant Miner", "Instant Miner" },
         { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
         { "Player", "Fast Break", "Player", "BedWars", "Fast Break", "Fast Break" },
         { "Player", "Auto Buy", "Player", "BedWars", "Auto Buy", "Auto Buy" },
@@ -8202,7 +8328,6 @@ local function buildBedWarsUI()
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
         { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
-        { "Misc", "Report Detector", "Misc", "BedWars", "Report Detector", "Report Detector" },
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
@@ -8253,17 +8378,16 @@ local function buildBedWarsUI()
         ["Scaffold"] = "Places blocks under your bridge path.",
         ["Bed Protector"] = "Places wool around your verified team bed.",
         ["Fly"] = "Voidware-style Fly with balloon lift and a timed fallback.",
-        ["Heatseeker Fly"] = "Balloon-style flight with wall checking.",
         ["Speed"] = "Moves faster with wall checking and optional auto jump.",
         ["Auto Buy"] = "Buys armor, swords, and listed items near a shop.",
         ["Health Display"] = "Shows your health below the crosshair.",
         ["Auto Mine"] = "Mines nearby iron ore blocks.",
+        ["Instant Miner"] = "Gathers nearby enemy petrified players with the Miner kit.",
         ["Safe Walk"] = "Stops movement at an unsupported edge while grounded.",
         ["Infinite Jump"] = "Press jump again in the air to jump repeatedly.",
         ["Gravity"] = "Adjusts gravity on your character locally.",
         ["Zoom Unlocker"] = "Allows the camera to zoom farther out.",
         ["Name Tags"] = "Shows player names and health above characters.",
-        ["Report Detector"] = "Alerts on report-related chat. Actual reports are not exposed by Roblox.",
         ["DEX"] = "Open Sunset's built-in game instance explorer.",
         ["Auto Reply"] = "Replies to mentions or chat using your saved message.",
         ["Module List"] = "Shows active modules along the screen edge.",
@@ -8403,6 +8527,7 @@ local function buildBedWarsUI()
             end
             table.insert(cards, { Category = category, Card = card, Control = control,
                 Name = nameLabel, Options = options, Holder = holder, Search = searchText,
+                Kit = category == "KIT" and "miner" or nil,
                 Hovered = function() return hovered end, Gradient = activeGradient })
         end
     end
@@ -8411,17 +8536,25 @@ local function buildBedWarsUI()
         local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
         local counts = {}
         for _, entry in ipairs(cards) do
-            local show = query == "" or string.find(entry.Search, query, 1, true) ~= nil
+            local show = (query == "" or string.find(entry.Search, query, 1, true) ~= nil)
+                and (entry.Category ~= "KIT" or entry.Kit == columns.KIT.KitId())
             entry.Card.Visible = show
             if show then counts[entry.Category] = (counts[entry.Category] or 0) + 1 end
         end
         for name, column in pairs(columns) do
             column.Count.Text = tostring(counts[name] or 0)
             column.VisibleCount = counts[name] or 0
+            if name == "KIT" then
+                column.KitEmpty.Visible = not column.Collapsed
+                    and (counts.KIT or 0) == 0
+                column.KitEmpty.Text = #kitNames == 0 and "Kit list unavailable"
+                    or "No kit modules for " .. tostring(kitSelected) .. " yet"
+            end
             column.Reflow()
         end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
+    columns.KIT.KitSelect(refreshSearch)
     refreshSearch()
     local moduleList = new("Frame", {
         Name = "BedWarsModuleList", Visible = false,
