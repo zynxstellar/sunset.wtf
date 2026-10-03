@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-voidware-sync-k225"
+local SUNSET_BUILD = "20261003-sunset-list-k226"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -4198,6 +4198,22 @@ local function bedWarsFindWool()
     end
     return nil
 end
+function BedWars.HoldingAbility()
+    local item = bedWarsHeldItem()
+    if not item then return false end
+    if item:GetAttribute("Ability") == true
+        or item:GetAttribute("IsAbility") == true
+        or item:GetAttribute("ItemType") == "ability"
+        or CollectionService:HasTag(item, "Ability") then return true end
+    if bedWarsMeleeItem(item) or bedWarsWoolItem(item) then return false end
+    local name = string.lower(item.Name)
+    if name:find("pickaxe", 1, true) or name:match("_axe$")
+        or name:find("bow", 1, true)
+        or name:find("snowball", 1, true)
+        or name:find("fireball", 1, true) then return false end
+    -- All other held utility or kit tools take priority over automatic swaps.
+    return true
+end
 local function bedWarsEnemy(player)
     if player == LocalPlayer then return false end
     if LocalPlayer.Team and player.Team then return player.Team ~= LocalPlayer.Team end
@@ -4233,6 +4249,10 @@ end
 local swordHitRemote, lastSwordRemoteLookup = nil, -math.huge
 local function bedWarsAuraStep()
     if BedWars.ItemBusy then return end
+    if BedWars.HoldingAbility() then
+        BedWars.AuraStatus = "Ability equipped"
+        return
+    end
     if BedWars.ScaffoldOn and BedWars.BridgingNeeded
         and os.clock() - BedWars.BridgingNeeded < 0.55 then return end
     local character = LocalPlayer.Character
@@ -4434,6 +4454,7 @@ local function bedWarsProjectileVelocity(origin, target, speed, gravity)
         + Vector3.new(0, math.sin(angle) * speed, 0)
 end
 local function bedWarsProjectileStep()
+    if BedWars.HoldingAbility() then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -4566,6 +4587,7 @@ end
 local scaffoldPauseUntil = 0
 local function bedWarsScaffoldStep()
     if BedWars.ItemBusy then return end
+    if BedWars.HoldingAbility() then return end
     if os.clock() < scaffoldPauseUntil then return end
     if BedWars.ProjectilePriorityUntil
         and os.clock() < BedWars.ProjectilePriorityUntil then return end
@@ -4848,6 +4870,7 @@ local function bedWarsRayToOre(breaker, ore)
 end
 
 local function bedWarsAutoOreStep()
+    if BedWars.HoldingAbility() then return end
     if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem or BedWars.ProjectilePriorityUntil
         and os.clock() < BedWars.ProjectilePriorityUntil then return end
     local character = LocalPlayer.Character
@@ -5109,6 +5132,7 @@ bedWarsNearbyEnemyBed = function(root)
     return nearest
 end
 local function bedWarsAutoBedStep()
+    if BedWars.HoldingAbility() then return end
     if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -5646,6 +5670,7 @@ local function bedWarsAutoBuyStep()
     custom(true)
 end
 function BedWars.AutoPearlStep(character, root, pearl)
+    if BedWars.HoldingAbility() then return end
     local api = bedWarsGetProjectileApi()
     if not api then return end
     local ok, source = pcall(function()
@@ -5722,7 +5747,7 @@ function BedWars.SelectProtectionBed()
     return nearest
 end
 function BedWars.ProtectStep()
-    if BedWars.ItemBusy or BedWars.ScaffoldPreviousItem
+    if BedWars.HoldingAbility() or BedWars.ItemBusy or BedWars.ScaffoldPreviousItem
         or os.clock() - BedWars.LastProtect < 0.2 then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -8401,7 +8426,7 @@ local function buildBedWarsUI()
     local moduleList = new("Frame", {
         Name = "BedWarsModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
-        Position = UDim2.new(1, -14, 0, 46),
+        Position = UDim2.new(1, -14, 0, 38),
         Size = UDim2.fromOffset(205, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -8409,12 +8434,12 @@ local function buildBedWarsUI()
     new("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
-        Padding = UDim.new(0, 1),
+        Padding = UDim.new(0, 0),
     }, moduleList)
-    local moduleBrand = label(moduleList, "SUNSET.WTF", 20,
-        Color3.fromRGB(255, 207, 92), Enum.TextXAlignment.Right)
+    local moduleBrand = label(moduleList, "SUNSET.WTF", 18,
+        gold, Enum.TextXAlignment.Right)
     moduleBrand.Font = Enum.Font.GothamBold
-    moduleBrand.Size = UDim2.fromOffset(205, 29)
+    moduleBrand.Size = UDim2.fromOffset(205, 24)
     moduleBrand.LayoutOrder = -1000000
     moduleBrand.TextStrokeTransparency = 0.6
     for index, entry in ipairs(cards) do
@@ -8423,31 +8448,32 @@ local function buildBedWarsUI()
             local textWidth = math.ceil(game:GetService("TextService"):GetTextSize(
                 entry.Name.Text, 16, Enum.Font.GothamBold,
                 Vector2.new(1000, 25)).X)
-            local textColor = Color3.fromRGB(255, 213, 95)
+            local textColor = gold
             local row = new("Frame", {
                 Visible = false, Size = UDim2.fromOffset(
-                    textWidth + 20, 20),
+                    textWidth + 7, 19),
                 LayoutOrder = -textWidth * 1000 + index,
-                BackgroundColor3 = Color3.fromRGB(20, 21, 23),
-                BackgroundTransparency = 0.24,
+                BackgroundColor3 = columnColor,
+                BackgroundTransparency = 0.12,
                 BorderSizePixel = 0,
             }, moduleList)
-            local accent = new("Frame", {
-                Position = UDim2.new(1, -3, 0, 0),
-                Size = UDim2.fromOffset(3, 20),
+            new("UICorner", { CornerRadius = UDim.new(0, 3) }, row)
+            local strip = new("Frame", {
+                Position = UDim2.new(1, -2, 0, 0),
+                Size = UDim2.fromOffset(2, 19),
                 BackgroundColor3 = textColor, BorderSizePixel = 0,
             }, row)
             local textLabel = label(row, entry.Name.Text, 16,
                 textColor, Enum.TextXAlignment.Right)
             textLabel.Font = Enum.Font.GothamBold
-            textLabel.Position = UDim2.fromOffset(6, 0)
-            textLabel.Size = UDim2.new(1, -14, 1, 0)
+            textLabel.Position = UDim2.fromOffset(2, 0)
+            textLabel.Size = UDim2.fromOffset(textWidth, 19)
             textLabel.TextStrokeTransparency = 0.55
             textLabel.TextStrokeColor3 = Color3.fromRGB(8, 10, 13)
             textLabel.TextTruncate = Enum.TextTruncate.None
             entry.ModuleRow = row
             entry.ModuleText = textLabel
-            entry.ModuleAccent = accent
+            entry.ModuleAccent = strip
         end
     end
     task.spawn(function()
@@ -8484,7 +8510,7 @@ local function buildBedWarsUI()
             end)
             for index, entry in ipairs(activeRows) do
                 local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
-                local color = Color3.fromHSV(0.28 * (1 - progress), 0.9, 1)
+                local color = gold:Lerp(Color3.fromRGB(255, 95, 111), progress)
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
             end
