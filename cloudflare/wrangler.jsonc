@@ -1,5 +1,5 @@
 {
-  "name": "sunset-loader",
+  "name": "sunsetwtf",
   "main": "worker.mjs",
   "compatibility_date": "2026-10-03",
   "workers_dev": true
