@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-kit-trackers-k229"
+local SUNSET_BUILD = "20261003-executor-webhook-k230"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3608,7 +3608,6 @@ BedWars = {
     VelocityOn = false, VelocityHorizontal = 0, VelocityVertical = 0,
     AutoBalloonOn = false, AutoPearlOn = false,
     StaffDetectorOn = false, TrapDisablerOn = false,
-    AntiTeslaOn = false, AntiTeslaRange = 9,
     LaunchOn = false, WaterSpeedOn = false, WaterSpeedValue = 30,
     SpeedOn = false, SpeedValue = 23, SpeedWallCheck = true,
     SpeedAutoJump = false, SpeedAlwaysJump = false,
@@ -3669,6 +3668,16 @@ do
     end
 end
 do
+    local function executorName()
+        local identify = type(ENV.identifyexecutor) == "function"
+            and ENV.identifyexecutor or type(identifyexecutor) == "function"
+            and identifyexecutor or type(ENV.getexecutorname) == "function"
+            and ENV.getexecutorname or nil
+        if not identify then return "Unknown" end
+        local ok, name = pcall(identify)
+        if not ok or type(name) ~= "string" or name == "" then return "Unknown" end
+        return name:sub(1, 80)
+    end
     function BedWars.WebhookSend(event)
         if not BedWars.WebhookOn then return end
         local url = BedWars.WebhookUrl
@@ -3685,6 +3694,7 @@ do
                     { name = "Player", value = LocalPlayer.Name, inline = true },
                     { name = "User ID", value = tostring(LocalPlayer.UserId), inline = true },
                     { name = "Event", value = tostring(event):sub(1, 100), inline = false },
+                    { name = "Executor", value = executorName(), inline = true },
                     { name = "Build", value = SUNSET_BUILD, inline = true },
                 },
             }},
@@ -4162,33 +4172,6 @@ local function bedWarsRemote(name, blockEngine)
         return found
     end
     return nil
-end
-function BedWars.AntiTeslaStep(root, humanoid)
-    local direction = humanoid.MoveDirection
-    if direction.Magnitude < 0.05 then return false end
-    local overlap = OverlapParams.new()
-    overlap.FilterType = Enum.RaycastFilterType.Exclude
-    overlap.FilterDescendantsInstances = { LocalPlayer.Character }
-    for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position,
-        BedWars.AntiTeslaRange, overlap)) do
-        local node = part
-        for _ = 1, 5 do
-            if not node or node == workspace then break end
-            if node.Name:lower():find("tesla", 1, true)
-                and teamRelation(node) ~= "friendly" then
-                local toward = part.Position - root.Position
-                local flat = Vector3.new(toward.X, 0, toward.Z)
-                if flat.Magnitude > 0.1 and direction:Dot(flat.Unit) > 0.15 then
-                    humanoid:Move(Vector3.zero, false)
-                    local velocity = root.AssemblyLinearVelocity
-                    root.AssemblyLinearVelocity = Vector3.new(0, velocity.Y, 0)
-                    return true
-                end
-            end
-            node = node.Parent
-        end
-    end
-    return false
 end
 local function bedWarsHeldItem()
     local character = LocalPlayer.Character
@@ -6570,13 +6553,12 @@ end))
 track(RunService.PreSimulation:Connect(function(delta)
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
         or (not BedWars.SpeedOn and not BedWars.FlyOn
-            and not BedWars.WaterSpeedOn and not BedWars.AntiTeslaOn) then return end
+            and not BedWars.WaterSpeedOn) then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid or humanoid.Health <= 0
         or humanoid:GetState() == Enum.HumanoidStateType.Climbing then return end
-    if BedWars.AntiTeslaOn and BedWars.AntiTeslaStep(root, humanoid) then return end
     if BedWars.WaterSpeedOn and not BedWars.FlyOn
         and humanoid:GetState() == Enum.HumanoidStateType.Swimming then
         local direction = humanoid.MoveDirection
@@ -6742,7 +6724,6 @@ function BedWars.Stop()
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
-    BedWars.AntiTeslaOn = false
     BedWars.NotifyOn = false
     BedWars.WebhookOn = false
     BedWars.BedAlarmOn = false
@@ -8429,12 +8410,6 @@ do
     Elements.Toggle(trapSection, "Trap Disabler", false, function(on)
         BedWars.TrapDisablerOn = on
     end)
-    BedWars.TeslaSection = gameSection(gameName, MiscTab.Right, "Anti Tesla")
-    Elements.Toggle(BedWars.TeslaSection, "Anti Tesla", false, function(on)
-        BedWars.AntiTeslaOn = on
-    end)
-    Elements.Slider(BedWars.TeslaSection, "Avoid Range", 5, 14, 9, "studs",
-        function(value) BedWars.AntiTeslaRange = value end)
     end
 end
 -- Client-only visual projectiles. These never call a game combat remote.
@@ -9132,7 +9107,6 @@ local function buildBedWarsUI()
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
         { "Misc", "Bed Alarm", "Misc", "BedWars", "Bed Alarm", "Bed Alarm" },
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
-        { "Misc", "Anti Tesla", "Misc", "BedWars", "Anti Tesla", "Anti Tesla" },
         { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
@@ -9196,7 +9170,6 @@ local function buildBedWarsUI()
         ["Auto Team Upgrade"] = "Buys affordable team upgrades at a nearby team shop.",
         ["Health Display"] = "Shows your health below the crosshair.",
         ["Auto Mine"] = "Mines nearby iron ore blocks.",
-        ["Anti Tesla"] = "Stops movement toward nearby enemy Tesla traps.",
         ["Water Speed"] = "Adjusts horizontal swimming speed while in water.",
         ["Miner Statue ESP"] = "Highlights enemy petrified players for the Miner kit.",
         ["Miner Tracker"] = "Nearby statue alerts, valid gather range, and your rewards.",
