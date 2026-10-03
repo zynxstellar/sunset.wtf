@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-kit-miner-antivoid-k227"
+local SUNSET_BUILD = "20261003-worldesp-alerts-k228"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -605,6 +605,10 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
         state = v
         render()
         if callback then task.spawn(callback, state) end
+        if state and BedWars and BedWars.NotifyOn and BedWars.Notify
+            and parent.Parent:GetAttribute("SunsetGame") == "BedWars" then
+            BedWars.Notify("Feature enabled", text)
+        end
     end
     function obj.Get() return state end
     function obj.GetBind() return Binds[obj] end
@@ -3561,13 +3565,13 @@ end
 -- remotes are fired, so the controls remain useful after entering a match.
 BedWars = {
     PlayersOn = false, BedsOn = false, TeamCheck = true,
-    OutlineOre = false, OutlineEnchant = false,
+    WorldESPOn = false, OutlineOre = true, OutlineEnchant = true,
     Running = true, AuraOn = false, ScaffoldOn = false,
     ScaffoldVoidRescue = true, ScaffoldTowerOn = true,
     ScaffoldTowerSpeed = 38, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
-    FakeLagOn = false, FakeLagHold = 0.18, FakeLagRelease = 0.08,
+    FakeLagOn = false,
     KillChatOn = false, KillChatQueue = {},
     AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Sunset.wtf <3",
     SafeWalkOn = false, InfiniteJumpOn = false,
@@ -3575,7 +3579,13 @@ BedWars = {
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
-    InstantMinerOn = false,
+    MinerESPOn = false, NotifyOn = false,
+    WebhookOn = false, WebhookUrl = "",
+    BedAlarmOn = false, BedAlarmRange = 24,
+    AutoTeamUpgradeOn = false, AutoTeamUpgradeRange = 20,
+    TeamUpgradeArmor = true, TeamUpgradeDamage = true,
+    TeamUpgradeGenerator = true, TeamUpgradeBreak = false,
+    TeamUpgradeAlarm = false, TeamUpgradeArmory = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
@@ -3591,6 +3601,8 @@ BedWars = {
     VelocityOn = false, VelocityHorizontal = 0, VelocityVertical = 0,
     AutoBalloonOn = false, AutoPearlOn = false,
     StaffDetectorOn = false, TrapDisablerOn = false,
+    AntiTeslaOn = false, AntiTeslaRange = 9,
+    LaunchOn = false, WaterSpeedOn = false, WaterSpeedValue = 30,
     SpeedOn = false, SpeedValue = 23, SpeedWallCheck = true,
     SpeedAutoJump = false, SpeedAlwaysJump = false,
     FlyOn = false, FlyMode = "Normal", FlySpeed = 23, FlyVerticalSpeed = 12,
@@ -3611,6 +3623,80 @@ BedWars = {
     Session = { Seconds = 0, Kills = 0, Beds = 0, Wins = 0, Games = 0,
         LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
 }
+do
+    BedWars.NotifyGui = new("ScreenGui", {
+        Name = "SunsetNotifications", ResetOnSpawn = false,
+        IgnoreGuiInset = true, DisplayOrder = 2147483646,
+    }, PlayerGui)
+    local stack = new("Frame", {
+        Position = UDim2.new(1, -326, 0, 54), Size = UDim2.fromOffset(310, 340),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, BedWars.NotifyGui)
+    new("UIListLayout", { Padding = UDim.new(0, 7),
+        SortOrder = Enum.SortOrder.LayoutOrder }, stack)
+    function BedWars.Notify(title, message, force)
+        if not BedWars.Running or (not BedWars.NotifyOn and not force) then return end
+        local toast = new("Frame", {
+            Size = UDim2.fromOffset(310, 64),
+            BackgroundColor3 = Color3.fromRGB(35, 24, 36),
+            BackgroundTransparency = 0.06, BorderSizePixel = 0,
+        }, stack)
+        new("UICorner", { CornerRadius = UDim.new(0, 11) }, toast)
+        border(toast, Color3.fromRGB(255, 130, 93))
+        local strip = new("Frame", {
+            Size = UDim2.fromOffset(4, 45), Position = UDim2.fromOffset(7, 10),
+            BackgroundColor3 = Color3.fromRGB(255, 151, 103), BorderSizePixel = 0,
+        }, toast)
+        new("UICorner", { CornerRadius = UDim.new(1, 0) }, strip)
+        local heading = label(toast, tostring(title):sub(1, 45), 14,
+            Color3.fromRGB(255, 216, 162))
+        heading.Font = Enum.Font.GothamBold
+        heading.Position = UDim2.fromOffset(20, 8)
+        heading.Size = UDim2.new(1, -29, 0, 20)
+        local body = label(toast, tostring(message):sub(1, 130), 12,
+            Color3.fromRGB(255, 235, 225))
+        body.Position = UDim2.fromOffset(20, 29)
+        body.Size = UDim2.new(1, -29, 0, 26)
+        body.TextWrapped = true
+        Debris:AddItem(toast, 5)
+    end
+end
+do
+    function BedWars.WebhookSend(event)
+        if not BedWars.WebhookOn then return end
+        local url = BedWars.WebhookUrl
+        if type(url) ~= "string" or not url:match(
+            "^https://discord%.com/api/webhooks/%d+/[%w_-]+$") then return end
+        if os.clock() - (BedWars.LastWebhook or -math.huge) < 4 then return end
+        BedWars.LastWebhook = os.clock()
+        local body = HttpService:JSONEncode({
+            username = "Sunset",
+            embeds = {{
+                title = "Sunset event",
+                color = 16743007,
+                fields = {
+                    { name = "Player", value = LocalPlayer.Name, inline = true },
+                    { name = "User ID", value = tostring(LocalPlayer.UserId), inline = true },
+                    { name = "Event", value = tostring(event):sub(1, 100), inline = false },
+                    { name = "Build", value = SUNSET_BUILD, inline = true },
+                },
+            }},
+        })
+        task.spawn(function()
+            local requestFn = type(ENV.request) == "function" and ENV.request
+                or type(ENV.http_request) == "function" and ENV.http_request
+            if requestFn then
+                pcall(requestFn, { Url = url, Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" }, Body = body })
+            else
+                pcall(function()
+                    HttpService:RequestAsync({ Url = url, Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" }, Body = body })
+                end)
+            end
+        end)
+    end
+end
 do
     local gravityRoot, gravityAttachment, gravityForce
     local zoomSnapshot
@@ -4070,50 +4156,32 @@ local function bedWarsRemote(name, blockEngine)
     end
     return nil
 end
-do
-local function bedWarsCurrentKit()
-    local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
-    local module = scripts and scripts:FindFirstChild("miner-controller", true)
-    local storage = game:GetService("ReplicatedStorage")
-    local include = storage:FindFirstChild("rbxts_include")
-    local runtimeModule = include and include:FindFirstChild("RuntimeLib")
-    if module and runtimeModule then
-        local ok, kit = pcall(function()
-            local runtime = require(runtimeModule)
-            local knit = runtime.import(module, storage, "rbxts_include",
-                "node_modules", "@easy-games", "knit", "src").KnitClient
-            return knit.Controllers.KitController:getKit(LocalPlayer)
-        end)
-        if ok and kit then return tostring(kit) end
-    end
-    return tostring(LocalPlayer:GetAttribute("Kit")
-        or LocalPlayer:GetAttribute("EquippedKit") or "")
-end
-function BedWars.InstantMinerStep()
-    if string.lower(bedWarsCurrentKit()) ~= "miner" then return end
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid or humanoid.Health <= 0 then return end
-    local remote = bedWarsRemote("DestroyPetrifiedPlayer", false)
-    if not remote then return end
-    for _, part in ipairs(CollectionService:GetTagged("MinerInteraction")) do
-        local statue = part.Parent
-        local id = statue and statue:IsA("Model") and statue:GetAttribute("PetrifyId")
-        if id and part:IsA("BasePart") and (root.Position - part.Position).Magnitude <= 6
-            and teamRelation(statue) == "enemy" then
-            BedWars.MinerAttempts = BedWars.MinerAttempts or {}
-            if os.clock() - (BedWars.MinerAttempts[id] or -math.huge) >= 0.8 then
-                BedWars.MinerAttempts[id] = os.clock()
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer({ petrifyId = id })
-                elseif remote:IsA("RemoteFunction") then
-                    task.spawn(function() pcall(remote.InvokeServer, remote, { petrifyId = id }) end)
+function BedWars.AntiTeslaStep(root, humanoid)
+    local direction = humanoid.MoveDirection
+    if direction.Magnitude < 0.05 then return false end
+    local overlap = OverlapParams.new()
+    overlap.FilterType = Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances = { LocalPlayer.Character }
+    for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position,
+        BedWars.AntiTeslaRange, overlap)) do
+        local node = part
+        for _ = 1, 5 do
+            if not node or node == workspace then break end
+            if node.Name:lower():find("tesla", 1, true)
+                and teamRelation(node) ~= "friendly" then
+                local toward = part.Position - root.Position
+                local flat = Vector3.new(toward.X, 0, toward.Z)
+                if flat.Magnitude > 0.1 and direction:Dot(flat.Unit) > 0.15 then
+                    humanoid:Move(Vector3.zero, false)
+                    local velocity = root.AssemblyLinearVelocity
+                    root.AssemblyLinearVelocity = Vector3.new(0, velocity.Y, 0)
+                    return true
                 end
             end
+            node = node.Parent
         end
     end
-end
+    return false
 end
 local function bedWarsHeldItem()
     local character = LocalPlayer.Character
@@ -5006,7 +5074,7 @@ local function bedWarsAutoOreStep()
     BedWars.ItemBusy = false
 end
 
-local bedWarsMarks = { Players = {}, Beds = {}, Ores = {}, Enchants = {} }
+local bedWarsMarks = { Players = {}, Beds = {}, Ores = {}, Enchants = {}, Miner = {} }
 local bedCandidates, oreCandidates, enchantCandidates = {}, {}, {}
 local function indexBedWarsMapNode(node)
     if node:IsA("BasePart") and node.Name:lower() == "bed" then
@@ -5299,11 +5367,14 @@ local function refreshBedWarsPlayers()
     end
 end
 local function refreshBedWarsMap()
+    local showOre = BedWars.WorldESPOn and BedWars.OutlineOre
+    local showEnchant = BedWars.WorldESPOn and BedWars.OutlineEnchant
     if not BedWars.BedsOn then clearBedWarsMarks("Beds") end
-    if not BedWars.OutlineOre then clearBedWarsMarks("Ores") end
-    if not BedWars.OutlineEnchant then clearBedWarsMarks("Enchants") end
-    if not BedWars.BedsOn and not BedWars.OutlineOre
-        and not BedWars.OutlineEnchant then return end
+    if not showOre then clearBedWarsMarks("Ores") end
+    if not showEnchant then clearBedWarsMarks("Enchants") end
+    if not BedWars.MinerESPOn then clearBedWarsMarks("Miner") end
+    if not BedWars.BedsOn and not showOre and not showEnchant
+        and not BedWars.MinerESPOn then return end
     local seenBeds, seenOres, seenEnchants = {}, {}, {}
     local count = 0
     if BedWars.BedsOn then
@@ -5317,7 +5388,7 @@ local function refreshBedWarsMap()
             end
         end
     end
-    if BedWars.OutlineOre then
+    if showOre then
         count = 0
         for node in pairs(oreCandidates) do
             if bedWarsIsIronOre(node) and node.Transparency < 0.95 then
@@ -5328,7 +5399,7 @@ local function refreshBedWarsMap()
             end
         end
     end
-    if BedWars.OutlineEnchant then
+    if showEnchant then
         count = 0
         local enchantTargets = {}
         for node in pairs(enchantCandidates) do enchantTargets[node] = true end
@@ -5347,13 +5418,24 @@ local function refreshBedWarsMap()
             end
         end
     end
+    local seenMiner = {}
+    if BedWars.MinerESPOn then
+        for _, model in ipairs(CollectionService:GetTagged("petrified-player")) do
+            if model:IsA("Model") and model:IsDescendantOf(workspace)
+                and teamRelation(model) == "enemy" then
+                seenMiner[model] = true
+                setBedWarsMark("Miner", model, Color3.fromRGB(255, 198, 99))
+            end
+        end
+    end
     for target, mark in pairs(bedWarsMarks.Beds) do
         if not seenBeds[target] or not target.Parent then
             mark:Destroy()
             bedWarsMarks.Beds[target] = nil
         end
     end
-    for kind, seen in pairs({ Ores = seenOres, Enchants = seenEnchants }) do
+    for kind, seen in pairs({ Ores = seenOres, Enchants = seenEnchants,
+        Miner = seenMiner }) do
         for target, mark in pairs(bedWarsMarks[kind]) do
             if not seen[target] or not target.Parent then
                 mark:Destroy()
@@ -5382,6 +5464,29 @@ local function bedWarsController(name)
     end)
     if ok and knit then bedWarsKnitClient = knit end
     return bedWarsKnitClient and bedWarsKnitClient.Controllers[name] or nil
+end
+function BedWars.LaunchStep()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0
+        or os.clock() - (BedWars.LastLaunch or -math.huge) < 3 then return end
+    local controller = bedWarsController("CannonHandController")
+    if not controller or type(controller.launchSelf) ~= "function" then return end
+    local nearest, distance = nil, 10
+    for _, cannon in ipairs(CollectionService:GetTagged("cannon")) do
+        local part = cannon:IsA("BasePart") and cannon
+            or cannon:IsA("Model") and (cannon.PrimaryPart
+                or cannon:FindFirstChildWhichIsA("BasePart"))
+        if part and part:IsDescendantOf(workspace) then
+            local gap = (part.Position - root.Position).Magnitude
+            if gap < distance then nearest, distance = cannon, gap end
+        end
+    end
+    if nearest then
+        BedWars.LastLaunch = os.clock()
+        pcall(controller.launchSelf, controller, nearest)
+    end
 end
 local function bedWarsRestorePatch(key)
     local record = bedWarsPatched[key]
@@ -5448,6 +5553,42 @@ for _, spec in ipairs({
         Size = UDim2.fromOffset(spec.w, spec.h), BorderSizePixel = 0,
         BackgroundColor3 = BedWars.CrosshairColor }, bedWarsCrosshair)
 end
+do
+    local nativeGui, nativeEnabled, mouseEnabled
+    function BedWars.SyncCrosshair()
+        local active = BedWars.Running and Settings.SelectedGame == "BedWars"
+            and BedWars.CrosshairOn
+        local found = PlayerGui:FindFirstChild("CrosshairGui")
+        if found ~= nativeGui then
+            if nativeGui and nativeGui.Parent and nativeEnabled ~= nil then
+                nativeGui.Enabled = nativeEnabled
+            end
+            nativeGui, nativeEnabled = found, nil
+        end
+        if active then
+            if nativeGui and nativeGui:IsA("ScreenGui") then
+                if nativeEnabled == nil then nativeEnabled = nativeGui.Enabled end
+                nativeGui.Enabled = false
+            end
+            if not anyMenuVisible() then
+                if mouseEnabled == nil then mouseEnabled = UIS.MouseIconEnabled end
+                UIS.MouseIconEnabled = false
+            elseif mouseEnabled ~= nil then
+                UIS.MouseIconEnabled = mouseEnabled
+                mouseEnabled = nil
+            end
+        else
+            if nativeGui and nativeGui.Parent and nativeEnabled ~= nil then
+                nativeGui.Enabled = nativeEnabled
+            end
+            nativeEnabled = nil
+            if mouseEnabled ~= nil then
+                UIS.MouseIconEnabled = mouseEnabled
+                mouseEnabled = nil
+            end
+        end
+    end
+end
 local function bedWarsRestoreExtras()
     for key in pairs(bedWarsPatched) do bedWarsRestorePatch(key) end
     if BedWars.SpeedKnockbackController then
@@ -5492,6 +5633,8 @@ local function bedWarsRestoreExtras()
     end
     bedWarsHitBoxFunction, bedWarsHitBoxOriginal = nil, nil
     bedWarsCrosshair.Visible = false
+    BedWars.CrosshairOn = false
+    BedWars.SyncCrosshair()
     BedWars.HealthDisplay.Visible = false
     BedWars.FlyProgress.Visible = false
 end
@@ -5773,6 +5916,36 @@ function BedWars.SelectProtectionBed()
     end
     BedWars.ProtectHomeBed = nearest
     return nearest
+end
+function BedWars.BedAlarmStep()
+    local ownBed
+    for bed in pairs(bedCandidates) do
+        if BedWars.IsOwnBed(bed) and bed.Transparency < 0.95 then
+            ownBed = bed
+            break
+        end
+    end
+    if not ownBed then return end
+    BedWars.BedAlarmSeen = BedWars.BedAlarmSeen or {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if bedWarsEnemy(player) then
+            local character = player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local gap = root and (root.Position - ownBed.Position).Magnitude
+            if root and humanoid and humanoid.Health > 0
+                and gap <= BedWars.BedAlarmRange then
+                local now = os.clock()
+                if now - (BedWars.BedAlarmSeen[player.UserId] or -math.huge) >= 12 then
+                    BedWars.BedAlarmSeen[player.UserId] = now
+                    BedWars.Notify("Bed Alarm", player.DisplayName
+                        .. " is " .. math.floor(gap) .. " studs from your bed", true)
+                end
+            else
+                BedWars.BedAlarmSeen[player.UserId] = nil
+            end
+        end
+    end
 end
 function BedWars.ProtectStep()
     if BedWars.HoldingAbility() or BedWars.ItemBusy or BedWars.ScaffoldPreviousItem
@@ -6231,6 +6404,8 @@ track(RunService.Heartbeat:Connect(function()
         table.clear(bedWarsObservedHealth)
     end
     bedWarsCrosshair.Visible = BedWars.CrosshairOn
+        and Settings.SelectedGame == "BedWars"
+    BedWars.SyncCrosshair()
     BedWars.HealthDisplay.Visible = BedWars.HealthDisplayOn
         and Settings.SelectedGame == "BedWars"
     if BedWars.HealthDisplay.Visible then
@@ -6290,23 +6465,36 @@ task.spawn(function()
     end
 end)
 local function bedWarsCheckStaff(player)
-    if player == LocalPlayer or not BedWars.StaffDetectorOn then return end
+    if player == LocalPlayer or not (BedWars.StaffDetectorOn or BedWars.NotifyOn) then return end
     task.spawn(function()
         local ok, rank = pcall(player.GetRankInGroup, player, 5774246)
-        if not BedWars.Running or not BedWars.StaffDetectorOn
+        if not BedWars.Running or not (BedWars.StaffDetectorOn or BedWars.NotifyOn)
             or not ok or rank < 100 or BedWars.StaffNotified[player.UserId] then return end
         BedWars.StaffNotified[player.UserId] = true
-        pcall(function()
-            game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "Sunset Staff Detector",
-                Text = player.Name .. " has a BedWars staff group rank (" .. rank .. ")",
-                Duration = 20,
-            })
-        end)
+        if BedWars.NotifyOn then
+            BedWars.Notify("Staff joined", player.Name .. " joined the match")
+        else
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "Sunset Staff Detector",
+                    Text = player.Name .. " has a BedWars staff group rank (" .. rank .. ")",
+                    Duration = 20,
+                })
+            end)
+        end
     end)
 end
 BedWars.CheckStaff = bedWarsCheckStaff
 track(Players.PlayerAdded:Connect(bedWarsCheckStaff))
+track(Players.PlayerAdded:Connect(function(player)
+    if not BedWars.NotifyOn or player == LocalPlayer then return end
+    task.spawn(function()
+        local ok, friend = pcall(LocalPlayer.IsFriendsWith, LocalPlayer, player.UserId)
+        if ok and friend and BedWars.Running and BedWars.NotifyOn then
+            BedWars.Notify("Friend joined", player.DisplayName .. " joined the match")
+        end
+    end)
+end))
 track(RunService.RenderStepped:Connect(function(delta)
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
         or not BedWars.AimAssistOn then return end
@@ -6340,12 +6528,25 @@ track(RunService.RenderStepped:Connect(function(delta)
 end))
 track(RunService.PreSimulation:Connect(function(delta)
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
-        or (not BedWars.SpeedOn and not BedWars.FlyOn) then return end
+        or (not BedWars.SpeedOn and not BedWars.FlyOn
+            and not BedWars.WaterSpeedOn and not BedWars.AntiTeslaOn) then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid or humanoid.Health <= 0
         or humanoid:GetState() == Enum.HumanoidStateType.Climbing then return end
+    if BedWars.AntiTeslaOn and BedWars.AntiTeslaStep(root, humanoid) then return end
+    if BedWars.WaterSpeedOn and not BedWars.FlyOn
+        and humanoid:GetState() == Enum.HumanoidStateType.Swimming then
+        local direction = humanoid.MoveDirection
+        local flat = Vector3.new(direction.X, 0, direction.Z)
+        if flat.Magnitude > 0.05 then
+            local velocity = root.AssemblyLinearVelocity
+            root.AssemblyLinearVelocity = flat.Unit * BedWars.WaterSpeedValue
+                + Vector3.new(0, velocity.Y, 0)
+        end
+        return
+    end
     if BedWars.SpeedOn and not BedWars.FlyOn then
         local knockback = bedWarsController("StatefulEntityKnockbackController")
         if knockback then
@@ -6475,10 +6676,7 @@ do
             return
         end
         BedWars.FakeLagRoot = root
-        local cycle = BedWars.FakeLagHold + BedWars.FakeLagRelease
-        local sleeping = ((os.clock() - (BedWars.FakeLagStarted or os.clock()))
-            % cycle) < BedWars.FakeLagHold
-        local ok = pcall(setter, root, "NetworkIsSleeping", sleeping)
+        local ok = pcall(setter, root, "NetworkIsSleeping", true)
         if not ok then
             BedWars.FakeLagReset()
             BedWars.FakeLagOn = false
@@ -6488,6 +6686,7 @@ do
     end))
 end
 function BedWars.Stop()
+    if BedWars.NotifyGui then BedWars.NotifyGui:Destroy() end
     if BedWars.CrosshairGui then BedWars.CrosshairGui:Destroy() end
     BedWars.StopExtraMovement()
     BedWars.NameTagsOn = false
@@ -6502,6 +6701,13 @@ function BedWars.Stop()
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
+    BedWars.AntiTeslaOn = false
+    BedWars.NotifyOn = false
+    BedWars.WebhookOn = false
+    BedWars.BedAlarmOn = false
+    BedWars.AutoTeamUpgradeOn = false
+    BedWars.LaunchOn = false
+    BedWars.WaterSpeedOn = false
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
     BedWars.VoidWaterOn = false
@@ -6517,7 +6723,7 @@ function BedWars.Stop()
     BedWars.VoidWater.Clear()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
-    BedWars.InstantMinerOn = false
+    BedWars.MinerESPOn = false
     BedWars.AutoBedOn = false
     BedWars.TargetHUDOn = false
     BedWars.SessionInfoOn = false
@@ -6574,6 +6780,145 @@ makeDraggable(targetHUD, targetHUD)
 
 local sessionClock = os.clock()
 local sessionStore
+do
+    local shopModule
+    local shopData
+    local function amountIn(container, currency)
+        if type(container) == "table" then
+            local item = container[currency]
+            if type(item) == "number" then return item end
+            if type(item) == "table" then
+                return tonumber(item.amount or item.Amount) or 0
+            end
+        elseif typeof(container) == "Instance" then
+            local item = container:FindFirstChild(currency)
+            if item then
+                if item:IsA("ValueBase") then return tonumber(item.Value) or 0 end
+                return tonumber(item:GetAttribute("Amount")) or 1
+            end
+        end
+        return 0
+    end
+    local function teamCrateNearby(root)
+        for _, tag in ipairs({ "TeamCrate", "team-crate", "BedwarsTeamCrate" }) do
+            for _, crate in ipairs(CollectionService:GetTagged(tag)) do
+                local part = crate:IsA("BasePart") and crate
+                    or crate:IsA("Model") and (crate.PrimaryPart
+                        or crate:FindFirstChildWhichIsA("BasePart"))
+                if part and (part.Position - root.Position).Magnitude <= 25
+                    and teamRelation(crate) ~= "enemy" then return true end
+            end
+        end
+        return false
+    end
+    local function teamShop()
+        if shopData then return shopData end
+        if not shopModule then
+            shopModule = game:GetService("ReplicatedStorage")
+                :FindFirstChild("bedwars-shop", true)
+                or LocalPlayer.PlayerScripts:FindFirstChild("bedwars-shop", true)
+        end
+        if not shopModule then return nil end
+        local ok, exports = pcall(require, shopModule)
+        if ok and type(exports) == "table" then
+            shopData = exports.BedwarsShop or exports
+        end
+        return shopData
+    end
+    local function upgradeOffer(shop, id)
+        if type(shop.TeamUpgrades) ~= "table" then return nil end
+        if type(shop.getUpgrade) == "function" then
+            local ok, offer = pcall(shop.getUpgrade, shop.TeamUpgrades, id)
+            if ok and offer then return offer end
+        end
+        for _, offer in pairs(shop.TeamUpgrades) do
+            if type(offer) == "table" and (offer.id == id
+                or offer.upgradeId == id or offer.name == id) then return offer end
+        end
+    end
+    function BedWars.TeamUpgradeStep()
+        if BedWars.TeamUpgradeBusy then return end
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local inventory = bedWarsInventory()
+        if not root or not inventory then return end
+        local nearby = false
+        for _, npc in ipairs(CollectionService:GetTagged("TeamUpgradeShopkeeper")) do
+            local part = npc:IsA("BasePart") and npc
+                or npc:IsA("Model") and (npc.PrimaryPart
+                    or npc:FindFirstChildWhichIsA("BasePart"))
+            if part and (part.Position - root.Position).Magnitude
+                <= BedWars.AutoTeamUpgradeRange then nearby = true break end
+        end
+        if not nearby then return end
+        local shop = teamShop()
+        local remote = bedWarsRemote("BedwarsPurchaseTeamUpgrade")
+        local state
+        if sessionStore then
+            local ok, result = pcall(sessionStore.getState, sessionStore)
+            if ok then state = result end
+        end
+        local bedwars = state and state.Bedwars
+        local upgrades = bedwars and bedwars.teamUpgrades
+        if not shop or not remote or type(upgrades) ~= "table" then
+            if not BedWars.TeamUpgradeError then
+                BedWars.TeamUpgradeError = true
+                BedWars.Notify("Team Upgrade", "Shop data is not ready", true)
+            end
+            return
+        end
+        local crate = teamCrateNearby(root) and (bedwars.teamCrate
+            or bedwars.teamChest or bedwars.teamBank) or nil
+        local insufficient = false
+        for _, spec in ipairs({
+            { "armor", "TeamUpgradeArmor" }, { "damage", "TeamUpgradeDamage" },
+            { "generator", "TeamUpgradeGenerator" }, { "break", "TeamUpgradeBreak" },
+            { "alarm", "TeamUpgradeAlarm" }, { "armory", "TeamUpgradeArmory" },
+        }) do
+            if BedWars[spec[2]] then
+                local offer = upgradeOffer(shop, spec[1])
+                local current = tonumber(upgrades[spec[1]]) or -1
+                local tier = offer and offer.tiers and offer.tiers[current + 2]
+                if tier and tier.currency and tonumber(tier.price) then
+                    local price = tonumber(tier.price)
+                    local funds = amountIn(inventory, tier.currency)
+                        + amountIn(crate, tier.currency)
+                    if funds >= price then
+                        BedWars.TeamUpgradeBusy = true
+                        local payload = { upgradeId = spec[1], tier = current + 1 }
+                        local ok, result = false, nil
+                        if remote:IsA("RemoteFunction") then
+                            ok, result = pcall(remote.InvokeServer, remote, payload)
+                        elseif remote:IsA("RemoteEvent") then
+                            ok = pcall(remote.FireServer, remote, payload)
+                        end
+                        BedWars.TeamUpgradeBusy = false
+                        if not ok or result == false then
+                            if not BedWars.TeamUpgradeError then
+                                BedWars.TeamUpgradeError = true
+                                BedWars.Notify("Team Upgrade", "Purchase was rejected", true)
+                            end
+                        end
+                        return
+                    end
+                    insufficient = true
+                end
+            end
+        end
+        if insufficient and not BedWars.TeamUpgradeError then
+            BedWars.TeamUpgradeError = true
+            BedWars.Notify("Team Upgrade", "Not enough currency", true)
+        end
+    end
+    task.spawn(function()
+        while BedWars.Running do
+            if Settings.SelectedGame == "BedWars" and BedWars.AutoTeamUpgradeOn then
+                pcall(BedWars.TeamUpgradeStep)
+            end
+            task.wait(0.8)
+        end
+    end)
+end
 local sessionPanel = new("Frame", {
     Name = "BedWarsSessionInfo", Visible = false,
     Position = UDim2.new(0, 15, 1, -205),
@@ -6789,6 +7134,12 @@ local function updateSession()
             local previous = session.SourceValues[title]
             if previous and value > previous then
                 session[title] = session[title] + value - previous
+                if title == "Wins" then
+                    if BedWars.KillChatOn then
+                        table.insert(BedWars.KillChatQueue, "gg frinkin ez")
+                    end
+                    BedWars.WebhookSend("Match won")
+                end
             end
             session.SourceValues[title] = value
         end
@@ -7023,10 +7374,18 @@ task.spawn(function()
 end)
 task.spawn(function()
     while BedWars.Running do
-        if Settings.SelectedGame == "BedWars" and BedWars.InstantMinerOn then
-            pcall(BedWars.InstantMinerStep)
+        if Settings.SelectedGame == "BedWars" and BedWars.LaunchOn then
+            pcall(BedWars.LaunchStep)
         end
-        task.wait(0.1)
+        task.wait(0.2)
+    end
+end)
+task.spawn(function()
+    while BedWars.Running do
+        if Settings.SelectedGame == "BedWars" and BedWars.BedAlarmOn then
+            pcall(BedWars.BedAlarmStep)
+        end
+        task.wait(0.4)
     end
 end)
 task.spawn(function()
@@ -7228,6 +7587,12 @@ do
     Elements.Toggle(flySection, "TP Down", true, function(on)
         BedWars.FlyTPDown = on
     end, nil, true)
+    do
+        local launchSection = gameSection(gameName, MainTab.Right, "Launch")
+        Elements.Toggle(launchSection, "Launch", false, function(on)
+            BedWars.LaunchOn = on
+        end)
+    end
     local speedSection = gameSection(gameName, MainTab.Right, "Speed")
     Elements.Toggle(speedSection, "Speed", false, function(on)
         BedWars.SpeedOn = on
@@ -7425,8 +7790,6 @@ do
                 BedWars.FakeLagStarted = os.clock()
                 if not on then BedWars.FakeLagReset() end
             end)
-        Elements.Slider(lagSection, "Freeze Time", 0.08, 0.4, 0.18,
-            "seconds", function(value) BedWars.FakeLagHold = value end, 0.01)
     end
     local pickupSection = gameSection(gameName, PlayerTab.Right, "Pickup Range")
     Elements.Toggle(pickupSection, "Pickup Range", false, function(on)
@@ -7487,15 +7850,30 @@ do
     Elements.TextBox(buySection, "BuyList", "item/amount/priority/after, ...",
         function(value) BedWars.AutoBuyList = value end, "", true)
     end
+    BedWars.UpgradeSection = gameSection(gameName, PlayerTab.Right, "Auto Team Upgrade")
+    Elements.Toggle(BedWars.UpgradeSection, "Auto Team Upgrade", false, function(on)
+        BedWars.AutoTeamUpgradeOn = on
+        if not on then BedWars.TeamUpgradeError = false end
+    end)
+    for _, spec in ipairs({
+        { "Armor", "TeamUpgradeArmor" }, { "Damage", "TeamUpgradeDamage" },
+        { "Generator", "TeamUpgradeGenerator" }, { "Break Speed", "TeamUpgradeBreak" },
+        { "Alarm", "TeamUpgradeAlarm" }, { "Armory", "TeamUpgradeArmory" },
+    }) do
+        Elements.Toggle(BedWars.UpgradeSection, spec[1], BedWars[spec[2]],
+            function(on) BedWars[spec[2]] = on end, nil, true)
+    end
+    Elements.Slider(BedWars.UpgradeSection, "Shop Range", 6, 24, 20, "studs",
+        function(value) BedWars.AutoTeamUpgradeRange = value end)
     local oreSection = gameSection(gameName, PlayerTab.Left, "Auto Mine")
     Elements.Toggle(oreSection, "Iron Ore", false, function(on)
         BedWars.AutoOreOn = on
         if not on then clearActiveOreHighlight() end
     end)
     do
-        local minerSection = gameSection(gameName, PlayerTab.Left, "Instant Miner")
-        Elements.Toggle(minerSection, "Instant Miner", false, function(on)
-            BedWars.InstantMinerOn = on
+        local minerSection = gameSection(gameName, PlayerTab.Left, "Miner Statue ESP")
+        Elements.Toggle(minerSection, "Miner Statue ESP", false, function(on)
+            BedWars.MinerESPOn = on
         end)
     end
     local autoBedSection = gameSection(gameName, PlayerTab.Right, "Auto Bed")
@@ -7516,14 +7894,27 @@ do
     Elements.ColorPicker(bedSection, "Bed Color", BedWars.BedColor, function(color)
         BedWars.BedColor = color
     end)
-    local oreOutlineSection = gameSection(gameName, VisualsTab.Right, "Iron Ore Outline")
-    Elements.Toggle(oreOutlineSection, "Iron Ore Outline", false, function(on)
-        BedWars.OutlineOre = on
-    end)
-    local enchantSection = gameSection(gameName, VisualsTab.Right, "Enchant Tables")
-    Elements.Toggle(enchantSection, "Enchant Tables", false, function(on)
-        BedWars.OutlineEnchant = on
-    end)
+    do
+        local alarm = gameSection(gameName, MiscTab.Right, "Bed Alarm")
+        Elements.Toggle(alarm, "Bed Alarm", false, function(on)
+            BedWars.BedAlarmOn = on
+            if not on then BedWars.BedAlarmSeen = {} end
+        end)
+        Elements.Slider(alarm, "Enemy Range", 12, 40, 24, "studs",
+            function(value) BedWars.BedAlarmRange = value end)
+    end
+    do
+        local worldSection = gameSection(gameName, VisualsTab.Right, "World ESP")
+        Elements.Toggle(worldSection, "World ESP", false, function(on)
+            BedWars.WorldESPOn = on
+        end)
+        Elements.Toggle(worldSection, "Iron Ore", true, function(on)
+            BedWars.OutlineOre = on
+        end, nil, true)
+        Elements.Toggle(worldSection, "Enchantment Tables", true, function(on)
+            BedWars.OutlineEnchant = on
+        end, nil, true)
+    end
     local targetSection = gameSection(gameName, VisualsTab.Left, "Target HUD")
     Elements.Toggle(targetSection, "Target HUD", false, function(on)
         BedWars.TargetHUDOn = on
@@ -7620,6 +8011,37 @@ do
             BedWars.OpenExplorer()
         end)
     end
+    do
+        local notifications = gameSection(gameName, SettingsTab.Right, "Notifications")
+        Elements.Toggle(notifications, "Notifications", false, function(on)
+            BedWars.NotifyOn = on
+            if on then
+                BedWars.Notify("Sunset", "Notifications enabled")
+                for _, player in ipairs(Players:GetPlayers()) do
+                    BedWars.CheckStaff(player)
+                end
+            end
+        end)
+    end
+    do
+        local webhook = gameSection(gameName, SettingsTab.Right, "Webhook")
+        Elements.Toggle(webhook, "Webhook", false, function(on)
+            BedWars.WebhookOn = on
+            if on then task.delay(0.25, function()
+                if BedWars.WebhookOn then BedWars.WebhookSend("Client started") end
+            end) end
+        end)
+        Elements.TextBox(webhook, "Discord URL", "Paste webhook URL locally",
+            function(value) BedWars.WebhookUrl = value end, "", false)
+    end
+    do
+        local waterSpeed = gameSection(gameName, Tabs["Dev Tools"].Left, "Water Speed")
+        Elements.Toggle(waterSpeed, "Water Speed", false, function(on)
+            BedWars.WaterSpeedOn = on
+        end)
+        Elements.Slider(waterSpeed, "Swim Speed", 14, 60, 30, "studs",
+            function(value) BedWars.WaterSpeedValue = value end)
+    end
     local afkSection = gameSection(gameName, MiscTab.Right, "Anti AFK")
     Elements.Toggle(afkSection, "Anti AFK", false, function(on)
         BedWars.AntiAFKOn = on
@@ -7640,6 +8062,12 @@ do
     Elements.Toggle(trapSection, "Trap Disabler", false, function(on)
         BedWars.TrapDisablerOn = on
     end)
+    BedWars.TeslaSection = gameSection(gameName, MiscTab.Right, "Anti Tesla")
+    Elements.Toggle(BedWars.TeslaSection, "Anti Tesla", false, function(on)
+        BedWars.AntiTeslaOn = on
+    end)
+    Elements.Slider(BedWars.TeslaSection, "Avoid Range", 5, 14, 9, "studs",
+        function(value) BedWars.AntiTeslaRange = value end)
     end
 end
 -- Client-only visual projectiles. These never call a game combat remote.
@@ -8287,6 +8715,7 @@ local function buildBedWarsUI()
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Speed", "Movement", "BedWars", "Speed", "Speed" },
         { "Movement", "Fly", "Movement", "BedWars", "Fly", "Fly" },
+        { "Movement", "Launch", "Movement", "BedWars", "Launch", "Launch" },
         { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
         { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
         { "Movement", "Safe Walk", "Movement", "BedWars", "Safe Walk", "Safe Walk" },
@@ -8298,10 +8727,11 @@ local function buildBedWarsUI()
         { "Movement", "Void Water", "Movement", "BedWars", "Void Water", "Void Water" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
-        { "KIT", "Instant Miner", "Player", "BedWars", "Instant Miner", "Instant Miner" },
+        { "KIT", "Miner Statue ESP", "Player", "BedWars", "Miner Statue ESP", "Miner Statue ESP" },
         { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
         { "Player", "Fast Break", "Player", "BedWars", "Fast Break", "Fast Break" },
         { "Player", "Auto Buy", "Player", "BedWars", "Auto Buy", "Auto Buy" },
+        { "Player", "Auto Team Upgrade", "Player", "BedWars", "Auto Team Upgrade", "Auto Team Upgrade" },
         { "Player", "Fast Drop", "Player", "BedWars", "Fast Drop", "Fast Drop" },
         { "Player", "Fast Consume", "Player", "BedWars", "Fast Consume", "Fast Consume" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
@@ -8310,8 +8740,7 @@ local function buildBedWarsUI()
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
         { "Visuals", "Name Tags", "Visuals", "BedWars", "Name Tags", "Name Tags" },
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
-        { "Visuals", "Iron Ore Outline", "Visuals", "BedWars", "Iron Ore Outline", "Iron Ore Outline" },
-        { "Visuals", "Enchant Tables", "Visuals", "BedWars", "Enchant Tables", "Enchant Tables" },
+        { "Visuals", "World ESP", "Visuals", "BedWars", "World ESP", "World ESP" },
         { "Visuals", "Target HUD", "Visuals", "BedWars", "Target HUD", "Target HUD" },
         { "Visuals", "Health Display", "Visuals", "BedWars", "Health Display", "Health Display" },
         { "Visuals", "Damage Indicator", "Visuals", "BedWars", "Damage Indicator", "Damage Indicator" },
@@ -8326,7 +8755,9 @@ local function buildBedWarsUI()
         { "Misc", "Water Fight", "Misc", "BedWars", "Water Fight", "Water Fight" },
         { "Misc", "Auto Play Again", "Misc", "BedWars", "Auto Play Again", "Auto Play Again" },
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
+        { "Misc", "Bed Alarm", "Misc", "BedWars", "Bed Alarm", "Bed Alarm" },
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
+        { "Misc", "Anti Tesla", "Misc", "BedWars", "Anti Tesla", "Anti Tesla" },
         { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
@@ -8336,7 +8767,10 @@ local function buildBedWarsUI()
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
         { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
         { "Dev Tools", "DEX", "Dev Tools", "BedWars", "DEX" },
+        { "Dev Tools", "Water Speed", "Dev Tools", "BedWars", "Water Speed", "Water Speed" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
+        { "Sunset", "Notifications", "Sunset", "BedWars", "Notifications", "Notifications" },
+        { "Sunset", "Webhook", "Sunset", "BedWars", "Webhook", "Webhook" },
         { "Sunset", "Module List", "Sunset", "BedWars", "Module List", "Module List" },
         { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
         { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
@@ -8377,12 +8811,19 @@ local function buildBedWarsUI()
         ["Projectile Aura"] = "Uses projectiles when no enemy is in sword reach.",
         ["Scaffold"] = "Places blocks under your bridge path.",
         ["Bed Protector"] = "Places wool around your verified team bed.",
+        ["Bed Alarm"] = "Alerts when an enemy approaches your team bed.",
+        ["Notifications"] = "Shows Sunset alerts for friends, staff, and enabled features.",
+        ["Webhook"] = "Optional private match events; enter a URL each session.",
         ["Fly"] = "Voidware-style Fly with balloon lift and a timed fallback.",
+        ["Launch"] = "Launch yourself from a nearby cannon using its game action.",
         ["Speed"] = "Moves faster with wall checking and optional auto jump.",
         ["Auto Buy"] = "Buys armor, swords, and listed items near a shop.",
+        ["Auto Team Upgrade"] = "Buys affordable team upgrades at a nearby team shop.",
         ["Health Display"] = "Shows your health below the crosshair.",
         ["Auto Mine"] = "Mines nearby iron ore blocks.",
-        ["Instant Miner"] = "Gathers nearby enemy petrified players with the Miner kit.",
+        ["Anti Tesla"] = "Stops movement toward nearby enemy Tesla traps.",
+        ["Water Speed"] = "Adjusts horizontal swimming speed while in water.",
+        ["Miner Statue ESP"] = "Highlights enemy petrified players for the Miner kit.",
         ["Safe Walk"] = "Stops movement at an unsupported edge while grounded.",
         ["Infinite Jump"] = "Press jump again in the air to jump repeatedly.",
         ["Gravity"] = "Adjusts gravity on your character locally.",
