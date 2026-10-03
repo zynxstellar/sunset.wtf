@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-worldesp-alerts-k228"
+local SUNSET_BUILD = "20261003-kit-trackers-k229"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3580,6 +3580,13 @@ BedWars = {
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     MinerESPOn = false, NotifyOn = false,
+    MinerTrackerOn = false,
+    MinerNearbyOn = true, MinerGatherOn = true, MinerRewardsOn = true,
+    MinerRewards = 0, MinerLastReward = "",
+    AdetundeTrackerOn = false,
+    AdetundeHitsOn = true, AdetundeShieldOn = true,
+    AdetundeStormOn = true, AdetundeStrikeOn = true,
+    KitAbility = {},
     WebhookOn = false, WebhookUrl = "",
     BedAlarmOn = false, BedAlarmRange = 24,
     AutoTeamUpgradeOn = false, AutoTeamUpgradeRange = 20,
@@ -5465,6 +5472,40 @@ local function bedWarsController(name)
     if ok and knit then bedWarsKnitClient = knit end
     return bedWarsKnitClient and bedWarsKnitClient.Controllers[name] or nil
 end
+function BedWars.ResolveAbilityController()
+    if BedWars.AbilityController then return BedWars.AbilityController end
+    local storage = game:GetService("ReplicatedStorage")
+    local include = storage:FindFirstChild("rbxts_include")
+    local runtimeModule = include and include:FindFirstChild("RuntimeLib")
+    local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+    local context = scripts and scripts:FindFirstChild("sprint-controller", true)
+    if not runtimeModule or not context then return nil end
+    local ok, controller = pcall(function()
+        local runtime = require(runtimeModule)
+        local flamework = runtime.import(context, storage, "rbxts_include",
+            "node_modules", "@flamework", "core", "out").Flamework
+        local coreOk, core = pcall(runtime.import, context, storage,
+            "rbxts_include", "node_modules", "@easy-games", "game-core", "out")
+        if coreOk and core and core.GameCoreSharedConfig then
+            BedWars.AbilityMeta = core.GameCoreSharedConfig.AbilityMetatable
+        end
+        return flamework.resolveDependency(
+            "@easy-games/game-core:client/controllers/ability/ability-controller@AbilityController")
+    end)
+    if ok then BedWars.AbilityController = controller end
+    return BedWars.AbilityController
+end
+function BedWars.ScriptAbilityNames()
+    local controller = bedWarsController("ScriptAbilityController")
+    local map = controller and controller.abilityMaidMap
+    local names = {}
+    if type(map) == "table" then
+        for name in pairs(map) do
+            if type(name) == "string" then table.insert(names, name) end
+        end
+    end
+    return names
+end
 function BedWars.LaunchStep()
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -6724,6 +6765,9 @@ function BedWars.Stop()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
     BedWars.MinerESPOn = false
+    BedWars.MinerTrackerOn = false
+    BedWars.AdetundeTrackerOn = false
+    for _, options in pairs(BedWars.KitAbility) do options.On = false end
     BedWars.AutoBedOn = false
     BedWars.TargetHUDOn = false
     BedWars.SessionInfoOn = false
@@ -6780,6 +6824,279 @@ makeDraggable(targetHUD, targetHUD)
 
 local sessionClock = os.clock()
 local sessionStore
+do
+    local kitLabels = {
+        miner = "Miner", adetunde = "Adetunde", ragnar = "Ragnar",
+        whisper = "Whisper", isabel = "Isabel", ice_queen = "Isabel",
+        marcel = "Marcel", sophia = "Sophia",
+        void_regent = "Void Regent", voidregent = "Void Regent",
+    }
+    local kitPanel = new("Frame", {
+        Name = "SunsetKitTracker", AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 18, 1, -170), Size = UDim2.fromOffset(260, 114),
+        BackgroundColor3 = Color3.fromRGB(30, 21, 31),
+        BackgroundTransparency = 0.08, BorderSizePixel = 0,
+        Active = true, Visible = false,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 10) }, kitPanel)
+    border(kitPanel, Color3.fromRGB(255, 139, 96))
+    local kitTitle = label(kitPanel, "KIT", 14, Color3.fromRGB(255, 207, 139))
+    kitTitle.Font = Enum.Font.GothamBold
+    kitTitle.Position = UDim2.fromOffset(10, 7)
+    kitTitle.Size = UDim2.new(1, -20, 0, 19)
+    local kitLines = {}
+    for i = 1, 4 do
+        local row = label(kitPanel, "", 12, Color3.fromRGB(247, 225, 214))
+        row.Position = UDim2.fromOffset(10, 25 + (i - 1) * 20)
+        row.Size = UDim2.new(1, -20, 0, 19)
+        row.TextTruncate = Enum.TextTruncate.AtEnd
+        kitLines[i] = row
+    end
+    makeDraggable(kitPanel, kitPanel)
+    local abilityReady = {}
+    local minerSeen = {}
+    local listenerBound = {}
+    local lastShield = 0
+    local lastStrike = 0
+    local function currentKit()
+        local raw = LocalPlayer:GetAttribute("PlayingAsKit")
+            or LocalPlayer:GetAttribute("Kit")
+            or LocalPlayer:GetAttribute("EquippedKit")
+        if type(raw) ~= "string" then return "" end
+        local id = raw:lower():gsub("[%s%-]+", "_")
+        if id == "ice_queen" then return "isabel" end
+        if id == "voidregent" or id == "regent" then return "void_regent" end
+        return id
+    end
+    function BedWars.KitMatches(id)
+        local equipped = currentKit()
+        return equipped == id or (id == "isabel" and equipped == "ice_queen")
+            or (id == "void_regent" and equipped == "voidregent")
+    end
+    local function bindKitEvent(name, callback)
+        if listenerBound[name] then return end
+        local remote = bedWarsRemote(name)
+        if remote and remote:IsA("RemoteEvent") then
+            listenerBound[name] = true
+            track(remote.OnClientEvent:Connect(callback))
+        end
+    end
+    local function abilityNames(id, controller)
+        local names, seen = {}, {}
+        local aliases = id == "isabel" and { "isabel", "ice_queen" }
+            or id == "void_regent" and { "void_regent", "voidregent", "regent" }
+            or { id }
+        local function belongs(name)
+            local lower = name:lower()
+            for _, alias in ipairs(aliases) do
+                if lower:find(alias, 1, true) then return true end
+            end
+            return false
+        end
+        local function add(name)
+            if type(name) == "string" and not seen[name] then
+                seen[name] = true
+                table.insert(names, name)
+            end
+        end
+        if id == "whisper" then add("OWL_LIFT") add("OWL_HEAL") end
+        for _, name in ipairs(BedWars.ScriptAbilityNames()) do add(name) end
+        for _, key in ipairs({ "abilities", "abilityMap", "enabledAbilities" }) do
+            local map = controller and controller[key]
+            if type(map) == "table" then
+                for name in pairs(map) do
+                    if type(name) == "string" and belongs(name) then
+                        add(name)
+                    end
+                end
+            end
+        end
+        local metadata = BedWars.AbilityMeta
+        if type(metadata) == "table" then
+            for name in pairs(metadata) do
+                if type(name) == "string" and belongs(name) then
+                    add(name)
+                end
+            end
+        end
+        table.sort(names)
+        return names
+    end
+    local function progressText(controller, name)
+        for _, method in ipairs({ "getAbilityProgress", "getProgress" }) do
+            if type(controller[method]) == "function" then
+                local ok, value = pcall(controller[method], controller, name)
+                if ok and type(value) == "number" then
+                    return string.format("%.0f%%", math.clamp(
+                        value <= 1 and value * 100 or value, 0, 100))
+                end
+            end
+        end
+        for _, key in ipairs({ "abilities", "abilityMap", "enabledAbilities",
+            "abilityProgress", "abilityState" }) do
+            local map = controller[key]
+            local entry = type(map) == "table" and map[name]
+            if type(entry) == "number" then
+                return string.format("%.0f%%", math.clamp(
+                    entry <= 1 and entry * 100 or entry, 0, 100))
+            end
+            if type(entry) == "table" then
+                local value = entry.progress or entry.currentProgress
+                local maximum = entry.maxProgress or entry.progressNeededPerUse
+                if type(value) == "number" and type(maximum) == "number"
+                    and maximum > 0 then
+                    return string.format("%.0f%%", math.clamp(value / maximum, 0, 1) * 100)
+                end
+            end
+        end
+        return "progress unavailable"
+    end
+    local function renderKit()
+        local id = currentKit()
+        local lines = {}
+        if id == "miner" and BedWars.MinerTrackerOn then
+            local root = LocalPlayer.Character
+                and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local nearest, distance
+            local nearby = {}
+            if root then
+                for _, model in ipairs(CollectionService:GetTagged("petrified-player")) do
+                    local part = model:IsA("Model") and (model.PrimaryPart
+                        or model:FindFirstChildWhichIsA("BasePart"))
+                    if part and model:IsDescendantOf(workspace)
+                        and teamRelation(model) == "enemy" then
+                        local gap = (part.Position - root.Position).Magnitude
+                        local key = model:GetAttribute("PetrifyId") or model
+                        if gap <= 14 then
+                            nearby[key] = true
+                            if BedWars.MinerNearbyOn and not minerSeen[key] then
+                                BedWars.Notify("Miner", "Enemy statue nearby", true)
+                            end
+                        end
+                        if not distance or gap < distance then
+                            nearest, distance = model, gap
+                        end
+                    end
+                end
+            end
+            minerSeen = nearby
+            if BedWars.MinerNearbyOn then
+                table.insert(lines, nearest and string.format("Nearest statue: %.1f studs", distance)
+                    or "No enemy statues nearby")
+            end
+            if BedWars.MinerGatherOn then
+                local valid = nearest and distance <= 6
+                    and nearest.PrimaryPart
+                    and CollectionService:HasTag(nearest.PrimaryPart, "MinerInteraction")
+                table.insert(lines, valid and "Gather valid · hold 2.5s"
+                    or "Gather unavailable")
+            end
+            if BedWars.MinerRewardsOn then
+                table.insert(lines, "Statues gathered: " .. BedWars.MinerRewards)
+                if BedWars.MinerLastReward ~= "" then
+                    table.insert(lines, BedWars.MinerLastReward)
+                end
+            end
+        elseif id == "adetunde" and BedWars.AdetundeTrackerOn then
+            local character = LocalPlayer.Character
+            if BedWars.AdetundeHitsOn then
+                table.insert(lines, "Hammer hits: " .. tostring(
+                    LocalPlayer:GetAttribute("HammerHitCount") or 0))
+            end
+            if BedWars.AdetundeShieldOn then
+                table.insert(lines, lastShield > 0 and string.format(
+                    "Last Frost Shield: %.0fs ago", os.clock() - lastShield)
+                    or "Frost Shield: not observed")
+            end
+            if BedWars.AdetundeStormOn then
+                table.insert(lines, "Storm stacks: " .. tostring(character
+                    and character:GetAttribute("StormStack") or 0))
+            end
+            if BedWars.AdetundeStrikeOn then
+                table.insert(lines, lastStrike > 0 and string.format(
+                    "Last strike: %.0fs ago", os.clock() - lastStrike)
+                    or "Strike: not observed")
+            end
+        else
+            local options = BedWars.KitAbility[id]
+            if options and options.On and (options.Hud or options.Alert) then
+                local controller = BedWars.ResolveAbilityController()
+                local names = abilityNames(id, controller)
+                if controller and #names > 0 then
+                    for _, name in ipairs(names) do
+                        local ok, ready = pcall(controller.canUseAbility, controller, name)
+                        if ok and type(ready) == "boolean" then
+                            local key = id .. ":" .. name
+                            if options.Alert and ready and abilityReady[key] == false then
+                                BedWars.Notify(kitLabels[id] or id, name .. " ready", true)
+                            end
+                            abilityReady[key] = ready
+                            if options.Hud and #lines < 4 then
+                                table.insert(lines, name .. ": " .. (ready and "READY" or
+                                    progressText(controller, name)))
+                            end
+                        end
+                    end
+                end
+                if options.Hud and #lines == 0 then
+                    table.insert(lines, "Ability state unavailable")
+                end
+            end
+        end
+        kitPanel.Visible = Settings.SelectedGame == "BedWars" and #lines > 0
+        if not kitPanel.Visible then return end
+        kitTitle.Text = (kitLabels[id] or id) .. "  /  KIT"
+        for index, row in ipairs(kitLines) do
+            row.Text = lines[index] or ""
+        end
+        kitPanel.Size = UDim2.fromOffset(260, 29 + math.min(#lines, 4) * 20)
+    end
+    task.spawn(function()
+        while BedWars.Running do
+            bindKitEvent("PetrifiedPlayerDestroyed", function(data)
+                if not BedWars.MinerTrackerOn or not BedWars.MinerRewardsOn
+                    or not BedWars.KitMatches("miner")
+                    or type(data) ~= "table" or data.destroyer ~= LocalPlayer then return end
+                BedWars.MinerRewards += 1
+                local summary = {}
+                if type(data.rewards) == "table" then
+                    for _, item in pairs(data.rewards) do
+                        if type(item) == "table" then
+                            table.insert(summary, tostring(item.itemType or item.type or "Item")
+                                .. " x" .. tostring(item.amount or 1))
+                        end
+                    end
+                end
+                BedWars.MinerLastReward = #summary > 0
+                    and table.concat(summary, ", "):sub(1, 60) or "Reward received"
+                BedWars.Notify("Miner reward", BedWars.MinerLastReward, true)
+            end)
+            bindKitEvent("FrostyHammerStrike", function(data)
+                if BedWars.AdetundeTrackerOn and BedWars.AdetundeStrikeOn
+                    and BedWars.KitMatches("adetunde")
+                    and type(data) == "table" and data.player == LocalPlayer then
+                    lastStrike = os.clock()
+                    BedWars.Notify("Adetunde", "Hammer strike activated", true)
+                end
+            end)
+            bindKitEvent("FrostShieldAdded", function(data)
+                if BedWars.AdetundeTrackerOn and BedWars.AdetundeShieldOn
+                    and BedWars.KitMatches("adetunde")
+                    and type(data) == "table" and data.player == LocalPlayer then
+                    lastShield = os.clock()
+                    BedWars.Notify("Adetunde", "Frost Shield activated", true)
+                end
+            end)
+            if Settings.SelectedGame == "BedWars" then
+                pcall(renderKit)
+            else
+                kitPanel.Visible = false
+            end
+            task.wait(0.25)
+        end
+        kitPanel.Visible = false
+    end)
+end
 do
     local shopModule
     local shopData
@@ -7876,6 +8193,56 @@ do
             BedWars.MinerESPOn = on
         end)
     end
+    do
+        local miner = gameSection(gameName, PlayerTab.Left, "Miner Tracker")
+        Elements.Toggle(miner, "Miner Tracker", false, function(on)
+            BedWars.MinerTrackerOn = on
+        end)
+        for _, spec in ipairs({
+            { "Nearby Alert", "MinerNearbyOn" },
+            { "Valid Gather", "MinerGatherOn" },
+            { "Reward Tracker", "MinerRewardsOn" },
+        }) do
+            Elements.Toggle(miner, spec[1], true, function(on)
+                BedWars[spec[2]] = on
+            end, nil, true)
+        end
+    end
+    do
+        local adetunde = gameSection(gameName, PlayerTab.Right, "Adetunde Tracker")
+        Elements.Toggle(adetunde, "Adetunde Tracker", false, function(on)
+            BedWars.AdetundeTrackerOn = on
+        end)
+        for _, spec in ipairs({
+            { "Hammer Hits", "AdetundeHitsOn" },
+            { "Frost Shield", "AdetundeShieldOn" },
+            { "Storm Stacks", "AdetundeStormOn" },
+            { "Strike Alert", "AdetundeStrikeOn" },
+        }) do
+            Elements.Toggle(adetunde, spec[1], true, function(on)
+                BedWars[spec[2]] = on
+            end, nil, true)
+        end
+    end
+    for _, kit in ipairs({
+        { "Ragnar", "ragnar" }, { "Whisper", "whisper" },
+        { "Isabel", "isabel" }, { "Marcel", "marcel" },
+        { "Sophia", "sophia" }, { "Void Regent", "void_regent" },
+    }) do
+        local id = kit[2]
+        local section = gameSection(gameName, PlayerTab.Right, kit[1] .. " Abilities")
+        local options = { On = false, Hud = true, Alert = true }
+        BedWars.KitAbility[id] = options
+        Elements.Toggle(section, kit[1] .. " Abilities", false, function(on)
+            options.On = on
+        end)
+        Elements.Toggle(section, "Ability HUD", true, function(on)
+            options.Hud = on
+        end, nil, true)
+        Elements.Toggle(section, "Ready Alert", true, function(on)
+            options.Alert = on
+        end, nil, true)
+    end
     local autoBedSection = gameSection(gameName, PlayerTab.Right, "Auto Bed")
     Elements.Toggle(autoBedSection, "Auto Bed", false, function(on)
         BedWars.AutoBedOn = on
@@ -8727,7 +9094,15 @@ local function buildBedWarsUI()
         { "Movement", "Void Water", "Movement", "BedWars", "Void Water", "Void Water" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
-        { "KIT", "Miner Statue ESP", "Player", "BedWars", "Miner Statue ESP", "Miner Statue ESP" },
+        { "KIT", "Miner Statue ESP", "Player", "BedWars", "Miner Statue ESP", "Miner Statue ESP", "Miner", "miner" },
+        { "KIT", "Miner Tracker", "Player", "BedWars", "Miner Tracker", "Miner Tracker", "Miner", "miner" },
+        { "KIT", "Adetunde Tracker", "Player", "BedWars", "Adetunde Tracker", "Adetunde Tracker", "Adetunde", "adetunde" },
+        { "KIT", "Ragnar Abilities", "Player", "BedWars", "Ragnar Abilities", "Ragnar Abilities", "Ragnar", "ragnar" },
+        { "KIT", "Whisper Abilities", "Player", "BedWars", "Whisper Abilities", "Whisper Abilities", "Whisper", "whisper" },
+        { "KIT", "Isabel Abilities", "Player", "BedWars", "Isabel Abilities", "Isabel Abilities", "Isabel", "ice_queen" },
+        { "KIT", "Marcel Abilities", "Player", "BedWars", "Marcel Abilities", "Marcel Abilities", "Marcel", "marcel" },
+        { "KIT", "Sophia Abilities", "Player", "BedWars", "Sophia Abilities", "Sophia Abilities", "Sophia", "sophia" },
+        { "KIT", "Void Regent Abilities", "Player", "BedWars", "Void Regent Abilities", "Void Regent Abilities", "Void Regent", "regent" },
         { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
         { "Player", "Fast Break", "Player", "BedWars", "Fast Break", "Fast Break" },
         { "Player", "Auto Buy", "Player", "BedWars", "Auto Buy", "Auto Buy" },
@@ -8824,6 +9199,14 @@ local function buildBedWarsUI()
         ["Anti Tesla"] = "Stops movement toward nearby enemy Tesla traps.",
         ["Water Speed"] = "Adjusts horizontal swimming speed while in water.",
         ["Miner Statue ESP"] = "Highlights enemy petrified players for the Miner kit.",
+        ["Miner Tracker"] = "Nearby statue alerts, valid gather range, and your rewards.",
+        ["Adetunde Tracker"] = "Hammer hits, shield events, storm stacks, and strikes.",
+        ["Ragnar Abilities"] = "Shows exposed ability progress and ready alerts.",
+        ["Whisper Abilities"] = "Tracks exposed owl abilities and ready alerts.",
+        ["Isabel Abilities"] = "Shows exposed ability progress and ready alerts.",
+        ["Marcel Abilities"] = "Shows exposed ability progress and ready alerts.",
+        ["Sophia Abilities"] = "Shows exposed ability progress and ready alerts.",
+        ["Void Regent Abilities"] = "Shows exposed ability progress and ready alerts.",
         ["Safe Walk"] = "Stops movement at an unsupported edge while grounded.",
         ["Infinite Jump"] = "Press jump again in the air to jump repeatedly.",
         ["Gravity"] = "Adjusts gravity on your character locally.",
@@ -8968,7 +9351,7 @@ local function buildBedWarsUI()
             end
             table.insert(cards, { Category = category, Card = card, Control = control,
                 Name = nameLabel, Options = options, Holder = holder, Search = searchText,
-                Kit = category == "KIT" and "miner" or nil,
+                Kit = category == "KIT" and (kitIds[spec[7]] or spec[8]) or nil,
                 Hovered = function() return hovered end, Gradient = activeGradient })
         end
     end
