@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-crosshair-movement-k231"
+local SUNSET_BUILD = "20261003-spotify-hud-k232"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3582,7 +3582,7 @@ BedWars = {
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
-    MinerESPOn = false, NotifyOn = false,
+    MinerESPOn = false, NotifyOn = false, SpotifyHUDOn = false,
     MinerTrackerOn = false,
     MinerNearbyOn = true, MinerGatherOn = true, MinerRewardsOn = true,
     MinerRewards = 0, MinerLastReward = "",
@@ -3670,6 +3670,86 @@ do
         body.TextWrapped = true
         Debris:AddItem(toast, 5)
     end
+end
+do
+    BedWars.SpotifyPanel = new("Frame", {
+        Name = "SunsetSpotifyHUD", AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, -18, 1, -170), Size = UDim2.fromOffset(276, 72),
+        BackgroundColor3 = Color3.fromRGB(27, 22, 31),
+        BackgroundTransparency = 0.05, BorderSizePixel = 0,
+        Active = true, Visible = false,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 12) }, BedWars.SpotifyPanel)
+    border(BedWars.SpotifyPanel, Color3.fromRGB(74, 184, 112))
+    local icon = new("TextLabel", {
+        Position = UDim2.fromOffset(9, 12), Size = UDim2.fromOffset(43, 43),
+        BackgroundColor3 = Color3.fromRGB(42, 111, 69),
+        BorderSizePixel = 0, Text = "♫", Font = Enum.Font.GothamBold,
+        TextSize = 25, TextColor3 = Color3.fromRGB(224, 255, 227),
+    }, BedWars.SpotifyPanel)
+    new("UICorner", { CornerRadius = UDim.new(0, 9) }, icon)
+    local heading = label(BedWars.SpotifyPanel, "SPOTIFY  /  CURRENT TRACK", 10,
+        Color3.fromRGB(119, 223, 151))
+    heading.Font = Enum.Font.GothamBold
+    heading.Position = UDim2.fromOffset(63, 11)
+    heading.Size = UDim2.fromOffset(200, 15)
+    BedWars.SpotifyTitle = label(BedWars.SpotifyPanel,
+        "Waiting for Spotify...", 14, Color3.fromRGB(247, 240, 240))
+    BedWars.SpotifyTitle.Font = Enum.Font.GothamSemibold
+    BedWars.SpotifyTitle.Position = UDim2.fromOffset(63, 27)
+    BedWars.SpotifyTitle.Size = UDim2.fromOffset(200, 34)
+    BedWars.SpotifyTitle.TextWrapped = true
+    BedWars.SpotifyTitle.TextTruncate = Enum.TextTruncate.AtEnd
+    makeDraggable(BedWars.SpotifyPanel, BedWars.SpotifyPanel)
+    function BedWars.SpotifyStep()
+        local url = "http://127.0.0.1:47821/now-playing"
+        local requestFn = type(ENV.request) == "function" and ENV.request
+            or type(ENV.http_request) == "function" and ENV.http_request
+            or type(request) == "function" and request
+            or type(http_request) == "function" and http_request
+            or type(ENV.syn) == "table" and type(ENV.syn.request) == "function"
+                and ENV.syn.request or nil
+        local ok, response
+        if requestFn then
+            ok, response = pcall(requestFn, { Url = url, Method = "GET" })
+        else
+            ok, response = pcall(function()
+                return HttpService:RequestAsync({ Url = url, Method = "GET" })
+            end)
+        end
+        local code = ok and type(response) == "table"
+            and tonumber(response.StatusCode or response.status_code
+                or response.Status) or nil
+        local body = ok and type(response) == "table"
+            and (response.Body or response.body) or nil
+        local success = code == 200 or (not code and ok
+            and type(response) == "table" and response.Success == true)
+        if not success or type(body) ~= "string" then
+            BedWars.SpotifyTitle.Text = "Start the Spotify bridge"
+            return
+        end
+        local decoded, data = pcall(HttpService.JSONDecode, HttpService, body)
+        if not decoded or type(data) ~= "table" then
+            BedWars.SpotifyTitle.Text = "Spotify data unavailable"
+        elseif data.available and type(data.title) == "string" then
+            BedWars.SpotifyTitle.Text = data.title:sub(1, 120)
+        else
+            BedWars.SpotifyTitle.Text = "Nothing playing in Spotify"
+        end
+    end
+    task.spawn(function()
+        while BedWars.Running do
+            BedWars.SpotifyPanel.Visible = BedWars.SpotifyHUDOn
+                and Settings.SelectedGame == "BedWars"
+            if BedWars.SpotifyPanel.Visible then
+                pcall(BedWars.SpotifyStep)
+                task.wait(1)
+            else
+                task.wait(0.3)
+            end
+        end
+        BedWars.SpotifyPanel.Visible = false
+    end)
 end
 do
     local function executorName()
@@ -6796,6 +6876,8 @@ function BedWars.Stop()
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
     BedWars.NotifyOn = false
+    BedWars.SpotifyHUDOn = false
+    if BedWars.SpotifyPanel then BedWars.SpotifyPanel.Visible = false end
     BedWars.WebhookOn = false
     BedWars.BedAlarmOn = false
     BedWars.AutoTeamUpgradeOn = false
@@ -8456,6 +8538,13 @@ do
         BedWars.WebhookStatus = Elements.Label(webhook, "Not tested")
     end
     do
+        local spotify = gameSection(gameName, SettingsTab.Right, "Spotify HUD")
+        Elements.Toggle(spotify, "Spotify HUD", false, function(on)
+            BedWars.SpotifyHUDOn = on
+        end)
+        Elements.Label(spotify, "Shows the desktop Spotify song via the local bridge")
+    end
+    do
         local waterSpeed = gameSection(gameName, Tabs["Dev Tools"].Left, "Water Speed")
         Elements.Toggle(waterSpeed, "Water Speed", false, function(on)
             BedWars.WaterSpeedOn = on
@@ -8679,11 +8768,33 @@ makeDraggable(Window, TitleBar)
 local function bedWarsKitCatalog()
     local names = {}
     local ids = {}
+    local seenIds = {}
+    local function add(display, id)
+        if type(id) == "string" and id:lower() == "adetunde" then
+            display = "Adetunde"
+        end
+        if type(display) ~= "string" or type(id) ~= "string"
+            or display == "" or id == "" or seenIds[id:lower()] then return end
+        seenIds[id:lower()] = true
+        ids[display] = id
+        table.insert(names, display)
+    end
     local storage = game:GetService("ReplicatedStorage")
     local ts = storage:FindFirstChild("TS")
     local games = ts and ts:FindFirstChild("games")
     local bedwars = games and games:FindFirstChild("bedwars")
     local kitFolder = bedwars and bedwars:FindFirstChild("kit")
+    local metaModule = kitFolder and kitFolder:FindFirstChild("bedwars-kit-meta")
+    if metaModule then
+        local metaOk, exports = pcall(require, metaModule)
+        local metadata = metaOk and type(exports) == "table"
+            and exports.BedwarsKitMeta
+        if type(metadata) == "table" then
+            for id, info in pairs(metadata) do
+                if type(info) == "table" then add(info.name, id) end
+            end
+        end
+    end
     local module = kitFolder and kitFolder:FindFirstChild("bedwars-kit")
     local ok, result = false, nil
     if module then ok, result = pcall(require, module) end
@@ -8695,14 +8806,13 @@ local function bedWarsKitCatalog()
                 local display = key:gsub("_", " "):lower():gsub("(%a)([%w']*)", function(first, rest)
                     return first:upper() .. rest
                 end)
-                if not ids[display] then
-                    ids[display] = value
-                    table.insert(names, display)
-                end
+                add(display, value)
             end
         end
         table.sort(names)
     end
+    add("Adetunde", "adetunde")
+    table.sort(names)
     return names, ids
 end
 local function buildBedWarsUI()
@@ -8923,15 +9033,34 @@ local function buildBedWarsUI()
         end)
         column.KitControls = { kitSearch, kitButton, kitOptions }
         column.KitSelect = function(callback)
+            local function choose(kitName)
+                kitSelected = kitName
+                kitButton.Text = kitName
+                kitSearch.Text = ""
+                kitOptions.Visible = false
+                callback()
+            end
             for kitName, option in pairs(optionButtons) do
                 option.MouseButton1Click:Connect(function()
-                    kitSelected = kitName
-                    kitButton.Text = kitName
-                    kitSearch.Text = ""
-                    kitOptions.Visible = false
-                    callback()
+                    choose(kitName)
                 end)
             end
+            kitSearch.FocusLost:Connect(function(enterPressed)
+                if not enterPressed then return end
+                local query = kitSearch.Text:lower():match("^%s*(.-)%s*$")
+                if query == "" then return end
+                for kitName in pairs(optionButtons) do
+                    if kitName:lower() == query then choose(kitName) return end
+                end
+                local found
+                for kitName in pairs(optionButtons) do
+                    if kitName:lower():find(query, 1, true) then
+                        if found then return end
+                        found = kitName
+                    end
+                end
+                if found then choose(found) end
+            end)
         end
         column.KitId = function() return kitSelected and kitIds[kitSelected] end
         column.KitEmpty = new("TextLabel", {
@@ -9192,6 +9321,7 @@ local function buildBedWarsUI()
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
         { "Sunset", "Notifications", "Sunset", "BedWars", "Notifications", "Notifications" },
         { "Sunset", "Webhook", "Sunset", "BedWars", "Webhook", "Webhook" },
+        { "Sunset", "Spotify HUD", "Sunset", "BedWars", "Spotify HUD", "Spotify HUD" },
         { "Sunset", "Module List", "Sunset", "BedWars", "Module List", "Module List" },
         { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
         { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
@@ -9235,6 +9365,7 @@ local function buildBedWarsUI()
         ["Bed Alarm"] = "Alerts when an enemy approaches your team bed.",
         ["Notifications"] = "Shows Sunset alerts for friends, staff, and enabled features.",
         ["Webhook"] = "Optional private match events; enter a URL each session.",
+        ["Spotify HUD"] = "Shows your desktop Spotify song in a draggable HUD.",
         ["Fly"] = "Voidware-style Fly with balloon lift and a timed fallback.",
         ["Launch"] = "Launch yourself from a nearby cannon using its game action.",
         ["Speed"] = "Moves faster with wall checking and optional auto jump.",
