@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-voidware-port-k214"
+local SUNSET_BUILD = "20261002-bedwars-menu-k215"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -6980,13 +6980,30 @@ local function buildBedWarsUI()
     local specs = {
         { "Combat", "Kill Aura", "Combat", "BedWars", "Kill Aura", "Kill Aura" },
         { "Combat", "Projectile Aura", "Combat", "BedWars", "Projectile Aura", "Projectile Aura" },
+        { "Combat", "Aim Assist", "Combat", "BedWars", "Aim Assist", "Aim Assist" },
+        { "Combat", "Trigger Bot", "Combat", "BedWars", "Trigger Bot", "Trigger Bot" },
+        { "Combat", "Reach", "Combat", "BedWars", "Reach", "Reach" },
+        { "Combat", "Hit Boxes", "Combat", "BedWars", "Hit Boxes", "Hit Boxes" },
+        { "Combat", "Velocity", "Combat", "BedWars", "Velocity", "Velocity" },
+        { "Combat", "No Click Delay", "Combat", "BedWars", "No Click Delay", "No Click Delay" },
         { "Combat", "Auto Clicker", "Combat", "BedWars", "Auto Clicker", "Auto Clicker" },
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
+        { "Movement", "Speed", "Movement", "BedWars", "Speed", "Speed" },
+        { "Movement", "Fly", "Movement", "BedWars", "Fly", "Fly" },
+        { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
+        { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
+        { "Movement", "Auto Balloon", "Movement", "BedWars", "Auto Balloon", "Auto Balloon" },
+        { "Movement", "Auto Pearl", "Movement", "BedWars", "Auto Pearl", "Auto Pearl" },
         { "Movement", "Anti Void", "Movement", "BedWars", "Anti Void", "Anti Void" },
         { "Movement", "Void Water", "Movement", "BedWars", "Void Water", "Void Water" },
         { "Movement", "Noclip", "Movement", "All", "Noclip", "Noclip" },
         { "Player", "Auto Mine", "Player", "BedWars", "Auto Mine", "Iron Ore" },
         { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
+        { "Player", "Fast Break", "Player", "BedWars", "Fast Break", "Fast Break" },
+        { "Player", "Auto Buy", "Player", "BedWars", "Auto Buy", "Auto Buy" },
+        { "Player", "Auto Bank", "Player", "BedWars", "Auto Bank", "Auto Bank" },
+        { "Player", "Fast Drop", "Player", "BedWars", "Fast Drop", "Fast Drop" },
+        { "Player", "Fast Consume", "Player", "BedWars", "Fast Consume", "Fast Consume" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
@@ -6994,10 +7011,17 @@ local function buildBedWarsUI()
         { "Visuals", "Iron Ore Outline", "Visuals", "BedWars", "Iron Ore Outline", "Iron Ore Outline" },
         { "Visuals", "Enchant Tables", "Visuals", "BedWars", "Enchant Tables", "Enchant Tables" },
         { "Visuals", "Target HUD", "Visuals", "BedWars", "Target HUD", "Target HUD" },
+        { "Visuals", "Damage Indicator", "Visuals", "BedWars", "Damage Indicator", "Damage Indicator" },
+        { "Visuals", "Hit Color", "Visuals", "BedWars", "Hit Color", "Hit Color" },
+        { "Visuals", "Crosshair", "Visuals", "BedWars", "Crosshair", "Crosshair" },
+        { "Visuals", "FOV", "Visuals", "BedWars", "FOV", "FOV" },
         { "Visuals", "Session Info", "Visuals", "BedWars", "Session Info", "Session Info" },
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
+        { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
+        { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
+        { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
         { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
@@ -7010,6 +7034,34 @@ local function buildBedWarsUI()
         { "Sunset", "Colors", "Sunset", "All", "Colors" },
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
+    -- Include future BedWars sections automatically so a module never exists
+    -- only in the hidden legacy menu when a spec is forgotten above.
+    local listedSections = {}
+    for _, spec in ipairs(specs) do
+        listedSections[spec[3] .. "/" .. spec[4] .. "/" .. spec[5]] = true
+    end
+    for _, section in ipairs(gameSections) do
+        if section.Game == "BedWars" then
+            local heading = section.Box:FindFirstChildOfClass("TextLabel")
+            local title = heading and heading.Text
+            if title then
+                for _, control in ipairs(ConfigControls) do
+                    if control.Kind == "toggle" and control.Box == section.Box then
+                        local tabName = control.Key:match("^([^/]+)/")
+                        local toggleName = control.Key:match("([^/]+)$")
+                        local category = tabName == "Sunset" and "Sunset" or tabName
+                        local key = tabName .. "/BedWars/" .. title
+                        if columns[category] and not listedSections[key] then
+                            table.insert(specs, { category, title, tabName,
+                                "BedWars", title, toggleName })
+                            listedSections[key] = true
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
     local cards = {}
     for index, spec in ipairs(specs) do
         local category, name, tabName, gameName, sectionName, toggleName =
