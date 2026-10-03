@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-bedwars-menu-k215"
+local SUNSET_BUILD = "20261002-water-fight-k216"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -3523,6 +3523,7 @@ BedWars = {
     OutlineOre = false, OutlineEnchant = false,
     Running = true, AuraOn = false, ScaffoldOn = false, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
+    WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     AutoBedRange = 18, AutoBedBreakCover = true,
@@ -3544,7 +3545,7 @@ BedWars = {
     FlyOn = false, FlySpeed = 23, FlyVerticalSpeed = 40,
     HitBoxesOn = false, HitBoxesExpand = 14.4,
     BedProtectorOn = false, BedProtectorLayers = 1,
-    AutoBankOn = false, FastConsumeOn = false, FastConsumeFactor = 0.4,
+    FastConsumeOn = false, FastConsumeFactor = 0.4,
     AutoBuyOn = false, AutoBuyWool = true, AutoBuySword = true,
     AutoBuyPickaxe = false, AutoBuyAxe = false,
     HitColorOn = false, HitColor = Color3.fromRGB(255, 99, 84),
@@ -3557,7 +3558,7 @@ BedWars = {
 BedWars.VoidWater = {}
 do
 local voidWaterSnapshot, voidWaterCorner, voidWaterCenter
-local voidWaterTop
+local voidWaterTop, voidWaterMode
 local voidWaterTerrain = workspace.Terrain
 function BedWars.VoidWater.Clear()
     if voidWaterSnapshot and voidWaterCorner then
@@ -3566,17 +3567,23 @@ function BedWars.VoidWater.Clear()
         end)
         voidWaterSnapshot:Destroy()
     end
-    voidWaterSnapshot, voidWaterCorner, voidWaterCenter, voidWaterTop = nil, nil, nil, nil
+    voidWaterSnapshot, voidWaterCorner, voidWaterCenter, voidWaterTop, voidWaterMode = nil, nil, nil, nil, nil
 end
-function BedWars.VoidWater.Place(position, surfaceY)
-    if voidWaterCenter and voidWaterTop == surfaceY
+function BedWars.VoidWater.Mode()
+    return voidWaterMode
+end
+function BedWars.VoidWater.Place(position, surfaceY, mode)
+    mode = mode or "Void"
+    local width = mode == "Fight"
+        and math.ceil(math.max(40, (BedWars.WaterFightRange + 8) * 2) / 4) * 4
+        or math.floor(BedWars.VoidWaterWidth / 4) * 4
+    local depth = mode == "Fight" and 32 or math.floor(BedWars.VoidWaterDepth / 4) * 4
+    if voidWaterCenter and voidWaterTop == surfaceY and voidWaterMode == mode
         and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
-            < math.min(24, BedWars.VoidWaterWidth / 4) then
+            < (mode == "Fight" and 4 or math.min(24, width / 4)) then
         return
     end
     BedWars.VoidWater.Clear()
-    local width = math.floor(BedWars.VoidWaterWidth / 4) * 4
-    local depth = math.floor(BedWars.VoidWaterDepth / 4) * 4
     local x = math.floor((position.X - width / 2) / 4) * 4
     local y = math.floor((surfaceY - depth) / 4) * 4
     local z = math.floor((position.Z - width / 2) / 4) * 4
@@ -3612,7 +3619,7 @@ function BedWars.VoidWater.Place(position, surfaceY)
     end
     voidWaterSnapshot, voidWaterCorner = snapshot, corner
     voidWaterCenter = Vector2.new(x + width / 2, z + width / 2)
-    voidWaterTop = surfaceY
+    voidWaterTop, voidWaterMode = surfaceY, mode
 end
 end
 local sprintController
@@ -4219,7 +4226,11 @@ local function bedWarsScaffoldStep()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local item = bedWarsFindWool()
-    local remote = bedWarsRemote("PlaceBlock", true)
+    local remote = BedWars.ScaffoldPlaceRemote
+    if not remote or not remote.Parent then
+        remote = bedWarsRemote("PlaceBlock", true)
+        BedWars.ScaffoldPlaceRemote = remote
+    end
     if not root or not humanoid or humanoid.Health <= 0
         or not remote or not remote:IsA("RemoteFunction") then return end
     local feetY = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
@@ -4245,7 +4256,13 @@ local function bedWarsScaffoldStep()
     end
     local grid = emptyCell(root.Position)
     if not grid and humanoid.MoveDirection.Magnitude >= 0.05 then
+        local horizontal = Vector3.new(root.AssemblyLinearVelocity.X, 0,
+            root.AssemblyLinearVelocity.Z).Magnitude
         grid = emptyCell(root.Position + humanoid.MoveDirection.Unit * 3.5)
+        if not grid and BedWars.SpeedOn then
+            local lead = math.clamp(horizontal * 0.25 + 3, 6, 10)
+            grid = emptyCell(root.Position + humanoid.MoveDirection.Unit * lead)
+        end
     end
     if not grid then return end
     -- Keep bridging when the block path is over a deep gap; otherwise let
@@ -4260,7 +4277,7 @@ local function bedWarsScaffoldStep()
         -- Another action (or the player) changed items. Do not fight it.
         BedWars.ScaffoldPreviousItem = nil
         BedWars.ScaffoldWoolItem = nil
-        scaffoldPauseUntil = os.clock() + 0.2
+        scaffoldPauseUntil = os.clock() + 0.05
         return
     end
     BedWars.BridgingNeeded = os.clock()
@@ -4269,7 +4286,7 @@ local function bedWarsScaffoldStep()
     local now = os.clock()
     BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
     if BedWars.ScaffoldInFlight[key]
-        or (BedWars.ScaffoldAttempts[key] or 0) + 0.08 > now
+        or (BedWars.ScaffoldAttempts[key] or 0) + 0.05 > now
         or (BedWars.ScaffoldPending or 0) >= 6 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldInFlight[key] = true
@@ -4918,6 +4935,7 @@ local bedWarsBreakController, bedWarsOriginalCooldown
 local bedWarsOldHitColors = setmetatable({}, { __mode = "k" })
 local bedWarsObservedHealth = setmetatable({}, { __mode = "k" })
 local bedWarsOriginalFOV
+local bedWarsFOVCamera, bedWarsFOVSignal
 local bedWarsHitBoxFunction, bedWarsHitBoxOriginal
 local bedWarsCrosshair = new("Frame", {
     Name = "SunsetBedWarsCrosshair", AnchorPoint = Vector2.new(0.5, 0.5),
@@ -4999,58 +5017,6 @@ local function bedWarsClickHold()
         if ok and data then BedWars.ClickHold = data.ClickHold end
     end
     return BedWars.ClickHold
-end
-local function bedWarsBankStep()
-    local storage = game:GetService("ReplicatedStorage")
-    local inventories = storage:FindFirstChild("Inventories")
-    local chest = inventories and inventories:FindFirstChild(LocalPlayer.Name .. "_personal")
-    local inventory = bedWarsInventory()
-    if not chest or not inventory then return end
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local nearChest = false
-    for _, node in ipairs(CollectionService:GetTagged("personal-chest")) do
-        if node:IsA("BasePart") and (node.Position - root.Position).Magnitude < 20 then
-            nearChest = true
-            break
-        end
-    end
-    local names = { iron = true, gold = true, diamond = true,
-        emerald = true, void_crystal = true }
-    BedWars.BankAttempts = BedWars.BankAttempts or {}
-    local function ready(item)
-        if os.clock() - (BedWars.BankAttempts[item] or 0) < 1 then return false end
-        BedWars.BankAttempts[item] = os.clock()
-        return true
-    end
-    if nearChest then
-        local remote = bedWarsRemote("ChestGetItem")
-        if not remote then return end
-        for _, item in ipairs(chest:GetChildren()) do
-            if names[item.Name] and ready(item) then
-                if remote:IsA("RemoteFunction") then
-                    pcall(remote.InvokeServer, remote, chest, item)
-                elseif remote:IsA("RemoteEvent") then
-                    pcall(remote.FireServer, remote, chest, item)
-                end
-                break
-            end
-        end
-    else
-        local remote = bedWarsRemote("ChestGiveItem")
-        if not remote then return end
-        for _, item in ipairs(inventory:GetChildren()) do
-            if names[item.Name] and ready(item) then
-                if remote:IsA("RemoteFunction") then
-                    pcall(remote.InvokeServer, remote, chest, item)
-                elseif remote:IsA("RemoteEvent") then
-                    pcall(remote.FireServer, remote, chest, item)
-                end
-                break
-            end
-        end
-    end
 end
 local function bedWarsShopCatalog()
     if BedWars.ShopCatalog then return BedWars.ShopCatalog end
@@ -5579,25 +5545,39 @@ track(RunService.Heartbeat:Connect(function()
             if line:IsA("Frame") then line.BackgroundColor3 = BedWars.CrosshairColor end
         end
     end
-    local camera = workspace.CurrentCamera
-    if camera then
-        if BedWars.FOVOn then
-            bedWarsOriginalFOV = bedWarsOriginalFOV or camera.FieldOfView
-            camera.FieldOfView = BedWars.FOVValue
-        elseif bedWarsOriginalFOV then
-            camera.FieldOfView = bedWarsOriginalFOV
-            bedWarsOriginalFOV = nil
-        end
-    end
 end))
-task.spawn(function()
-    while BedWars.Running do
-        if Settings.SelectedGame == "BedWars" and BedWars.AutoBankOn then
-            pcall(bedWarsBankStep)
+RunService:BindToRenderStep("SunsetBedWarsFOV", Enum.RenderPriority.Last.Value + 1,
+    function()
+        if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
+        local camera = workspace.CurrentCamera
+        if camera ~= bedWarsFOVCamera then
+            if bedWarsFOVSignal then bedWarsFOVSignal:Disconnect() end
+            bedWarsFOVCamera = camera
+            bedWarsOriginalFOV = camera and camera.FieldOfView or nil
+            if camera then
+                bedWarsFOVSignal = camera:GetPropertyChangedSignal("FieldOfView"):Connect(function()
+                    if BedWars.Running and BedWars.FOVOn
+                        and camera == workspace.CurrentCamera
+                        and camera.FieldOfView ~= BedWars.FOVValue then
+                        camera.FieldOfView = BedWars.FOVValue
+                    end
+                end)
+            end
         end
-        task.wait(0.4)
-    end
-end)
+        if camera then
+            if BedWars.FOVOn then
+                if bedWarsOriginalFOV == nil then
+                    bedWarsOriginalFOV = camera.FieldOfView
+                end
+                if camera.FieldOfView ~= BedWars.FOVValue then
+                    camera.FieldOfView = BedWars.FOVValue
+                end
+            elseif bedWarsOriginalFOV then
+                camera.FieldOfView = bedWarsOriginalFOV
+                bedWarsOriginalFOV = nil
+            end
+        end
+    end)
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.AutoBuyOn then
@@ -5690,6 +5670,9 @@ track(RunService.PreSimulation:Connect(function(delta)
     root.CFrame += advance
 end))
 function BedWars.Stop()
+    BedWars.FOVOn = false
+    RunService:UnbindFromRenderStep("SunsetBedWarsFOV")
+    if bedWarsFOVSignal then bedWarsFOVSignal:Disconnect() end
     bedWarsRestoreExtras()
     bedWarsReleaseScaffoldItem()
     BedWars.Running = false
@@ -5698,6 +5681,8 @@ function BedWars.Stop()
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
     BedWars.VoidWaterOn = false
+    BedWars.WaterFightOn = false
+    BedWars.AutoPlayAgainOn = false
     BedWars.VoidWater.Clear()
     BedWars.PickupOn = false
     BedWars.AutoOreOn = false
@@ -5980,6 +5965,53 @@ task.spawn(function()
         end
     end
 end)
+do
+    local lastReplayClick = 0
+    task.spawn(function()
+        while BedWars.Running do
+            if Settings.SelectedGame == "BedWars" and BedWars.AutoPlayAgainOn
+                and os.clock() - lastReplayClick > 6 then
+                local gui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+                if gui then
+                    for _, object in ipairs(gui:GetDescendants()) do
+                        if (object:IsA("TextButton") or object:IsA("TextLabel"))
+                            and string.find(string.lower(object.Text), "play again", 1, true) then
+                            local button = object:IsA("TextButton") and object
+                                or object:FindFirstAncestorWhichIsA("GuiButton")
+                            local visible = button ~= nil
+                            local ancestor = button
+                            while ancestor and ancestor ~= gui do
+                                if ancestor:IsA("GuiObject") and not ancestor.Visible then
+                                    visible = false
+                                    break
+                                elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
+                                    visible = false
+                                    break
+                                end
+                                ancestor = ancestor.Parent
+                            end
+                            if visible and button.AbsoluteSize.X > 0
+                                and button.AbsoluteSize.Y > 0 and virtualInput then
+                                local center = button.AbsolutePosition + button.AbsoluteSize / 2
+                                local ok = pcall(function()
+                                    virtualInput:SendMouseButtonEvent(center.X, center.Y,
+                                        0, true, game, 0)
+                                    virtualInput:SendMouseButtonEvent(center.X, center.Y,
+                                        0, false, game, 0)
+                                end)
+                                if ok then
+                                    lastReplayClick = os.clock()
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            task.wait(0.6)
+        end
+    end)
+end
 track(LocalPlayer.Idled:Connect(function()
     if Settings.SelectedGame ~= "BedWars" or not BedWars.AntiAFKOn
         or not virtualUser then return end
@@ -6056,10 +6088,10 @@ task.spawn(function()
         end
         if BedWars.ScaffoldPreviousItem and (not BedWars.ScaffoldOn
             or not BedWars.BridgingNeeded
-            or os.clock() - BedWars.BridgingNeeded > 0.55) then
+            or os.clock() - BedWars.BridgingNeeded > (BedWars.SpeedOn and 0.9 or 0.55)) then
             bedWarsReleaseScaffoldItem()
         end
-        task.wait(0.05)
+        task.wait(BedWars.SpeedOn and 0.02 or 0.05)
     end
 end)
 local function bedWarsSafeGround(position, character)
@@ -6074,7 +6106,8 @@ local function bedWarsSafeGround(position, character)
 end
 track(RunService.Heartbeat:Connect(function()
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
-    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn then return end
+    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn
+        and not BedWars.WaterFightOn then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -6092,10 +6125,43 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.LastSafeCFrame = root.CFrame
         BedWars.WaterGroundY = root.Position.Y
     end
-    if BedWars.VoidWaterOn and BedWars.WaterGroundY
-        and root.Position.Y < BedWars.WaterGroundY - 5 then
+    local fightTarget = false
+    if BedWars.WaterFightOn then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if bedWarsEnemy(player) then
+                local other = player.Character
+                local otherRoot = other and other:FindFirstChild("HumanoidRootPart")
+                local otherHumanoid = other and other:FindFirstChildOfClass("Humanoid")
+                if otherRoot and otherHumanoid and otherHumanoid.Health > 0
+                    and (otherRoot.Position - root.Position).Magnitude <= BedWars.WaterFightRange then
+                    fightTarget = true
+                    break
+                end
+            end
+        end
+    end
+    if fightTarget then
         BedWars.VoidWater.Place(root.Position,
-            math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4)
+            math.ceil((root.Position.Y + 16) / 4) * 4, "Fight")
+    else
+        local voidBelow = false
+        if BedWars.VoidWaterOn and BedWars.WaterGroundY
+            and root.Position.Y < BedWars.WaterGroundY - 5 then
+            local ray = RaycastParams.new()
+            ray.FilterType = Enum.RaycastFilterType.Exclude
+            ray.FilterDescendantsInstances = { character }
+            ray.RespectCanCollide = true
+            ray.IgnoreWater = true
+            voidBelow = workspace:Raycast(root.Position,
+                Vector3.new(0, -256, 0), ray) == nil
+        end
+        if voidBelow then
+            BedWars.VoidWater.Place(root.Position,
+                math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4,
+                "Void")
+        elseif BedWars.VoidWater.Mode() then
+            BedWars.VoidWater.Clear()
+        end
     end
     -- Keep a walker away from an unsupported edge. This does not teleport or
     -- inject velocity, which previously caused server corrections and deaths.
@@ -6226,7 +6292,9 @@ do
     Elements.Toggle(waterSection, "Void Water", false, function(on)
         BedWars.VoidWaterOn = on
         BedWars.WaterGroundY = nil
-        if not on then BedWars.VoidWater.Clear() end
+        if not on and BedWars.VoidWater.Mode() == "Void" then
+            BedWars.VoidWater.Clear()
+        end
     end)
     Elements.Slider(waterSection, "Width", 32, 128, 96, "studs", function(value)
         BedWars.VoidWaterWidth = value
@@ -6318,6 +6386,24 @@ do
             bedWarsReleaseScaffoldItem()
         end
     end)
+    do
+        local fightSection = gameSection(gameName, MiscTab.Right, "Water Fight")
+        Elements.Toggle(fightSection, "Water Fight", false, function(on)
+            BedWars.WaterFightOn = on
+            if not on and BedWars.VoidWater.Mode() == "Fight" then
+                BedWars.VoidWater.Clear()
+            end
+        end)
+        Elements.Slider(fightSection, "Enemy Range", 6, 24, 14, "studs",
+            function(value)
+                BedWars.WaterFightRange = value
+                if BedWars.VoidWater.Mode() == "Fight" then BedWars.VoidWater.Clear() end
+            end)
+        local replaySection = gameSection(gameName, MiscTab.Right, "Auto Play Again")
+        Elements.Toggle(replaySection, "Auto Play Again", false, function(on)
+            BedWars.AutoPlayAgainOn = on
+        end)
+    end
     local pickupSection = gameSection(gameName, PlayerTab.Right, "Pickup Range")
     Elements.Toggle(pickupSection, "Pickup Range", false, function(on)
         BedWars.PickupOn = on
@@ -6342,10 +6428,6 @@ do
     end)
     Elements.Slider(fastConsumeSection, "Hold Time", 0.1, 1, 0.4, "x",
         function(value) BedWars.FastConsumeFactor = value end, 0.05)
-    local bankSection = gameSection(gameName, PlayerTab.Right, "Auto Bank")
-    Elements.Toggle(bankSection, "Auto Bank", false, function(on)
-        BedWars.AutoBankOn = on
-    end)
     local buySection = gameSection(gameName, PlayerTab.Right, "Auto Buy")
     Elements.Toggle(buySection, "Auto Buy", false, function(on)
         BedWars.AutoBuyOn = on
@@ -7001,7 +7083,6 @@ local function buildBedWarsUI()
         { "Player", "Auto Bed", "Player", "BedWars", "Auto Bed", "Auto Bed" },
         { "Player", "Fast Break", "Player", "BedWars", "Fast Break", "Fast Break" },
         { "Player", "Auto Buy", "Player", "BedWars", "Auto Buy", "Auto Buy" },
-        { "Player", "Auto Bank", "Player", "BedWars", "Auto Bank", "Auto Bank" },
         { "Player", "Fast Drop", "Player", "BedWars", "Fast Drop", "Fast Drop" },
         { "Player", "Fast Consume", "Player", "BedWars", "Fast Consume", "Fast Consume" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
@@ -7019,6 +7100,8 @@ local function buildBedWarsUI()
         { "Visuals", "Atmosphere", "Visuals", "All", "Atmosphere Changer", "Enabled" },
         { "Visuals", "Orbiting Stars", "Visuals", "All", "Orbiting Stars", "Orbiting Stars" },
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
+        { "Misc", "Water Fight", "Misc", "BedWars", "Water Fight", "Water Fight" },
+        { "Misc", "Auto Play Again", "Misc", "BedWars", "Auto Play Again", "Auto Play Again" },
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
         { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
