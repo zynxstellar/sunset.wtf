@@ -2,9 +2,14 @@ local source = [========[
 --[[
     Menu  -  Informant-style UI
     RightShift  : open / close
-    Fly (non-BedWars): WASD move, Space = up, LeftShift = down
     ESP         : 2D boxes + names around other players
 ]]
+
+-- Only BedWars and Rivals are supported. Do not build the legacy menu elsewhere.
+if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
+    and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082 then
+    return
+end
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -19,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-spotify-hud-k232"
+local SUNSET_BUILD = "20261003-rivals-ui-k233"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -55,7 +60,6 @@ local T = {
 }
 local BedWars
 local bedWarsHiddenSections = {}
-local sniperOnlySections = {}
 local bedWarsNamesToggle
 local flyToggle
 local spinToggle
@@ -81,7 +85,6 @@ local Settings = {
     TpBelowLimit   = 25,
     GodMode        = false,
     EspBoxColor    = Color3.fromRGB(255, 255, 255),
-    AimFovColor    = Color3.fromRGB(255, 255, 255),
     WatermarkOn    = true,
     ModuleListOn   = true,
     DisableMoveOpen= false,
@@ -156,7 +159,7 @@ TweenService:Create(ENV.SunsetLoading.Fill, TweenInfo.new(1.2, Enum.EasingStyle.
     Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.88, 1) }):Play()
 
 local Window = new("Frame", {
-    Name = "Window", Visible = true,
+    Name = "Window", Visible = false,
     Size = UDim2.fromOffset(560, 480),
     Position = UDim2.fromScale(0.5, 0.5),
     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -165,8 +168,10 @@ local Window = new("Frame", {
     Active = true,
 }, Gui)
 local BedWarsUI
+local RivalsUI
 local function anyMenuVisible()
-    return Window.Visible or (BedWarsUI and BedWarsUI.Visible) or false
+    return Window.Visible or (BedWarsUI and BedWarsUI.Visible)
+        or (RivalsUI and RivalsUI.Visible) or false
 end
 border(Window, T.outer, 1)
 local menuScale = new("UIScale", { Scale = 1 }, Window)
@@ -189,9 +194,12 @@ new("Frame", { Size = UDim2.new(1, -16, 0, 2), Position = UDim2.fromOffset(8, 22
 local listeningFor = nil
 -- The menu is available as soon as its window is created.
 track(UIS.InputBegan:Connect(function(i, gp)
-    if not listeningFor and i.KeyCode == Settings.MenuKey and not UIS:GetFocusedTextBox() then
+    if Settings.SelectedGame and not listeningFor
+        and i.KeyCode == Settings.MenuKey and not UIS:GetFocusedTextBox() then
         if Settings.SelectedGame == "BedWars" and BedWarsUI then
             BedWarsUI.Visible = not BedWarsUI.Visible
+        elseif Settings.SelectedGame == "Rivals" and RivalsUI then
+            RivalsUI.Visible = not RivalsUI.Visible
         else
             Window.Visible = not Window.Visible
         end
@@ -413,7 +421,10 @@ do
         if not gameName then return false end
         local saved = {}
         for _, control in ipairs(ConfigControls) do
-            if control.Key and (not control.Box or control.Box.Visible)
+            if control.Key
+                and (gameName ~= "Rivals"
+                    or control.Key == "Sunset/All/Watermark/Enabled")
+                and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = control.Get()
                 if control.Kind == "color" and typeof(value) == "Color3" then
@@ -487,6 +498,8 @@ do
         for _, item in ipairs(data.Controls) do
             local control = item.Key and byKey[item.Key]
             if control and control.Kind == item.Kind
+                and (gameName ~= "Rivals"
+                    or control.Key == "Sunset/All/Watermark/Enabled")
                 and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
@@ -1032,828 +1045,6 @@ function Elements.Keybind(parent, text)
     return object
 end
 -- ============================================================
--- Zombie Survival Arena feature modules. Kept local to this single-file loader.
--- ============================================================
-local Zombie = { alive = true }
-do
-    local storage = game:GetService("ReplicatedStorage")
-    local Core = { LocalPlayer = LocalPlayer, ReplicatedStorage = storage }
-    function Core.findIn(parent, ...)
-        for _, name in ipairs({ ... }) do
-            parent = parent and parent:FindFirstChild(name)
-        end
-        return parent
-    end
-    local registryModule = Core.findIn(storage, "Modules", "ServiceRegistry")
-    local registry
-    local function findRegistry()
-        if registry then return registry end
-        registryModule = registryModule or Core.findIn(storage, "Modules", "ServiceRegistry")
-        if registryModule then
-            local ok, result = pcall(require, registryModule)
-            if ok then registry = result end
-        end
-        return registry
-    end
-    findRegistry()
-    function Core.getService(name, timeout)
-        local serviceRegistry = findRegistry()
-        if not serviceRegistry then return nil end
-        for _, methodName in ipairs({ "Get", "WaitFor" }) do
-            local method = serviceRegistry[methodName]
-            if type(method) == "function" then
-                -- Some registry versions use colon methods; others expose plain functions.
-                for _, useSelf in ipairs({ false, true }) do
-                    local ok, result
-                    if useSelf then
-                        ok, result = pcall(method, serviceRegistry, name, timeout or 2)
-                    else
-                        ok, result = pcall(method, name, timeout or 2)
-                    end
-                    if ok and result then return result end
-                end
-            end
-        end
-        return nil
-    end
-    function Core.fireRemote(remote, ...)
-        if remote and remote:IsA("RemoteEvent") then
-            pcall(remote.FireServer, remote, ...)
-        end
-    end
-    local remoteRoot = storage:FindFirstChild("Remotes")
-    Core.GameStateRemotes = remoteRoot and remoteRoot:FindFirstChild("GameStateRemotes")
-    Core.WaveRemotes = remoteRoot and remoteRoot:FindFirstChild("WaveRemotes")
-    Core.UpgradeRemotes = remoteRoot and remoteRoot:FindFirstChild("UpgradeRemotes")
-    Core.GunRemotes = remoteRoot and remoteRoot:FindFirstChild("GunRemotes")
-    Core.EventRemotes = remoteRoot and remoteRoot:FindFirstChild("EventRemotes")
-    Zombie.Core = Core
-
-    local function remote(folder, name) return folder and folder:FindFirstChild(name) end
-    local function flagModule()
-        local module = { enabled = false }
-        function module.SetEnabled(state) module.enabled = state == true end
-        function module.IsEnabled() return module.enabled end
-        return module
-    end
-
-    local AutoReplay = flagModule()
-    Zombie.AutoReplay = AutoReplay
-    local replayVote = remote(Core.GameStateRemotes, "VotePlayAgain")
-    local voted = false
-    local started = remote(Core.GameStateRemotes, "GameOverStarted")
-    local ended = remote(Core.GameStateRemotes, "GameOverEnded")
-    if started then track(started.OnClientEvent:Connect(function()
-        if not Zombie.alive or not AutoReplay.enabled or voted or not replayVote then return end
-        voted = true
-        task.delay(1, function()
-            if Zombie.alive and AutoReplay.enabled then Core.fireRemote(replayVote) end
-        end)
-    end)) end
-    if ended then track(ended.OnClientEvent:Connect(function() voted = false end)) end
-
-    local AutoNextWave = flagModule()
-    Zombie.AutoNextWave = AutoNextWave
-    local skipVote = remote(Core.WaveRemotes, "SkipVote")
-    local skipUpdate = remote(Core.WaveRemotes, "SkipUpdate")
-    local nextWaveReady = false
-    local gameOver = false
-    if started then track(started.OnClientEvent:Connect(function() gameOver = true end)) end
-    if ended then track(ended.OnClientEvent:Connect(function() gameOver = false end)) end
-    if skipUpdate then track(skipUpdate.OnClientEvent:Connect(function(data)
-        if type(data) ~= "table" then return end
-        local action = data.Action or data.State
-        if action == "SpawningComplete" or action == "WaveComplete"
-            or action == "Intermission" or action == "VoteOpen" then
-            nextWaveReady = true
-        elseif action == "WaveStarted" or action == "SpawningStarted" then
-            nextWaveReady = false
-        end
-    end)) end
-    task.spawn(function()
-        local settingsClient, zombieClient
-        local previousVote
-        local lastLookup, lastVote = 0, 0
-        while Zombie.alive do
-            if os.clock() - lastLookup > 2 then
-                lastLookup = os.clock()
-                settingsClient = Core.getService("SettingsClient", 2) or settingsClient
-                zombieClient = Core.getService("ZombieClient", 2) or zombieClient
-            end
-            pcall(function()
-                if AutoNextWave.enabled then
-                    if settingsClient then
-                        if previousVote == nil then previousVote = settingsClient:Get("AutoVote") end
-                        if settingsClient:Get("AutoVote") ~= true then settingsClient:Set("AutoVote", true) end
-                    end
-                    local noZombies = false
-                    if zombieClient and type(zombieClient.Zombies) == "table" then
-                        noZombies = true
-                        for _, record in pairs(zombieClient.Zombies) do
-                            if record and not record.IsDying and (record.Health == nil or record.Health > 0) then
-                                noZombies = false
-                                break
-                            end
-                        end
-                    end
-                    if not gameOver and skipVote and (nextWaveReady or noZombies)
-                        and os.clock() - lastVote >= 2 then
-                        Core.fireRemote(skipVote, true)
-                        lastVote = os.clock()
-                    end
-                elseif previousVote ~= nil then
-                    if settingsClient then settingsClient:Set("AutoVote", previousVote) end
-                    previousVote = nil
-                end
-            end)
-            task.wait(0.5)
-        end
-        if previousVote ~= nil and settingsClient then
-            pcall(function() settingsClient:Set("AutoVote", previousVote) end)
-        end
-    end)
-
-    local AutoSkipWave = flagModule()
-    Zombie.AutoSkipWave = AutoSkipWave
-    if skipUpdate then track(skipUpdate.OnClientEvent:Connect(function(data)
-        if Zombie.alive and AutoSkipWave.enabled and type(data) == "table"
-            and (data.Action == "SpawningComplete" or data.Action == "Update") then
-            Core.fireRemote(skipVote, true)
-        end
-    end)) end
-    task.spawn(function()
-        while Zombie.alive do
-            if AutoSkipWave.enabled then Core.fireRemote(skipVote, true) end
-            task.wait(2)
-        end
-    end)
-
-    local AutoEquip = flagModule()
-    Zombie.AutoEquip = AutoEquip
-    task.spawn(function()
-        while Zombie.alive do
-            if AutoEquip.enabled then
-                local character = LocalPlayer.Character
-                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                local backpack = LocalPlayer:FindFirstChild("Backpack")
-                local tool = backpack and backpack:FindFirstChildOfClass("Tool")
-                if humanoid and tool and not character:FindFirstChildOfClass("Tool") then
-                    pcall(humanoid.EquipTool, humanoid, tool)
-                end
-            end
-            task.wait(0.5)
-        end
-    end)
-
-    local Crosshair = flagModule()
-    Zombie.Crosshair = Crosshair
-    local crosshairWasEnabled
-    function Crosshair.SetEnabled(state)
-        Crosshair.enabled = state == true
-        local gui = PlayerGui:FindFirstChild("CrosshairGui")
-        if Crosshair.enabled then
-            if gui and crosshairWasEnabled == nil then crosshairWasEnabled = gui.Enabled end
-            if gui then gui.Enabled = false end
-        else
-            if gui and crosshairWasEnabled ~= nil then gui.Enabled = crosshairWasEnabled end
-            crosshairWasEnabled = nil
-        end
-    end
-    task.spawn(function()
-        while Zombie.alive do
-            if Crosshair.enabled then Crosshair.SetEnabled(true) end
-            task.wait(0.25)
-        end
-    end)
-
-    local Upgrades = { health = false, weapon = false }
-    Zombie.Upgrades = Upgrades
-    function Upgrades.SetHealthEnabled(state) Upgrades.health = state == true end
-    function Upgrades.SetWeaponEnabled(state) Upgrades.weapon = state == true end
-    local healthPurchase = remote(Core.UpgradeRemotes, "PurchaseHealthUpgrade")
-    local weaponPurchase = remote(Core.UpgradeRemotes, "PurchaseWeaponUpgrade")
-    task.spawn(function()
-        while Zombie.alive do
-            if Upgrades.health then Core.fireRemote(healthPurchase) end
-            if Upgrades.weapon then Core.fireRemote(weaponPurchase) end
-            task.wait(2)
-        end
-    end)
-
-    local KillAura = flagModule()
-    Zombie.KillAura = KillAura
-    local radius, maxTargets = 60, 18
-    KillAura.Status = "Off"
-    function KillAura.SetRadius(value) radius = math.clamp(tonumber(value) or 60, 10, 200) end
-    function KillAura.SetMaxTargets(value) maxTargets = math.clamp(math.floor(tonumber(value) or 18), 1, 30) end
-    local hookedGun, originalAim, originalAutoShoot, originalFiring
-    local aimRecord
-    local function inAimCircle(record)
-        local camera = workspace.CurrentCamera
-        local model = record and record.Model
-        local part = model and (model.PrimaryPart or model:FindFirstChild("Head")
-            or model:FindFirstChild("HumanoidRootPart"))
-        local position = record and (record.CurrentPosition or (part and part.Position))
-        if not camera or not position then return nil end
-        if record.HitboxTop then
-            position = position + Vector3.new(0,
-                (record.HitboxTop - (record.HitboxBottom or 0)) * 0.5, 0)
-        end
-        local screen, visible = camera:WorldToViewportPoint(position)
-        if not visible or screen.Z <= 0 then return nil end
-        local center = camera.ViewportSize * 0.5
-        if (Vector2.new(screen.X, screen.Y) - center).Magnitude > (Settings.AimFovRadius or 160) then
-            return nil
-        end
-        return position
-    end
-    local function releaseGun()
-        if hookedGun then
-            hookedGun.GetAimDirection = originalAim
-            hookedGun.IsAutoShooting = originalAutoShoot
-            if hookedGun.IsFiring then
-                hookedGun.IsFiring = originalFiring == true
-                    or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-                    or hookedGun.ControllerShootHeld == true
-            end
-        end
-        hookedGun, originalAim, originalAutoShoot, originalFiring, aimRecord = nil, nil, nil, nil, nil
-    end
-    function KillAura.SetEnabled(state)
-        KillAura.enabled = state == true
-        if not KillAura.enabled then
-            releaseGun()
-            KillAura.Status = "Off"
-        end
-    end
-    task.spawn(function()
-        local zombieClient, gunClient
-        local lastLookup = 0
-        while Zombie.alive do
-            if KillAura.enabled then
-                if os.clock() - lastLookup > 2 then
-                    lastLookup = os.clock()
-                    zombieClient = Core.getService("ZombieClient", 2) or zombieClient
-                    gunClient = Core.getService("GunClient", 2) or gunClient
-                end
-                if not zombieClient then
-                    releaseGun()
-                    KillAura.Status = "ZombieClient unavailable"
-                elseif not gunClient then
-                    releaseGun()
-                    KillAura.Status = "GunClient unavailable"
-                else
-                local ok, err = pcall(function()
-                    local character = LocalPlayer.Character
-                    local root = character and character:FindFirstChild("HumanoidRootPart")
-                    local equipped = gunClient.EquippedGun
-                    local config = gunClient.EquippedConfig
-                    if not root then
-                        releaseGun()
-                        KillAura.Status = "Waiting for character"
-                    elseif not equipped or not config then
-                        releaseGun()
-                        KillAura.Status = "Equip a gun"
-                    elseif type(gunClient.GetAimDirection) ~= "function" then
-                        releaseGun()
-                        KillAura.Status = "Gun aiming unavailable"
-                    else
-                        local weaponRange = radius
-                        if config.IsMelee then weaponRange = math.min(radius, 15) end
-                        if config.IsCone then weaponRange = math.min(radius,
-                            tonumber(config.Range or config.MaxRange) or 45) end
-                        local ids = zombieClient:GetNearbyZombieIds(root.Position, weaponRange)
-                        local alive = {}
-                        for _, id in ipairs(ids or {}) do
-                            local record = zombieClient.Zombies and zombieClient.Zombies[id]
-                            local model = record and record.Model
-                            local position = inAimCircle(record)
-                            if record and position and model and model.Parent and not record.IsDying
-                                and (record.Health == nil or record.Health > 0)
-                                and (position - root.Position).Magnitude <= weaponRange then
-                                table.insert(alive, { record = record,
-                                    distance = (position - root.Position).Magnitude })
-                            end
-                        end
-                        table.sort(alive, function(a, b) return a.distance < b.distance end)
-                        local count = math.min(#alive, maxTargets)
-                        if count == 0 then
-                            releaseGun()
-                            KillAura.Status = "No nearby zombies"
-                        elseif type(gunClient.CanFire) ~= "function" or not gunClient:CanFire() then
-                            releaseGun()
-                            KillAura.Status = "Gun not ready to fire"
-                        else
-                            if gunClient ~= hookedGun then
-                                releaseGun()
-                                hookedGun = gunClient
-                                originalAim = rawget(gunClient, "GetAimDirection")
-                                originalAutoShoot = gunClient.IsAutoShooting
-                                originalFiring = gunClient.IsFiring
-                                gunClient.GetAimDirection = function(self, ...)
-                                    local record = aimRecord
-                                    if record and not record.IsDying and self.EquippedGun then
-                                        local origin = self:GetFireOrigin()
-                                        local target = inAimCircle(record)
-                                        local targetPart = record.Model and
-                                            (record.Model.PrimaryPart or record.Model:FindFirstChild("HumanoidRootPart"))
-                                        local speed = tonumber(self.EquippedConfig and
-                                            (self.EquippedConfig.BulletSpeed or self.EquippedConfig.ProjectileSpeed))
-                                        if target and origin and targetPart and speed and speed > 1 then
-                                            local travel = math.clamp((target - origin).Magnitude / speed, 0, 0.5)
-                                            target = target + targetPart.AssemblyLinearVelocity * travel
-                                        end
-                                        local delta = origin and target and (target - origin)
-                                        if delta and delta.Magnitude > 0.01 then
-                                            if self.EquippedConfig and self.EquippedConfig.IsMelee then
-                                                delta = Vector3.new(delta.X, 0, delta.Z)
-                                                if delta.Magnitude <= 0.01 then return nil end
-                                            end
-                                            return delta.Unit
-                                        end
-                                    end
-                                    return originalAim and originalAim(self, ...) or nil
-                                end
-                            end
-                            local stillValid = false
-                            for i = 1, count do
-                                if alive[i].record == aimRecord then stillValid = true break end
-                            end
-                            if not stillValid then
-                                aimRecord = alive[1].record
-                            end
-                            gunClient.IsAutoShooting = true
-                            gunClient.IsFiring = true
-                            local before = gunClient.LastFireTime or 0
-                            gunClient:TryFire()
-                            local shotStarted = (gunClient.LastFireTime or 0) > before
-                                or tick() - (gunClient.LastFireTime or 0) < 0.5
-                            local bullets = gunClient.ActiveBullets and #gunClient.ActiveBullets or 0
-                            KillAura.Status = (shotStarted and "Firing" or "Aiming")
-                                .. " | Bullets: " .. bullets .. " | Targets: " .. count
-                        end
-                    end
-                end)
-                if not ok then
-                    releaseGun()
-                    KillAura.Status = "Error: " .. tostring(err):sub(1, 90)
-                end
-                end
-            else
-                releaseGun()
-                KillAura.Status = "Off"
-            end
-            task.wait(0.25)
-        end
-        releaseGun()
-    end)
-
-    local AutoAbility = flagModule()
-    Zombie.AutoAbility = AutoAbility
-    AutoAbility.Status = "Off"
-    local abilityDataModule = Core.findIn(storage, "Data", "WeaponAbilityData")
-    local abilityData
-    if abilityDataModule then
-        local ok, result = pcall(require, abilityDataModule)
-        if ok then abilityData = result end
-    end
-    function AutoAbility.SetEnabled(state)
-        AutoAbility.enabled = state == true
-        if not AutoAbility.enabled then AutoAbility.Status = "Off" end
-    end
-    task.spawn(function()
-        local gunClient, zombieClient, lastLookup, lastRequest = nil, nil, 0, 0
-        while Zombie.alive do
-            if AutoAbility.enabled then
-                if os.clock() - lastLookup > 2 then
-                    gunClient = Core.getService("GunClient", 2) or gunClient
-                    zombieClient = Core.getService("ZombieClient", 2) or zombieClient
-                    lastLookup = os.clock()
-                end
-                local tool = gunClient and gunClient.EquippedGun
-                if tool and abilityData and type(abilityData.Resolve) == "function"
-                    and type(abilityData.ReadProgress) == "function"
-                    and type(gunClient.RequestAbilityShot) == "function" then
-                    local ok, ready = pcall(function()
-                        local definition = abilityData.Resolve(tool)
-                        if not definition then return false end
-                        local _, _, charged = abilityData.ReadProgress(tool, definition)
-                        return not not charged
-                    end)
-                    AutoAbility.Status = ok and (ready and "Ready" or "Charging")
-                        or "Ability data unavailable"
-                    local root = LocalPlayer.Character
-                        and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                    local nearby = false
-                    if root and zombieClient and type(zombieClient.GetNearbyZombieIds) == "function" then
-                        local found, ids = pcall(zombieClient.GetNearbyZombieIds,
-                            zombieClient, root.Position, 60)
-                        nearby = found and type(ids) == "table" and #ids > 0
-                    end
-                    if ok and ready and nearby and os.clock() - lastRequest > 0.5 then
-                        lastRequest = os.clock()
-                        pcall(gunClient.RequestAbilityShot, gunClient)
-                    end
-                else
-                    AutoAbility.Status = "Equip an ability weapon"
-                end
-            end
-            task.wait(0.2)
-        end
-    end)
-
-    local ZombieRadar = flagModule()
-    Zombie.ZombieRadar = ZombieRadar
-    ZombieRadar.Status = "Off"
-    local outlined = {}
-    local radarLabels = {}
-    local function clearOutlines()
-        for model, highlight in pairs(outlined) do
-            highlight:Destroy()
-            outlined[model] = nil
-        end
-        for model, label in pairs(radarLabels) do
-            label:Destroy()
-            radarLabels[model] = nil
-        end
-    end
-    function ZombieRadar.SetEnabled(state)
-        ZombieRadar.enabled = state == true
-        if not ZombieRadar.enabled then
-            clearOutlines()
-            ZombieRadar.Status = "Off"
-        end
-    end
-    task.spawn(function()
-        local zombieClient, lastLookup = nil, 0
-        while Zombie.alive do
-            if ZombieRadar.enabled then
-                if os.clock() - lastLookup > 2 then
-                    lastLookup = os.clock()
-                    zombieClient = Core.getService("ZombieClient", 2) or zombieClient
-                end
-                local seen, count, nearest = {}, 0, math.huge
-                local character = LocalPlayer.Character
-                local root = character and character:FindFirstChild("HumanoidRootPart")
-                local records = zombieClient and zombieClient.Zombies
-                if type(records) == "table" then
-                    for _, record in pairs(records) do
-                        local model = record and record.Model
-                        if model and model.Parent and not record.IsDying
-                            and (record.Health == nil or record.Health > 0) then
-                            seen[model] = true
-                            count = count + 1
-                            local highlight = outlined[model]
-                            if not highlight or not highlight.Parent then
-                                highlight = Instance.new("Highlight")
-                                highlight.Name = "SunsetZombieOutline"
-                                highlight.Adornee = model
-                                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                                highlight.FillTransparency = 1
-                                highlight.OutlineColor = Color3.fromRGB(255, 90, 75)
-                                highlight.Parent = model
-                                outlined[model] = highlight
-                            end
-                            local boss = record.IsBoss == true or model.Name:lower():find("boss", 1, true)
-                            highlight.OutlineColor = boss and Color3.fromRGB(255, 201, 74)
-                                or Color3.fromRGB(255, 90, 75)
-                            local part = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
-                                or model:FindFirstChildWhichIsA("BasePart")
-                            if root and part then
-                                local distance = (part.Position - root.Position).Magnitude
-                                nearest = math.min(nearest, distance)
-                                local label = radarLabels[model]
-                                if not label or not label.Parent then
-                                    label = Instance.new("BillboardGui")
-                                    label.Name = "SunsetZombieRadar"
-                                    label.Adornee = part
-                                    label.AlwaysOnTop = true
-                                    label.Size = UDim2.fromOffset(160, 34)
-                                    label.StudsOffsetWorldSpace = Vector3.new(0, 3, 0)
-                                    label.MaxDistance = 400
-                                    label.Parent = part
-                                    local text = Instance.new("TextLabel")
-                                    text.Name = "Info"
-                                    text.BackgroundTransparency = 1
-                                    text.Size = UDim2.fromScale(1, 1)
-                                    text.Font = Enum.Font.GothamBold
-                                    text.TextSize = 12
-                                    text.TextStrokeTransparency = 0.25
-                                    text.TextColor3 = Color3.fromRGB(255, 103, 84)
-                                    text.Parent = label
-                                    radarLabels[model] = label
-                                end
-                                local health = tonumber(record.Health)
-                                label.Info.TextColor3 = boss and Color3.fromRGB(255, 201, 74)
-                                    or Color3.fromRGB(255, 103, 84)
-                                label.Info.Text = model.Name .. "  " .. math.floor(distance)
-                                    .. " studs" .. (health and ("  " .. math.ceil(health) .. " HP") or "")
-                            end
-                        end
-                    end
-                end
-                for model, highlight in pairs(outlined) do
-                    if not seen[model] then
-                        highlight:Destroy()
-                        outlined[model] = nil
-                        if radarLabels[model] then
-                            radarLabels[model]:Destroy()
-                            radarLabels[model] = nil
-                        end
-                    end
-                end
-                ZombieRadar.Status = not zombieClient and "Waiting for zombie data"
-                    or ("Zombies: " .. count .. (nearest < math.huge
-                        and ("  |  Nearest: " .. math.floor(nearest) .. " studs") or ""))
-            end
-            task.wait(0.1)
-        end
-        clearOutlines()
-    end)
-
-    local DropMarkers = flagModule()
-    Zombie.DropMarkers = DropMarkers
-    local markedDrops = {}
-    local eventDrops = {}
-    local function clearDrops()
-        for object, gui in pairs(markedDrops) do
-            gui:Destroy()
-            markedDrops[object] = nil
-        end
-        for anchor, marker in pairs(eventDrops) do
-            marker.Gui:Destroy()
-            anchor:Destroy()
-            eventDrops[anchor] = nil
-        end
-    end
-    function DropMarkers.SetEnabled(state)
-        DropMarkers.enabled = state == true
-        if not DropMarkers.enabled then clearDrops() end
-    end
-    local function dropPart(object)
-        if object:IsA("BasePart") then return object end
-        if object:IsA("Model") then
-            return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
-        end
-        return nil
-    end
-    local function dropKind(object)
-        local name = object.Name:lower()
-        if name:find("salvage", 1, true) then return "SALVAGE" end
-        if name:find("shard", 1, true) then return "SHARD" end
-        return nil
-    end
-    local function eventPosition(value)
-        if typeof(value) == "Vector3" then return value end
-        if typeof(value) == "CFrame" then return value.Position end
-        if typeof(value) == "Instance" then
-            local part = dropPart(value)
-            return part and part.Position
-        end
-        if type(value) == "table" then
-            for _, key in ipairs({ "Position", "WorldPosition", "CFrame", "Model", "Part", "Instance" }) do
-                local position = eventPosition(value[key])
-                if position then return position end
-            end
-        end
-        return nil
-    end
-    for _, entry in ipairs({
-        { "SalvageDrop", "SALVAGE" },
-        { "FactionWarShardDrop", "SHARD" },
-        { "FrontierShardDrop", "SHARD" },
-    }) do
-        local signal = remote(Core.EventRemotes, entry[1])
-        if signal and signal:IsA("RemoteEvent") then
-            track(signal.OnClientEvent:Connect(function(...)
-                if not DropMarkers.enabled then return end
-                local position
-                local payload = table.pack(...)
-                for i = 1, payload.n do
-                    position = eventPosition(payload[i])
-                    if position then break end
-                end
-                if not position then return end
-                local anchor = Instance.new("Part")
-                anchor.Name = "SunsetDropPosition"
-                anchor.Size = Vector3.new(0.1, 0.1, 0.1)
-                anchor.Transparency = 1
-                anchor.Anchored = true
-                anchor.CanCollide = false
-                anchor.CanTouch = false
-                anchor.CFrame = CFrame.new(position)
-                anchor.Parent = workspace
-                local gui = Instance.new("BillboardGui")
-                gui.Name = "SunsetDropEvent"
-                gui.Adornee = anchor
-                gui.AlwaysOnTop = true
-                gui.Size = UDim2.fromOffset(120, 26)
-                gui.StudsOffsetWorldSpace = Vector3.new(0, 2, 0)
-                gui.MaxDistance = 600
-                gui.Parent = anchor
-                local label = Instance.new("TextLabel")
-                label.Size = UDim2.fromScale(1, 1)
-                label.BackgroundTransparency = 1
-                label.Font = Enum.Font.GothamBold
-                label.TextSize = 12
-                label.TextStrokeTransparency = 0.2
-                label.TextColor3 = entry[2] == "SHARD"
-                    and Color3.fromRGB(123, 211, 255)
-                    or Color3.fromRGB(255, 207, 112)
-                label.Text = entry[2]
-                label.Parent = gui
-                eventDrops[anchor] = { Gui = gui, Expires = os.clock() + 45 }
-            end))
-        end
-    end
-    task.spawn(function()
-        while Zombie.alive do
-            if DropMarkers.enabled then
-                local seen, count = {}, 0
-                for _, object in ipairs(workspace:GetDescendants()) do
-                    if count >= 80 then break end
-                    local kind = dropKind(object)
-                    if kind and (object:IsA("Model") or object:IsA("BasePart"))
-                        and not (object.Parent and dropKind(object.Parent)) then
-                        local part = dropPart(object)
-                        if part and part:IsDescendantOf(workspace) then
-                            count += 1
-                            seen[object] = true
-                            local gui = markedDrops[object]
-                            if not gui or not gui.Parent then
-                                gui = Instance.new("BillboardGui")
-                                gui.Name = "SunsetDropMarker"
-                                gui.Adornee = part
-                                gui.AlwaysOnTop = true
-                                gui.Size = UDim2.fromOffset(120, 26)
-                                gui.StudsOffsetWorldSpace = Vector3.new(0, 2, 0)
-                                gui.MaxDistance = 600
-                                gui.Parent = part
-                                local text = Instance.new("TextLabel")
-                                text.Name = "Info"
-                                text.Size = UDim2.fromScale(1, 1)
-                                text.BackgroundTransparency = 1
-                                text.Font = Enum.Font.GothamBold
-                                text.TextSize = 12
-                                text.TextStrokeTransparency = 0.2
-                                text.TextColor3 = kind == "SHARD"
-                                    and Color3.fromRGB(123, 211, 255)
-                                    or Color3.fromRGB(255, 207, 112)
-                                text.Parent = gui
-                                markedDrops[object] = gui
-                            end
-                            gui.Info.Text = kind
-                        end
-                    end
-                end
-                for object, gui in pairs(markedDrops) do
-                    if not seen[object] then
-                        gui:Destroy()
-                        markedDrops[object] = nil
-                    end
-                end
-                for anchor, marker in pairs(eventDrops) do
-                    if not anchor.Parent or os.clock() >= marker.Expires then
-                        marker.Gui:Destroy()
-                        anchor:Destroy()
-                        eventDrops[anchor] = nil
-                    end
-                end
-            end
-            task.wait(1.5)
-        end
-        clearDrops()
-    end)
-
-    local RapidFire = flagModule()
-    Zombie.RapidFire = RapidFire
-    local interval = 0.02
-    local originalRates = setmetatable({}, { __mode = "k" })
-    local activeConfig
-    local function restoreRates()
-        for config, rate in pairs(originalRates) do
-            config.FireRate = rate
-            originalRates[config] = nil
-        end
-    end
-    function RapidFire.SetInterval(value) interval = math.clamp(tonumber(value) or 0.02, 0.01, 0.2) end
-    function RapidFire.SetEnabled(state)
-        RapidFire.enabled = state == true
-        if not RapidFire.enabled then
-            restoreRates()
-            activeConfig = nil
-        end
-    end
-    task.spawn(function()
-        local gunClient = Core.getService("GunClient", 30)
-        while Zombie.alive do
-            local config = gunClient and gunClient.EquippedConfig
-            if RapidFire.enabled then
-                if activeConfig and activeConfig ~= config then
-                    activeConfig.FireRate = originalRates[activeConfig]
-                    originalRates[activeConfig] = nil
-                end
-                activeConfig = config
-                if config then
-                    if originalRates[config] == nil then originalRates[config] = config.FireRate end
-                    config.FireRate = interval
-                end
-            end
-            task.wait(0.1)
-        end
-        restoreRates()
-    end)
-    local BulletNoClip = flagModule()
-    Zombie.BulletNoClip = BulletNoClip
-    local removedBulletTags = setmetatable({}, { __mode = "k" })
-    local function removeBulletCollisionTags()
-        for _, instance in ipairs(CollectionService:GetTagged("BulletCollide")) do
-            removedBulletTags[instance] = true
-            CollectionService:RemoveTag(instance, "BulletCollide")
-        end
-    end
-    local function restoreBulletCollisionTags()
-        for instance in pairs(removedBulletTags) do
-            if instance.Parent and not CollectionService:HasTag(instance, "BulletCollide") then
-                CollectionService:AddTag(instance, "BulletCollide")
-            end
-            removedBulletTags[instance] = nil
-        end
-    end
-    function BulletNoClip.SetEnabled(state)
-        BulletNoClip.enabled = state == true
-        if BulletNoClip.enabled then
-            removeBulletCollisionTags()
-        else
-            restoreBulletCollisionTags()
-        end
-    end
-    task.spawn(function()
-        while Zombie.alive do
-            if BulletNoClip.enabled then removeBulletCollisionTags() end
-            task.wait(0.25)
-        end
-        restoreBulletCollisionTags()
-    end)
-    local InstantKill = flagModule()
-    Zombie.InstantKill = InstantKill
-    local hitBurstSize = 32
-    local lastHitBurst = {}
-    local gunHitRemote = remote(Core.GunRemotes, "GunHit")
-    local canBurstHits = gunHitRemote and typeof(hookmetamethod) == "function"
-        and typeof(newcclosure) == "function" and typeof(getnamecallmethod) == "function"
-    function InstantKill.SetEnabled(state)
-        InstantKill.enabled = state == true and canBurstHits == true
-        if state and not canBurstHits then
-            warn("[Sunset] Instant Kill needs the GunHit remote and namecall hooks")
-        end
-        if not InstantKill.enabled then table.clear(lastHitBurst) end
-    end
-    function InstantKill.SetBurstSize(value)
-        hitBurstSize = math.clamp(math.floor(tonumber(value) or 32), 2, 64)
-    end
-    if canBurstHits then
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            if self == gunHitRemote and getnamecallmethod() == "FireServer"
-                and Zombie.alive and InstantKill.enabled then
-                local args = table.pack(...)
-                local zombieId = args[2]
-                if zombieId and zombieId ~= 0 and args[4] ~= true
-                    and os.clock() - (lastHitBurst[zombieId] or -math.huge) >= 0.35 then
-                    lastHitBurst[zombieId] = os.clock()
-                    local result = oldNamecall(self, ...)
-                    task.spawn(function()
-                        for i = 2, hitBurstSize do
-                            if not Zombie.alive or not InstantKill.enabled then break end
-                            pcall(function()
-                                self:FireServer(table.unpack(args, 1, args.n))
-                            end)
-                            if i % 8 == 0 then task.wait() end
-                        end
-                    end)
-                    return result
-                end
-            end
-            return oldNamecall(self, ...)
-        end))
-    end
-    function Zombie.Stop()
-        Zombie.alive = false
-        for _, module in ipairs({ AutoReplay, AutoNextWave, AutoSkipWave, AutoEquip,
-            KillAura }) do module.SetEnabled(false) end
-        Crosshair.SetEnabled(false)
-        Upgrades.SetHealthEnabled(false)
-        Upgrades.SetWeaponEnabled(false)
-        ZombieRadar.SetEnabled(false)
-        DropMarkers.SetEnabled(false)
-        AutoAbility.SetEnabled(false)
-        RapidFire.SetEnabled(false)
-        BulletNoClip.SetEnabled(false)
-        InstantKill.SetEnabled(false)
-    end
-end
-
 -- ============================================================
 -- FLY
 -- ============================================================
@@ -2196,7 +1387,8 @@ task.spawn(function()
         frames += 1
         if os.clock() - last >= 1 then
             local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
-            Watermark.Text = Settings.SelectedGame == "BedWars"
+            Watermark.Text = (Settings.SelectedGame == "BedWars"
+                or Settings.SelectedGame == "Rivals")
                 and string.format("SUNSET.WTF  •  %s  •  %d FPS  •  %d MS", LocalPlayer.Name, frames, ping)
                 or string.format("sunset.wtf | v1.0 | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
             frames, last = 0, os.clock()
@@ -2216,285 +1408,6 @@ local MiscTab = makeTab("Misc")
 local FunTab = makeTab("Fun")
 makeTab("Dev Tools")
 local SettingsTab = makeTab("Sunset")
--- ---- Aim
-Settings.AimEnabled = false
-Settings.TriggerEnabled = false
-Settings.AimTeamCheck = true
-Settings.AimVisibleCheck = false
-Settings.AimAllDirections = false
-Settings.AimRange = 300
-Settings.AimFovEnabled = true
-Settings.AimFovVisible = false
-Settings.AimFovRadius = 160
-Settings.AimPart = "Head"
-Settings.AimMode = "Hold"
-Settings.AimHoldInput = "Right Mouse"
-Settings.AimSmoothTime = 0.12
-Settings.FireMode = "Hold"
-Settings.FireBackend = "Auto"
-Settings.FireInterval = 0.15
-
-do
-    local left = makeSection(AimTab.Left, "Aim")
-    local right = makeSection(AimTab.Right, "Checks")
-    table.insert(bedWarsHiddenSections, left.Parent)
-    table.insert(bedWarsHiddenSections, right.Parent)
-    table.insert(sniperOnlySections, left.Parent)
-    table.insert(sniperOnlySections, right.Parent)
-    Elements.Toggle(left, "Aim", false, function(v) Settings.AimEnabled = v end)
-    Elements.Toggle(left, "Auto Fire", false, function(v) Settings.TriggerEnabled = v end)
-    Elements.Dropdown(left, "Use", { "Hold", "Always" }, "Hold", function(v) Settings.AimMode = v end)
-    Elements.Dropdown(left, "Hold Key", { "Right Mouse", "Left Alt", "E", "Q" }, "Right Mouse",
-        function(v) Settings.AimHoldInput = v end)
-    Elements.Dropdown(left, "Aim At", { "Head", "Body", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }, "Head",
-        function(v) Settings.AimPart = v end)
-    Elements.Slider(left, "Smoothness", 0, 100, 30, "", function(v) Settings.AimSmoothTime = v / 250 end)
-    Elements.Slider(left, "Range", 25, 1000, 300, "", function(v) Settings.AimRange = v end)
-    local status = Elements.Label(left, "Off")
-    status.Visible = false
-    status.TextWrapped = true
-    status.Parent.Size = UDim2.new(1, 0, 0, 44)
-    local aimStatus = new("TextLabel", {
-        Name = "AimStatus", AnchorPoint = Vector2.new(0.5, 1),
-        Position = UDim2.new(0.5, 0, 1, -32), Size = UDim2.fromOffset(440, 44),
-        BackgroundColor3 = T.bg, BackgroundTransparency = 0.15,
-        BorderSizePixel = 0, Font = T.font, TextSize = 13,
-        TextColor3 = T.text, TextWrapped = true, Visible = false,
-        Text = "Aim: off",
-    }, Gui)
-    border(aimStatus, T.red)
-    track(status:GetPropertyChangedSignal("Text"):Connect(function() aimStatus.Text = status.Text end))
-    local fovGui = new("ScreenGui", {
-        Name = "SunsetFovCircle", ResetOnSpawn = false, IgnoreGuiInset = true,
-        DisplayOrder = 2147483646, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-    }, PlayerGui)
-    local fovCircle = new("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, fovGui)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, fovCircle)
-    local fovOutline = new("UIStroke", {
-        Color = Settings.AimFovColor, Thickness = 1.5, Transparency = 0.1,
-    }, fovCircle)
-    track({ Disconnect = function() fovGui:Destroy() end })
-    Elements.Toggle(right, "Team Check", true, function(v) Settings.AimTeamCheck = v end)
-    Elements.Toggle(right, "Wall Check", false, function(v) Settings.AimVisibleCheck = v end)
-    Elements.Toggle(right, "Look Behind", false, function(v) Settings.AimAllDirections = v end)
-    Elements.Toggle(right, "Skip Unset Teams", false, function(v) Settings.AimSkipUnknown = v end)
-    Elements.TextBox(right, "Team Label", "optional: FactionId", function(v)
-        Settings.AimTeamField = v:match("^%s*(.-)%s*$")
-    end)
-    Elements.Line(right)
-    Elements.Dropdown(right, "Fire Type", { "Hold", "Click" }, "Hold", function(v) Settings.FireMode = v end)
-    Elements.Dropdown(right, "Fire Input", { "Auto", "Mouse", "Tool" }, "Auto", function(v) Settings.FireBackend = v end)
-    Elements.Slider(right, "Click Delay", 5, 100, 15, " x0.01s", function(v) Settings.FireInterval = v / 100 end)
-
-    local parts = {
-        Head = { "Head" }, Body = { "UpperTorso", "Torso", "LowerTorso", "HumanoidRootPart", "RootPart" },
-        ["Left Arm"] = { "LeftUpperArm", "Left Arm", "LeftHand" },
-        ["Right Arm"] = { "RightUpperArm", "Right Arm", "RightHand" },
-        ["Left Leg"] = { "LeftUpperLeg", "Left Leg", "LeftFoot" },
-        ["Right Leg"] = { "RightUpperLeg", "Right Leg", "RightFoot" },
-    }
-    local pressMouse = typeof(mouse1press) == "function" and mouse1press or nil
-    local releaseMouse = typeof(mouse1release) == "function" and mouse1release or nil
-    local focused = true
-    local locked, pressedTool, pressedKind, pressedMode
-    local releaseAt, nextClick, nextScan = 0, 0, 0
-    local function stopFire()
-        if pressedKind == "Mouse" and releaseMouse then pcall(releaseMouse) end
-        if pressedTool then pcall(function() pressedTool:Deactivate() end) end
-        pressedKind, pressedTool, pressedMode = nil, nil, nil
-        releaseAt = 0
-    end
-    track(UIS.WindowFocusReleased:Connect(function() focused = false stopFire() end))
-    track(UIS.WindowFocused:Connect(function() focused = true end))
-    local function held()
-        if Settings.AimMode == "Always" then return true end
-        if Settings.AimHoldInput == "Right Mouse" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end
-        local key = ({ ["Left Alt"] = Enum.KeyCode.LeftAlt, E = Enum.KeyCode.E, Q = Enum.KeyCode.Q })[Settings.AimHoldInput]
-        return key and UIS:IsKeyDown(key)
-    end
-    local function rayClear(origin, part, camera)
-        local exclusions = { camera }
-        if LocalPlayer.Character then table.insert(exclusions, LocalPlayer.Character) end
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.IgnoreWater = true
-        for _ = 1, 12 do
-            params.FilterDescendantsInstances = exclusions
-            local hit = workspace:Raycast(origin, part.Position - origin, params)
-            local targetModel = part:FindFirstAncestorOfClass("Model")
-            local owner = targetModel and owningPlayer(targetModel)
-            local targetCharacter = owner and owner.Character or targetModel
-            if not hit or (targetCharacter and hit.Instance:IsDescendantOf(targetCharacter)) then return true end
-            -- Invisible non-solid helpers should not block targeting.
-            if hit.Instance:IsA("BasePart") and hit.Instance.Transparency >= 0.95 and not hit.Instance.CanCollide then
-                table.insert(exclusions, hit.Instance)
-            else
-                return false
-            end
-        end
-        return false
-    end
-    local function candidate(model, camera, origin, retaining)
-        if not eligibleModel(model, false) then return nil, "self / dead / missing part" end
-        if Settings.AimTeamCheck and teamRelation(model) == "friendly" then return nil, "same team" end
-        if Settings.AimTeamCheck and Settings.AimSkipUnknown and teamRelation(model) == "unknown" then return nil, "unset team" end
-        local part
-        for _, name in ipairs(parts[Settings.TriggerEnabled and "Head" or Settings.AimPart]) do
-            part = modelPart(model, name)
-            if part then break end
-        end
-        if not part then return nil, "no body part" end
-        local distance = (part.Position - origin).Magnitude
-        if distance > Settings.AimRange or distance < 0.01 then return nil, "out of range" end
-        local screen, inView = camera:WorldToViewportPoint(part.Position)
-        if Settings.AimFovEnabled then
-            if not inView or screen.Z <= 0 then return nil, "outside FOV" end
-            local center = camera.ViewportSize * 0.5
-            if (Vector2.new(screen.X, screen.Y) - center).Magnitude > Settings.AimFovRadius then
-                return nil, "outside FOV"
-            end
-        end
-        if not retaining and not Settings.AimAllDirections and (not inView or screen.Z <= 0) then return nil, "off screen" end
-        if Settings.AimVisibleCheck and not rayClear(camera.CFrame.Position, part, camera) then return nil, "behind wall" end
-        local center = camera.ViewportSize * 0.5
-        local score = inView and (Vector2.new(screen.X, screen.Y) - center).Magnitude or 100000 + distance
-        return part, nil, score
-    end
-    local function fire(character, now)
-        local backend = Settings.FireBackend
-        if backend == "Auto" then backend = pressMouse and releaseMouse and "Mouse" or "Tool" end
-        local tool = character:FindFirstChildOfClass("Tool")
-        if pressedKind and (pressedKind ~= backend or pressedMode ~= Settings.FireMode or (backend == "Tool" and pressedTool ~= tool)) then stopFire() end
-        if backend == "Mouse" and not (pressMouse and releaseMouse) then stopFire() return "Mouse input unavailable; use Tool" end
-        if backend == "Tool" and not tool then stopFire() return "No equipped tool; custom weapon needs Mouse" end
-        if backend == "Tool" and not tool.Enabled then stopFire() return "Tool not ready" end
-        if pressedKind then return "Firing: " .. backend end
-        if now < nextClick then return "Fire delay" end
-        pressedKind, pressedMode = backend, Settings.FireMode
-        pressedTool = backend == "Tool" and tool or nil
-        local ok
-        if backend == "Mouse" then ok = pcall(pressMouse) else ok = pcall(function() tool:Activate() end) end
-        if not ok then stopFire() return "Fire input failed: " .. backend end
-        if Settings.FireMode == "Click" then
-            releaseAt = now + 0.05
-            nextClick = now + math.max(Settings.FireInterval, 0.08)
-        end
-        return "Firing: " .. backend
-    end
-    -- Preserve our previous aim rotation, not the rotation rewritten by the
-    -- game's camera at the start of each frame. Camera position still follows
-    -- the game's movement, zoom and respawn behavior.
-    local trackedCamera, trackedRotation
-    local function resetTracking()
-        trackedCamera, trackedRotation = nil, nil
-    end
-    local function trackCamera(camera, point, dt)
-        local origin = camera.CFrame.Position
-        if (point - origin).Magnitude < 0.01 then return nil end
-        if trackedCamera ~= camera or not trackedRotation then
-            trackedCamera = camera
-            trackedRotation = camera.CFrame.Rotation
-        end
-        local desired = CFrame.lookAt(origin, point)
-        local alpha = Settings.AimSmoothTime <= 0 and 1
-            or 1 - math.exp(-math.clamp(dt, 0, 0.05) / Settings.AimSmoothTime)
-        trackedRotation = trackedRotation:Lerp(desired.Rotation, alpha)
-        local look = CFrame.new(origin) * trackedRotation
-        camera.CFrame = look
-        return look
-    end
-    local function pause(message)
-        stopFire()
-        locked = nil
-        resetTracking()
-        status.Text = message
-    end
-    local binding = "SunsetSelectedPartAim"
-    RunService:UnbindFromRenderStep(binding)
-    local nextRefresh = 0
-    local function updateAim(dt)
-        local now = os.clock()
-        if releaseAt > 0 and now >= releaseAt then stopFire() end
-        if Settings.SelectedGame ~= "Sniper Arena" then pause("Off") return end
-        if not Settings.AimEnabled and not Settings.TriggerEnabled then pause("Off") return end
-        if not focused then pause("Paused: game not focused") return end
-        if anyMenuVisible() then pause("Close the menus to aim") return end
-        if UIS:GetFocusedTextBox() or listeningFor then pause("Paused: typing") return end
-        if not held() then pause("Hold " .. Settings.AimHoldInput .. " to aim") nextScan = 0 return end
-        local character = LocalPlayer.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local root = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head"))
-        local camera = workspace.CurrentCamera
-        if not camera or not root or not humanoid or humanoid.Health <= 0 then pause("Waiting for your character") return end
-        local target = locked
-        local part = target and candidate(target, camera, root.Position, true)
-        if not part then
-            stopFire()
-            locked = nil
-            if now < nextScan then return end
-            nextScan = now + 0.06
-            if now >= nextRefresh then
-                nextRefresh = now + 2
-                -- Also find parts renamed after creation or streamed in during loading.
-                for _, descendant in ipairs(workspace:GetDescendants()) do registerTargetPart(descendant) end
-            end
-            local best, count, reasons = math.huge, 0, {}
-            for model in pairs(TargetModels) do
-                local point, why, score = candidate(model, camera, root.Position)
-                count += 1
-                if point and score < best then target, part, best = model, point, score end
-                if why then reasons[why] = (reasons[why] or 0) + 1 end
-            end
-            if not part then
-                local details = {}
-                for why, amount in pairs(reasons) do table.insert(details, tostring(amount) .. " " .. why) end
-                table.sort(details)
-                resetTracking()
-                status.Text = count == 0 and "No heads found in loaded models"
-                    or "No lock: " .. table.concat(details, ", ")
-                return
-            end
-            locked = target
-        end
-        local look = trackCamera(camera, part.Position, dt)
-        if not look then stopFire() return end
-        -- Keep the existing cursor-unlock fallback from undoing this rotation.
-        if useScriptable then camOffset = root.CFrame:ToObjectSpace(look) end
-        local relation = teamRelation(target)
-        status.Text = "LOCKED: " .. target.Name .. " | " .. relation
-        if Settings.TriggerEnabled then
-            local direction = part.Position - look.Position
-            local allowedAngle = math.max(math.rad(2), math.atan(math.min(part.Size.X, part.Size.Y) * 0.45 / direction.Magnitude))
-            local aligned = look.LookVector:Dot(direction.Unit) >= math.cos(allowedAngle)
-            if aligned then status.Text = status.Text .. "\n" .. fire(character, now)
-            else stopFire() status.Text = status.Text .. " | lining up" end
-        else stopFire() end
-    end
-    RunService:BindToRenderStep(binding, Enum.RenderPriority.Last.Value + 1, function(dt)
-        local diameter = Settings.AimFovRadius * 2
-        fovCircle.Size = UDim2.fromOffset(diameter, diameter)
-        fovGui.Enabled = Settings.AimFovVisible and Settings.SelectedGame ~= "BedWars"
-        fovOutline.Color = Settings.AimFovColor
-        aimStatus.Visible = Settings.SelectedGame == "Sniper Arena"
-            and (Settings.AimEnabled or Settings.TriggerEnabled)
-        local ok, message = pcall(updateAim, dt)
-        if not ok then
-            stopFire()
-            locked = nil
-            resetTracking()
-            status.Text = "Aim error: " .. tostring(message)
-        end
-    end)
-    track({ Disconnect = function()
-        Settings.AimEnabled, Settings.TriggerEnabled = false, false
-        resetTracking()
-        stopFire()
-        RunService:UnbindFromRenderStep(binding)
-    end })
-end
 -- ---- Settings / Watermark
 do
     local s = makeSection(SettingsTab.Left, "Watermark")
@@ -2983,19 +1896,8 @@ do
         Settings.EspTeamCheck = on
     end)
     bedWarsNamesToggle = Elements.Toggle(s, "Show Names", true, function(on) Settings.EspNames = on end)
-    local fov = makeSection(VisualsTab.Right, "FOV Circle")
-    fov.Parent.LayoutOrder = 2
-    table.insert(bedWarsHiddenSections, fov.Parent)
-    Elements.Toggle(fov, "Show FOV Circle", false, function(on) Settings.AimFovVisible = on end)
-    Elements.Slider(fov, "FOV Radius", 30, 500, 160, "", function(value)
-        Settings.AimFovRadius = value
-    end)
-    Elements.Toggle(fov, "Limit Aim to FOV", true, function(on) Settings.AimFovEnabled = on end)
-    Elements.ColorPicker(fov, "Circle Color", Settings.AimFovColor, function(color)
-        Settings.AimFovColor = color
-    end)
     local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
-    atmosphere.Parent.LayoutOrder = 3
+    atmosphere.Parent.LayoutOrder = 2
     Elements.Toggle(atmosphere, "Enabled", false, setAtmosphereEnabled, nil, true)
     Elements.Dropdown(atmosphere, "Preset", { "Sunset", "Clear", "Dawn", "Golden", "Midnight", "Mist", "Storm", "Neon" }, "Sunset", function(value)
         atmospherePreset = value
@@ -3073,7 +1975,6 @@ do
 
     -- point the camera (and therefore the cursor / crosshair) at the target's head
     local function aimAtHead(target)
-        if Settings.AimEnabled or Settings.TriggerEnabled then return end -- aim controls own the camera
         local head = target.Character and (target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart"))
         if not head then return end
         local look = CFrame.lookAt(Camera.CFrame.Position, head.Position)
@@ -3521,49 +2422,9 @@ local function showGameSections(gameName)
             flyToggle.SetBind(nil)
         end
     end
-    for _, box in ipairs(sniperOnlySections) do box.Visible = gameName == "Sniper Arena" end
     if bedWarsNamesToggle then bedWarsNamesToggle._row.Visible = not isBedWars end
-    if gameName ~= "Sniper Arena" then
-        Settings.AimEnabled = false
-        Settings.TriggerEnabled = false
-    end
-    if isBedWars then Settings.AimFovVisible = false end
 end
 
-do
-    local gameName = "Zombie Survival Arena"
-    local waves = gameSection(gameName, MiscTab.Left, "Waves")
-    Elements.Toggle(waves, "Auto Next Wave", false, Zombie.AutoNextWave.SetEnabled)
-    Elements.Toggle(waves, "Auto Skip Wave", false, Zombie.AutoSkipWave.SetEnabled)
-    local replay = gameSection(gameName, MiscTab.Right, "Replay")
-    Elements.Toggle(replay, "Auto Replay", false, Zombie.AutoReplay.SetEnabled)
-
-    local aura = gameSection(gameName, AimTab.Left, "Kill Aura")
-    Elements.Toggle(aura, "Kill Aura", false, Zombie.KillAura.SetEnabled)
-    Elements.Slider(aura, "Kill Aura Radius", 10, 200, 60, "studs", Zombie.KillAura.SetRadius)
-    Elements.Slider(aura, "Target Pool", 1, 30, 18, "", Zombie.KillAura.SetMaxTargets)
-    local guns = gameSection(gameName, MiscTab.Right, "Firing Rate")
-    Elements.Toggle(guns, "Fire Rate", false, Zombie.RapidFire.SetEnabled)
-    Elements.Slider(guns, "Fire Rate Amount", 0.01, 0.2, 0.02,
-        "seconds", Zombie.RapidFire.SetInterval, 0.01)
-    Elements.Toggle(guns, "Auto Equip Weapon", false, Zombie.AutoEquip.SetEnabled)
-    Elements.Toggle(guns, "Hit Burst (experimental)", false, Zombie.InstantKill.SetEnabled)
-    Elements.Slider(guns, "Hits per Hit", 2, 64, 32, "", Zombie.InstantKill.SetBurstSize)
-    Elements.Toggle(guns, "Auto Weapon Ability", false, Zombie.AutoAbility.SetEnabled)
-    local upgrades = gameSection(gameName, PlayerTab.Right, "Upgrades")
-    Elements.Toggle(upgrades, "Auto Upgrade Weapon", false, Zombie.Upgrades.SetWeaponEnabled)
-    Elements.Toggle(upgrades, "Auto Upgrade Health", false, Zombie.Upgrades.SetHealthEnabled)
-    local bullets = gameSection(gameName, MiscTab.Left, "Bullets")
-    Elements.Toggle(bullets, "Bullet No Clip", false, Zombie.BulletNoClip.SetEnabled)
-
-    local display = gameSection(gameName, VisualsTab.Right, "Crosshair")
-    display.Parent.LayoutOrder = 1
-    Elements.Toggle(display, "Hide Built-In Crosshair", false, Zombie.Crosshair.SetEnabled)
-    local radar = gameSection(gameName, VisualsTab.Left, "Zombie Radar")
-    radar.Parent.LayoutOrder = 2
-    Elements.Toggle(radar, "Zombie Outlines", false, Zombie.ZombieRadar.SetEnabled)
-    Elements.Toggle(radar, "Shard + Salvage Markers", false, Zombie.DropMarkers.SetEnabled)
-end
 -- BedWars starter modules use replicated players and map objects. No lobby
 -- remotes are fired, so the controls remain useful after entering a match.
 BedWars = {
@@ -9677,7 +8538,198 @@ local function buildBedWarsUI()
     }, header)
     makeDraggable(BedWarsUI, dragHandle)
 end
-buildBedWarsUI()
+if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
+    buildBedWarsUI()
+end
+
+-- Rivals starts with a clean game page. Only shared Sunset controls are exposed;
+-- BedWars cards and kit controls remain exclusive to the BedWars board.
+local function buildRivalsUI()
+    local accent = Color3.fromRGB(255, 132, 92)
+    local gold = Color3.fromRGB(255, 196, 119)
+    local columnColor = Color3.fromRGB(34, 25, 34)
+    local cardColor = Color3.fromRGB(55, 37, 47)
+    local muted = Color3.fromRGB(192, 169, 174)
+    RivalsUI = new("Frame", {
+        Name = "RivalsBoard", Visible = false, Active = true,
+        Size = UDim2.fromOffset(485, 270),
+        Position = UDim2.new(0.5, 0, 0, 12),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, Gui)
+    local boardScale = new("UIScale", { Scale = 1 }, RivalsUI)
+    local openingScale = new("NumberValue", { Value = 1 }, RivalsUI)
+    local function fitBoard()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        boardScale.Scale = openingScale.Value * math.max(0.4, math.min(1,
+            (camera.ViewportSize.X - 24) / 485,
+            (camera.ViewportSize.Y - 24) / 270))
+    end
+    fitBoard()
+    track(RunService.Heartbeat:Connect(fitBoard))
+    track(openingScale:GetPropertyChangedSignal("Value"):Connect(fitBoard))
+    track(RivalsUI:GetPropertyChangedSignal("Visible"):Connect(function()
+        onMenuVisibility()
+        if RivalsUI.Visible then
+            openingScale.Value = 0.92
+            TweenService:Create(openingScale, TweenInfo.new(0.2,
+                Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { Value = 1 }):Play()
+        end
+    end))
+
+    local header = new("Frame", {
+        Size = UDim2.new(1, 0, 0, 108), BackgroundTransparency = 1,
+    }, RivalsUI)
+    local sun = new("Frame", {
+        Position = UDim2.fromOffset(22, 15), Size = UDim2.fromOffset(17, 17),
+        BackgroundColor3 = gold, BorderSizePixel = 0,
+    }, header)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, sun)
+    local title = label(header, "SUNSET.WTF", 22, Color3.fromRGB(255, 238, 227))
+    title.Font = Enum.Font.GothamBold
+    title.Position = UDim2.fromOffset(48, 10)
+    title.Size = UDim2.fromOffset(230, 27)
+    local subtitle = label(header, "RIVALS  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.Position = UDim2.fromOffset(24, 38)
+    subtitle.Size = UDim2.fromOffset(235, 17)
+    local searchFrame = new("Frame", {
+        Position = UDim2.fromOffset(20, 67), Size = UDim2.fromOffset(445, 36),
+        BackgroundColor3 = columnColor, BorderSizePixel = 0,
+    }, header)
+    new("UICorner", { CornerRadius = UDim.new(0, 11) }, searchFrame)
+    border(searchFrame, Color3.fromRGB(121, 78, 78))
+    local searchRing = new("Frame", {
+        Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchRing)
+    border(searchRing, gold, 2)
+    local searchHandle = new("Frame", {
+        Position = UDim2.fromOffset(23, 22), Size = UDim2.fromOffset(9, 2),
+        Rotation = 45, BackgroundColor3 = gold, BorderSizePixel = 0,
+    }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchHandle)
+    local searchBox = new("TextBox", {
+        Position = UDim2.fromOffset(36, 3), Size = UDim2.new(1, -45, 1, -6),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Font = Enum.Font.GothamMedium, TextSize = 15,
+        TextColor3 = Color3.fromRGB(255, 239, 232),
+        PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
+        ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
+    }, searchFrame)
+    local closeButton = new("TextButton", {
+        Position = UDim2.new(1, -48, 0, 17), Size = UDim2.fromOffset(32, 36),
+        BackgroundColor3 = columnColor, BorderSizePixel = 0,
+        Font = Enum.Font.GothamBold, TextSize = 18,
+        Text = "×", TextColor3 = muted, AutoButtonColor = false,
+    }, header)
+    new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
+    closeButton.MouseButton1Click:Connect(function() RivalsUI.Visible = false end)
+
+    local function column(name, x, width)
+        local frame = new("Frame", {
+            Name = name, Position = UDim2.fromOffset(x, 111),
+            Size = UDim2.fromOffset(width, 145), Active = true,
+            BackgroundColor3 = columnColor, BorderSizePixel = 0,
+        }, RivalsUI)
+        new("UICorner", { CornerRadius = UDim.new(0, 12) }, frame)
+        border(frame, Color3.fromRGB(112, 73, 78))
+        new("UIGradient", { Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 35, 45)),
+            ColorSequenceKeypoint.new(1, columnColor),
+        }), Rotation = 90 }, frame)
+        local heading = label(frame, string.upper(name), 14,
+            Color3.fromRGB(255, 236, 226))
+        heading.Font = Enum.Font.GothamBold
+        heading.Position = UDim2.fromOffset(13, 12)
+        heading.Size = UDim2.fromOffset(width - 55, 20)
+        local count = label(frame, "0", 17, gold, Enum.TextXAlignment.Right)
+        count.Font = Enum.Font.GothamBold
+        count.Position = UDim2.new(1, -48, 0, 8)
+        count.Size = UDim2.fromOffset(34, 25)
+        new("Frame", {
+            Position = UDim2.fromOffset(13, 39),
+            Size = UDim2.new(1, -26, 0, 2),
+            BackgroundColor3 = accent, BorderSizePixel = 0,
+        }, frame)
+        return frame, count
+    end
+    local rivalsColumn = column("Rivals", 20, 200)
+    local empty = label(rivalsColumn, "No Rivals modules yet", 13, muted)
+    empty.Font = Enum.Font.GothamMedium
+    empty.Position = UDim2.fromOffset(12, 56)
+    empty.Size = UDim2.new(1, -24, 0, 22)
+    local sunsetColumn, sunsetCount = column("Sunset", 235, 230)
+
+    local watermarkControl
+    for _, control in ipairs(ConfigControls) do
+        if control.Key == "Sunset/All/Watermark/Enabled" then
+            watermarkControl = control
+            break
+        end
+    end
+    local cards = {}
+    local function addCard(name, index, click, value)
+        local card = new("TextButton", {
+            Name = name, Position = UDim2.fromOffset(9, 51 + (index - 1) * 39),
+            Size = UDim2.new(1, -18, 0, 35),
+            BackgroundColor3 = cardColor, BorderSizePixel = 0,
+            Text = "", AutoButtonColor = false,
+        }, sunsetColumn)
+        new("UICorner", { CornerRadius = UDim.new(0, 10) }, card)
+        local caption = label(card, name, 14, Color3.fromRGB(255, 237, 230))
+        caption.Font = Enum.Font.GothamMedium
+        caption.Position = UDim2.fromOffset(10, 7)
+        caption.Size = UDim2.new(1, -88, 0, 21)
+        local state = label(card, "", 12, gold, Enum.TextXAlignment.Right)
+        state.Font = Enum.Font.GothamMedium
+        state.Position = UDim2.new(1, -92, 0, 7)
+        state.Size = UDim2.fromOffset(82, 21)
+        card.MouseButton1Click:Connect(click)
+        card.MouseEnter:Connect(function() card.BackgroundColor3 = Color3.fromRGB(70, 45, 57) end)
+        card.MouseLeave:Connect(function() card.BackgroundColor3 = cardColor end)
+        table.insert(cards, { Name = string.lower(name), Card = card,
+            State = state, Value = value })
+    end
+    addCard("Watermark", 1, function()
+        if watermarkControl then watermarkControl.Set(not watermarkControl.Get()) end
+    end, function() return watermarkControl and watermarkControl.Get() and "ON" or "OFF" end)
+    addCard("Menu Key", 2, function()
+        if listeningFor then return end
+        listeningFor = {
+            GetBind = menuKeyControl.GetBind,
+            SetBind = function(key) return menuKeyControl.SetBind(key) end,
+        }
+    end, function() return listeningFor and "PRESS KEY" or keyName(Settings.MenuKey) end)
+    local function refresh()
+        local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
+        local count = 0
+        for _, entry in ipairs(cards) do
+            entry.Card.Visible = query == ""
+                or string.find(entry.Name, query, 1, true) ~= nil
+            if entry.Card.Visible then count += 1 end
+            entry.State.Text = entry.Value()
+        end
+        sunsetCount.Text = tostring(count)
+        empty.Visible = query == "" or string.find("rivals", query, 1, true) ~= nil
+    end
+    searchBox:GetPropertyChangedSignal("Text"):Connect(refresh)
+    track(RunService.Heartbeat:Connect(function()
+        if RivalsUI.Visible then refresh() end
+    end))
+    refresh()
+    local dragHandle = new("Frame", {
+        Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(285, 61),
+        BackgroundTransparency = 1, Active = true,
+    }, header)
+    makeDraggable(RivalsUI, dragHandle)
+end
+if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
+    buildRivalsUI()
+end
 
 -- ============================================================
 -- Unload: stops everything and removes every GUI so a re-inject never overlaps
@@ -9691,7 +8743,6 @@ ENV.SunsetUnload = function()
     Settings.FlyEnabled = false
 
     Settings.WatermarkOn = false
-    Zombie.Stop()
     BedWars.Stop()
     setCloudRemoval(false)
     restoreAtmosphere()
@@ -9712,8 +8763,7 @@ print("Sunset.wtf [" .. SUNSET_BUILD .. "] loaded. RightShift to open/close.")
 -- same universe ID, so entering a BedWars round keeps the BedWars modules.
 local supportedGames = {
     { Name = "BedWars", Place = 6872265039, Universe = 2619619496 },
-    { Name = "Sniper Arena", Place = 122446657157717, Universe = 9534705677 },
-    { Name = "Zombie Survival Arena", Place = 114204398207377, Universe = 9348272796 },
+    { Name = "Rivals", Place = 17625359962, Universe = 6035872082 },
 }
 local detectedGame
 for _, entry in ipairs(supportedGames) do
@@ -9753,8 +8803,7 @@ if detectedGame then
             if env.SunsetAutoReinject ~= false then
                 local allowed = {
                     [6872265039] = true, [2619619496] = true,
-                    [122446657157717] = true, [9534705677] = true,
-                    [114204398207377] = true, [9348272796] = true,
+                    [17625359962] = true, [6035872082] = true,
                 }
                 if allowed[game.PlaceId] or allowed[game.GameId] then
                     local ok, err = pcall(function()
@@ -9797,9 +8846,10 @@ do
     if detectedGame then
         Settings.SelectedGame = detectedGame
         showGameSections(detectedGame)
+        if detectedGame == "Rivals" then BedWars.Stop() end
         if RefreshConfigList then RefreshConfigList() end
         Title.Text = "  Sunset.wtf | " .. detectedGame
-        if detectedGame == "BedWars" then
+        if detectedGame == "BedWars" or detectedGame == "Rivals" then
             Watermark.BackgroundTransparency = 1
             Watermark.Size = UDim2.fromOffset(380, 24)
             Watermark.Position = UDim2.new(1, -15, 0, 8)
@@ -9814,17 +8864,20 @@ do
                 if child:IsA("UIStroke") then child.Enabled = false end
                 if child:IsA("Frame") then child.Visible = false end
             end
-            BedWarsUI.Visible = true
+            if detectedGame == "BedWars" then
+                BedWarsUI.Visible = true
+            else
+                RivalsUI.Visible = true
+            end
             Window.Visible = false
             onMenuVisibility()
         end
     else
-        Zombie.Stop()
         BedWars.Stop()
         showGameSections(nil)
         Title.Text = "  Sunset.wtf | Unsupported game"
         local notice = makeSection(SettingsTab.Left, "Unsupported Game")
-        Elements.Label(notice, "Sunset supports BedWars, Sniper Arena, and Survive Zombie Arena.")
+        Elements.Label(notice, "Sunset supports BedWars and Rivals.")
         SettingsTab.Select()
     end
 end
@@ -9834,6 +8887,7 @@ if detectedGame then
     track(LocalPlayer.OnTeleport:Connect(function(state)
         if state == Enum.TeleportState.Started then Persistence.Save() end
     end))
+    if detectedGame == "Rivals" then AutoReinject.Toggle.Set(false) end
     AutoReinject.enabled = AutoReinject.Toggle.Get() == true
     ENV.SunsetAutoReinject = AutoReinject.enabled
     AutoReinject.ready = true
