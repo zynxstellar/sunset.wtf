@@ -19,7 +19,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261002-kill-chat-k218"
+local SUNSET_BUILD = "20261002-module-length-k219"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 -- ============================================================
@@ -7411,13 +7411,19 @@ local function buildBedWarsUI()
     }, Gui)
     new("UIListLayout", {
         SortOrder = Enum.SortOrder.LayoutOrder,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
         Padding = UDim.new(0, 4),
     }, moduleList)
     for index, entry in ipairs(cards) do
         if entry.Control and entry.Category ~= "Sunset" then
+            local textWidth = math.ceil(game:GetService("TextService"):GetTextSize(
+                entry.Name.Text, 13, Enum.Font.GothamMedium,
+                Vector2.new(1000, 25)).X)
             local row = new("Frame", {
-                Visible = false, Size = UDim2.new(1, 0, 0, 25),
-                LayoutOrder = index, BackgroundColor3 = columnColor,
+                Visible = false, Size = UDim2.fromOffset(
+                    math.min(205, textWidth + 24), 25),
+                LayoutOrder = -textWidth * 1000 + index,
+                BackgroundColor3 = columnColor,
                 BorderSizePixel = 0,
             }, moduleList)
             new("UICorner", { CornerRadius = UDim.new(0, 7) }, row)
