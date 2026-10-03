@@ -9559,48 +9559,41 @@ local function buildBedWarsUI()
         Name = "BedWarsModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, -14, 0, 38),
-        Size = UDim2.fromOffset(205, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
+        Size = UDim2.fromOffset(205, 24),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
-    new("UIListLayout", {
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        HorizontalAlignment = Enum.HorizontalAlignment.Right,
-        Padding = UDim.new(0, 0),
-    }, moduleList)
     local moduleBrand = label(moduleList, "SUNSET.WTF", 18,
         gold, Enum.TextXAlignment.Right)
     moduleBrand.Font = Enum.Font.GothamBold
-    moduleBrand.Size = UDim2.fromOffset(205, 24)
-    moduleBrand.LayoutOrder = -1000000
-    moduleBrand.TextStrokeTransparency = 0.6
+    moduleBrand.Size = UDim2.new(1, 0, 0, 24)
+    moduleBrand.TextStrokeTransparency = 0.85
     for index, entry in ipairs(cards) do
         if entry.Control and entry.Category ~= "Sunset"
             and entry.Category ~= "Dev Tools" then
             local textWidth = math.ceil(game:GetService("TextService"):GetTextSize(
-                entry.Name.Text, 16, Enum.Font.GothamBold,
+                entry.Name.Text, 14, Enum.Font.GothamBold,
                 Vector2.new(1000, 25)).X)
             local textColor = gold
             local row = new("Frame", {
                 Visible = false, Size = UDim2.fromOffset(
-                    textWidth + 7, 19),
+                    textWidth + 9, 18),
                 LayoutOrder = -textWidth * 1000 + index,
                 BackgroundColor3 = columnColor,
-                BackgroundTransparency = 0.12,
+                BackgroundTransparency = 0.25,
                 BorderSizePixel = 0,
             }, moduleList)
             new("UICorner", { CornerRadius = UDim.new(0, 3) }, row)
             local strip = new("Frame", {
                 Position = UDim2.new(1, -2, 0, 0),
-                Size = UDim2.fromOffset(2, 19),
+                Size = UDim2.fromOffset(2, 18),
                 BackgroundColor3 = textColor, BorderSizePixel = 0,
             }, row)
-            local textLabel = label(row, entry.Name.Text, 16,
+            local textLabel = label(row, entry.Name.Text, 14,
                 textColor, Enum.TextXAlignment.Right)
             textLabel.Font = Enum.Font.GothamBold
             textLabel.Position = UDim2.fromOffset(2, 0)
-            textLabel.Size = UDim2.fromOffset(textWidth, 19)
-            textLabel.TextStrokeTransparency = 0.55
+            textLabel.Size = UDim2.fromOffset(textWidth, 18)
+            textLabel.TextStrokeTransparency = 0.85
             textLabel.TextStrokeColor3 = Color3.fromRGB(8, 10, 13)
             textLabel.TextTruncate = Enum.TextTruncate.None
             entry.ModuleRow = row
@@ -9640,11 +9633,37 @@ local function buildBedWarsUI()
             table.sort(activeRows, function(a, b)
                 return a.ModuleRow.LayoutOrder < b.ModuleRow.LayoutOrder
             end)
+            local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+                or Vector2.new(1280, 720)
+            local columnWidth, columnGap, rowStep = 190, 8, 19
+            local rowsThatFit = math.max(1, math.floor((viewport.Y - 78) / rowStep))
+            local targetRows = math.min(18, rowsThatFit)
+            local maxColumns = math.clamp(math.floor(viewport.X / 400), 1, 3)
+            local columnCount = math.min(maxColumns,
+                math.max(1, math.ceil(#activeRows / targetRows)))
+            local rowsPerColumn = math.min(rowsThatFit,
+                math.max(1, math.ceil(#activeRows / columnCount)))
+            local visibleCount = math.min(#activeRows, rowsPerColumn * columnCount)
+            moduleList.Size = UDim2.fromOffset(
+                columnCount * columnWidth + (columnCount - 1) * columnGap,
+                26 + rowsPerColumn * rowStep)
+            moduleBrand.Text = visibleCount < #activeRows
+                and ("SUNSET.WTF  +" .. tostring(#activeRows - visibleCount))
+                or "SUNSET.WTF"
             for index, entry in ipairs(activeRows) do
                 local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
                 local color = gold:Lerp(Color3.fromRGB(255, 95, 111), progress)
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
+                entry.ModuleRow.Visible = index <= visibleCount
+                if index <= visibleCount then
+                    local column = math.floor((index - 1) / rowsPerColumn)
+                    local row = (index - 1) % rowsPerColumn
+                    entry.ModuleRow.Position = UDim2.fromOffset(
+                        moduleList.Size.X.Offset - column * (columnWidth + columnGap)
+                            - entry.ModuleRow.Size.X.Offset,
+                        26 + row * rowStep)
+                end
             end
             moduleList.Visible = Settings.SelectedGame == "BedWars"
                 and Settings.ModuleListOn and not BedWarsUI.Visible and anyActive
