@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-packet-codec-k259"
+local SUNSET_BUILD = "20261004-rift-header-reinject-k260"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -582,6 +582,7 @@ do
             end
         end
         local data = { Version = 5, Game = gameName, Controls = saved,
+            AutoReinjectVersion = 1,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions() }
         if gameName == "Rivals" then
             data.RivalsAim = { Enabled = RivalsAim.Enabled,
@@ -671,6 +672,11 @@ do
                 and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
+                if gameName == "Rivals"
+                    and control.Key == "Sunset/All/Arena Travel/Auto Reinject"
+                    and data.AutoReinjectVersion ~= 1 then
+                    value = true
+                end
                 if control.Key == "Fun/BedWars/Auto Reply/Message"
                     and value == "Sunset.wtf <3" then value = "Rift <3" end
                 if control.Key == "Sunset/All/Colors/Preset"
@@ -8396,7 +8402,7 @@ function BedWars.BuildUI(boardGame)
         logoFallback.Position = UDim2.fromOffset(20, 8)
         logoFallback.Size = UDim2.fromOffset(30, 30)
     end
-    local title = label(header, BRAND .. " " .. string.upper(boardGame), 22, Color3.fromRGB(242, 244, 255))
+    local title = label(header, BRAND .. " | " .. string.upper(boardGame), 22, Color3.fromRGB(242, 244, 255))
     title.Font = Enum.Font.GothamBold
     title.Position = UDim2.fromOffset(58, 10)
     title.Size = UDim2.fromOffset(230, 27)
@@ -9852,7 +9858,6 @@ if detectedGame then
     track(LocalPlayer.OnTeleport:Connect(function(state)
         if state == Enum.TeleportState.Started then Persistence.Save() end
     end))
-    if detectedGame == "Rivals" then AutoReinject.Toggle.Set(false) end
     AutoReinject.enabled = AutoReinject.Toggle.Get() == true
     ENV.SunsetAutoReinject = AutoReinject.enabled
     AutoReinject.ready = true

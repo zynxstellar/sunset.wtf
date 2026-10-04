@@ -558,7 +558,7 @@ wallControl.Set(false)
 assert(RivalsAim.WallCheck==false)
 local rivalsTitle=false
 for _,o in ipairs(RivalsUI:GetDescendants()) do
-    if o.Text=="RIFT RIVALS" then rivalsTitle=true end
+    if o.Text=="RIFT | RIVALS" then rivalsTitle=true end
     assert(o.Text~="Aim support ready","removed status text still rendered")
 end
 assert(rivalsTitle)
@@ -582,7 +582,7 @@ assert(BedWarsUI.Name=="RiftBedWarsBoard" and BedWarsUI.Size.X.Offset==1955)
 assert(Persistence.HUDFrames.BedWarsMenu==BedWarsUI)
 local kitColumn
 local bedwarsTitle=false
-for _,o in ipairs(BedWarsUI:GetDescendants()) do if o.Text=="RIFT BEDWARS" then bedwarsTitle=true end end
+for _,o in ipairs(BedWarsUI:GetDescendants()) do if o.Text=="RIFT | BEDWARS" then bedwarsTitle=true end end
 assert(bedwarsTitle)
 for _,o in ipairs(BedWarsUI:GetChildren()) do if o.Name=="KIT" then kitColumn=o end end
 assert(kitColumn,"shared renderer lost BedWars kit column")

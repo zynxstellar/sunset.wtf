@@ -69,6 +69,17 @@ def main():
         rivals_path = temp / 'rivals-spec.luau'
         rivals_path.write_text(rivals_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(rivals_path)], check=True)
+        reinject_spec = (ROOT / 'tests' / 'reinject-spec.luau').read_text(encoding='utf-8')
+        reinject_spec = reinject_spec.replace('-- INSERT_PERSISTENCE_PRODUCTION',
+            between(inner, 'do\n    local lastSavedJSON', '\nlocal function configKey'))
+        reinject_spec = reinject_spec.replace('-- INSERT_QUEUE_PRODUCTION',
+            between(inner, 'if detectedGame then\n    local queueTeleport', '\ndo\n    if detectedGame then'))
+        reinject_path = temp / 'reinject-spec.luau'
+        reinject_path.write_text(reinject_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(reinject_path)], check=True)
+        startup = between(inner, 'if detectedGame then\n    Persistence.Restore',
+                          '\nENV.SunsetLoading.Status.Text')
+        assert 'AutoReinject.Toggle.Set(false)' not in startup
     # Notifications must not move or hide the module list on narrow screens.
     listing = between(inner, '    local moduleList = new(', '\n    local dragHandle')
     assert 'notificationsVisible' not in listing and 'ModuleListShifted' not in listing
