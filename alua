@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-polish-k238"
+local SUNSET_BUILD = "20261003-rift-polish-k239"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -547,7 +547,7 @@ do
                     Value = value, Bind = bind and bind.Name or nil }
             end
         end
-        local data = { Version = 4, Game = gameName, Controls = saved,
+        local data = { Version = 5, Game = gameName, Controls = saved,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions() }
         if gameName == "Rivals" then
             data.RivalsAim = { Enabled = RivalsAim.Enabled,
@@ -630,10 +630,9 @@ do
                 if control.Key == "Fun/BedWars/Auto Reply/Message"
                     and value == "Sunset.wtf <3" then value = "Rift <3" end
                 if control.Key == "Sunset/All/Colors/Preset"
-                    and value == "Sunset" then value = "Rift" end
+                    and (data.Version or 1) < 5 then value = "Rift" end
                 if control.Key == "Sunset/All/Colors/Accent Color"
-                    and type(value) == "table" and value[1] == 255
-                    and value[2] == 132 and value[3] == 92 then
+                    and (data.Version or 1) < 5 then
                     value = { 139, 92, 246 }
                 end
                 if control.Kind == "color" and type(value) == "table" then
@@ -1941,6 +1940,24 @@ local atmospherePresets = {
         Density = 0.13, Haze = 0.65, Glare = 0.3, Color = Color3.fromRGB(255, 227, 174),
         Decay = Color3.fromRGB(235, 150, 98),
     },
+    Space = {
+        ClockTime = 0, Brightness = 0.8, Ambient = Color3.fromRGB(23, 20, 55),
+        OutdoorAmbient = Color3.fromRGB(37, 34, 77), FogColor = Color3.fromRGB(22, 18, 49),
+        Density = 0.12, Haze = 0.25, Glare = 0.04, Color = Color3.fromRGB(115, 104, 210),
+        Decay = Color3.fromRGB(36, 65, 139),
+    },
+    Aurora = {
+        ClockTime = 1, Brightness = 1.7, Ambient = Color3.fromRGB(41, 70, 101),
+        OutdoorAmbient = Color3.fromRGB(45, 115, 117), FogColor = Color3.fromRGB(44, 74, 115),
+        Density = 0.2, Haze = 0.7, Glare = 0.18, Color = Color3.fromRGB(105, 236, 202),
+        Decay = Color3.fromRGB(128, 87, 214),
+    },
+    DeepSea = {
+        ClockTime = 2, Brightness = 1.3, Ambient = Color3.fromRGB(20, 59, 84),
+        OutdoorAmbient = Color3.fromRGB(27, 94, 117), FogColor = Color3.fromRGB(13, 57, 85),
+        Density = 0.43, Haze = 1.3, Glare = 0.02, Color = Color3.fromRGB(73, 183, 207),
+        Decay = Color3.fromRGB(30, 90, 137),
+    },
 }
 local lightingProperties = { "ClockTime", "Brightness", "Ambient", "OutdoorAmbient", "FogColor", "FogEnd" }
 local atmosphereProperties = { "Density", "Haze", "Glare", "Color", "Decay", "Offset" }
@@ -2042,7 +2059,7 @@ do
     local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
     atmosphere.Parent.LayoutOrder = 2
     Elements.Toggle(atmosphere, "Enabled", false, setAtmosphereEnabled, nil, true)
-    Elements.Dropdown(atmosphere, "Preset", { "Sunset", "Clear", "Dawn", "Golden", "Midnight", "Mist", "Storm", "Neon" }, "Sunset", function(value)
+    Elements.Dropdown(atmosphere, "Preset", { "Sunset", "Clear", "Dawn", "Golden", "Midnight", "Mist", "Storm", "Neon", "Space", "Aurora", "DeepSea" }, "Sunset", function(value)
         atmospherePreset = value
         applyAtmosphere()
     end)
@@ -2502,7 +2519,7 @@ do
         end
         local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
-            Version = 4, Game = Settings.SelectedGame, Controls = saved,
+            Version = 5, Game = Settings.SelectedGame, Controls = saved,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions(),
         }))
         status.Text = ok and "Saved " .. name or "Could not save config"
@@ -2514,7 +2531,8 @@ do
         local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
         local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath(name))) end)
         if not ok or type(data) ~= "table" or data.Game ~= Settings.SelectedGame
-            or (data.Version ~= 1 and data.Version ~= 2 and data.Version ~= 3 and data.Version ~= 4) then
+            or (data.Version ~= 1 and data.Version ~= 2 and data.Version ~= 3
+                and data.Version ~= 4 and data.Version ~= 5) then
             status.Text = "Config missing or incompatible"
             return
         end
@@ -2550,10 +2568,9 @@ do
                 if control.Key == "Fun/BedWars/Auto Reply/Message"
                     and value == "Sunset.wtf <3" then value = "Rift <3" end
                 if control.Key == "Sunset/All/Colors/Preset"
-                    and value == "Sunset" then value = "Rift" end
+                    and data.Version < 5 then value = "Rift" end
                 if control.Key == "Sunset/All/Colors/Accent Color"
-                    and type(value) == "table" and value[1] == 255
-                    and value[2] == 132 and value[3] == 92 then
+                    and data.Version < 5 then
                     value = { 139, 92, 246 }
                 end
                 if control.Kind == "color" and type(value) == "table" then
@@ -2650,7 +2667,7 @@ BedWars = {
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
     KillChatOn = false, KillChatQueue = {},
     AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Rift <3",
-    InfiniteJumpOn = false, InfiniteJumpMax = 5, InfiniteJumpCount = 0,
+    InfiniteJumpOn = false, InfiniteJumpMax = 6, InfiniteJumpCount = 0,
     GravityOn = false, GravityValue = 90,
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
@@ -7682,7 +7699,7 @@ do
             BedWars.InfiniteJumpOn = on
             BedWars.InfiniteJumpCount = 0
         end)
-        Elements.Slider(jump, "Max Air Jumps", 1, 5, 5, " jumps", function(value)
+        Elements.Slider(jump, "Max Air Jumps", 1, 6, 6, " jumps", function(value)
             BedWars.InfiniteJumpMax = value
         end)
     end
@@ -8078,7 +8095,7 @@ function BedWars.BuildUI()
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
     }, BedWarsUI)
-    local logoId = riftAsset("rift-logo.png")
+    local logoId = riftAsset("rift-logo-transparent.png")
     if logoId then
         new("ImageLabel", {
             Position = UDim2.fromOffset(19, 8), Size = UDim2.fromOffset(32, 32),
@@ -8105,7 +8122,7 @@ function BedWars.BuildUI()
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchFrame)
     border(searchFrame, Color3.fromRGB(74, 64, 128))
     local searchRing = new("Frame", {
         Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
@@ -8148,17 +8165,17 @@ function BedWars.BuildUI()
     local trashIcon
     if trashId then
         trashIcon = new("ImageLabel", {
-            Position = UDim2.fromOffset(3, 4), Size = UDim2.fromOffset(20, 21),
+            Position = UDim2.fromOffset(2, 3), Size = UDim2.fromOffset(23, 23),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             Image = trashId, ImageColor3 = gold,
-            ImageTransparency = 0.55, ScaleType = Enum.ScaleType.Fit,
+            ImageTransparency = 0, ScaleType = Enum.ScaleType.Fit,
         }, clearSearch)
     else
         riftTrashFallback(clearSearch, gold)
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         if trashIcon then
-            trashIcon.ImageTransparency = searchBox.Text == "" and 0.55 or 0
+            trashIcon.ImageTransparency = 0
         end
     end)
     clearSearch.MouseButton1Click:Connect(function()
@@ -8166,11 +8183,11 @@ function BedWars.BuildUI()
         searchBox:CaptureFocus()
     end)
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -41, 0, 21),
+        Position = UDim2.new(1, -41, 0, 29),
         Size = UDim2.fromOffset(26, 26),
         BackgroundColor3 = Color3.fromRGB(47, 39, 79), BorderSizePixel = 0,
-        Font = Enum.Font.GothamBold, TextSize = 16,
-        Text = "×", TextColor3 = Color3.fromRGB(242, 244, 255),
+        Font = Enum.Font.GothamBold, TextSize = 13,
+        Text = "X", TextColor3 = Color3.fromRGB(242, 244, 255),
         AutoButtonColor = false,
     }, header)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
@@ -8278,7 +8295,7 @@ function BedWars.BuildUI()
             Position = UDim2.fromOffset(9, 88), Size = UDim2.new(1, -18, 0, 32),
             BackgroundColor3 = cardColor, BorderSizePixel = 0,
             Font = Enum.Font.GothamMedium, TextSize = 13,
-            TextColor3 = gold, Text = kitSelected and ("KIT: " .. kitSelected .. "  ▾")
+            TextColor3 = gold, Text = kitSelected and ("KIT: " .. kitSelected)
                 or "Kits unavailable",
             TextXAlignment = Enum.TextXAlignment.Center,
             TextTruncate = Enum.TextTruncate.AtEnd,
@@ -8336,7 +8353,7 @@ function BedWars.BuildUI()
         column.KitSelect = function(callback)
             local function choose(kitName)
                 kitSelected = kitName
-                kitButton.Text = "KIT: " .. kitName .. "  ▾"
+                kitButton.Text = "KIT: " .. kitName
                 for name, option in pairs(optionButtons) do
                     option.BackgroundColor3 = name == kitName and accent or cardColor
                     option.TextColor3 = name == kitName and dark
@@ -8697,6 +8714,54 @@ function BedWars.BuildUI()
         ["DEX"] = "Open Rift's built-in game instance explorer.",
         ["Auto Reply"] = "Replies to mentions or chat using your saved message.",
         ["Module List"] = "Shows active modules along the screen edge.",
+        ["Aim Assist"] = "Steers your aim toward nearby enemy players.",
+        ["Trigger Bot"] = "Attacks when your crosshair is over an enemy.",
+        ["Reach"] = "Adjusts the distance used by supported melee actions.",
+        ["Hit Boxes"] = "Shows or adjusts the target area around players.",
+        ["Velocity"] = "Changes how strongly knockback moves your character.",
+        ["No Click Delay"] = "Shortens the wait between supported attacks.",
+        ["Auto Clicker"] = "Repeats clicks while its activation condition is met.",
+        ["Always Sprint"] = "Keeps sprint active while you move.",
+        ["No Slowdown"] = "Reduces movement slowdown from supported actions.",
+        ["No Fall"] = "Uses supported recovery behavior to avoid fall damage.",
+        ["Auto Balloon"] = "Uses balloons automatically when a fall needs recovery.",
+        ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
+        ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
+        ["Void Water"] = "Places water when void is detected beneath you.",
+        ["Noclip"] = "Lets your character pass through local collision surfaces.",
+        ["Auto Bed"] = "Targets nearby enemy beds with supported tools.",
+        ["Fast Break"] = "Speeds up supported block breaking actions.",
+        ["Fast Drop"] = "Drops inventory items using a shorter interval.",
+        ["Fast Consume"] = "Uses consumables with a shorter wait.",
+        ["Pickup Range"] = "Expands the range for supported item pickup.",
+        ["ESP Boxes"] = "Draws boxes around visible players.",
+        ["Player Outlines"] = "Highlights player characters through the scene.",
+        ["Bed Outline"] = "Highlights beds so they are easier to locate.",
+        ["World ESP"] = "Highlights selected world objects such as ore and tables.",
+        ["Target HUD"] = "Shows the current target and animated health bar.",
+        ["Damage Indicator"] = "Marks players after you hit them.",
+        ["Hit Color"] = "Changes the hit effect color.",
+        ["Crosshair"] = "Shows a custom centered crosshair.",
+        ["FOV"] = "Changes your camera field of view.",
+        ["Session Info"] = "Shows time played, kills, wins, and match stats.",
+        ["Atmosphere"] = "Changes local lighting, fog, time, and ambient mood.",
+        ["Orbiting Stars"] = "Adds orbiting cosmetic stars around your character.",
+        ["Water Fight"] = "Places water around you when an enemy gets close.",
+        ["Auto Play Again"] = "Queues another match after the current one ends.",
+        ["Trap Disabler"] = "Attempts to disable nearby enemy traps.",
+        ["Staff Detector"] = "Alerts when a detected staff account joins.",
+        ["Anti AFK"] = "Keeps you active while idle.",
+        ["Spinbot"] = "Rotates your character continuously.",
+        ["Ghost Pulse"] = "Adds a cosmetic pulse around your character.",
+        ["Kill Chat"] = "Sends a selected message after match events.",
+        ["Fake Projectiles"] = "Shows cosmetic projectile effects.",
+        ["Colored Footsteps"] = "Leaves colored footsteps as you move.",
+        ["Configs"] = "Save and load your module and HUD settings.",
+        ["Watermark"] = "Shows Rift, account, FPS, and ping on screen.",
+        ["Menu Blur"] = "Blurs the game behind the open menu.",
+        ["Auto Reinject"] = "Reloads Rift when you move to another arena.",
+        ["Colors"] = "Choose a menu theme and accent color.",
+        ["Menu Key"] = "Choose the key used to open and close Rift.",
     }
     local tooltip = new("Frame", {
         Name = "ModuleTooltip", Visible = false,
@@ -8777,8 +8842,8 @@ function BedWars.BuildUI()
             local activeGradient = new("UIGradient", {
                 Enabled = false, Rotation = 0,
                 Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, accent),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(77, 224, 208)),
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(106, 72, 173)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 111, 130)),
                 }),
             }, card)
             local nameLabel = label(card, name, 14, Color3.fromRGB(242, 244, 255))
@@ -8817,8 +8882,8 @@ function BedWars.BuildUI()
             card.MouseEnter:Connect(function()
                 hovered = true
                 tooltipText.Text = descriptions[name]
-                    or ("Click to " .. (control and "toggle" or "open")
-                        .. ". Right-click for settings.")
+                    or (name .. " module. " .. (control and "Click to toggle."
+                        or "Click to open its settings."))
                 tooltip.Visible = true
             end)
             card.MouseLeave:Connect(function()
@@ -8877,19 +8942,16 @@ function BedWars.BuildUI()
         Name = "BedWarsModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, -14, 0, 38),
-        Size = UDim2.fromOffset(206, 60),
-        BackgroundColor3 = dark,
-        BackgroundTransparency = 0.18, BorderSizePixel = 0,
+        Size = UDim2.fromOffset(190, 24),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
-    new("UICorner", { CornerRadius = UDim.new(0, 8) }, moduleList)
-    border(moduleList, Color3.fromRGB(74, 64, 128))
     Persistence.HUDFrames.ModuleList = moduleList
     BedWars.ModuleListRestingPosition = moduleList.Position
-    local moduleBrand = label(moduleList, BRAND, 15,
-        gold, Enum.TextXAlignment.Left)
+    local moduleBrand = label(moduleList, BRAND, 18,
+        gold, Enum.TextXAlignment.Right)
     moduleBrand.Font = Enum.Font.GothamBold
-    moduleBrand.Position = UDim2.fromOffset(12, 6)
-    moduleBrand.Size = UDim2.new(1, -24, 0, 23)
+    moduleBrand.Position = UDim2.fromOffset(0, 0)
+    moduleBrand.Size = UDim2.new(1, 0, 0, 24)
     moduleBrand.TextStrokeTransparency = 1
     for index, entry in ipairs(cards) do
         if entry.Control and entry.Category ~= "Sunset"
@@ -8899,23 +8961,23 @@ function BedWars.BuildUI()
                 Vector2.new(1000, 25)).X)
             local textColor = gold
             local row = new("Frame", {
-                Visible = false, Size = UDim2.fromOffset(178, 20),
+                Visible = false, Size = UDim2.fromOffset(math.min(textWidth + 13, 184), 18),
                 LayoutOrder = -textWidth * 1000 + index,
-                BackgroundColor3 = columnColor,
-                BackgroundTransparency = 0.16,
+                BackgroundColor3 = Color3.fromRGB(22, 27, 41),
+                BackgroundTransparency = 0.02,
                 BorderSizePixel = 0,
             }, moduleList)
-            new("UICorner", { CornerRadius = UDim.new(0, 4) }, row)
+            new("UICorner", { CornerRadius = UDim.new(0, 2) }, row)
             local strip = new("Frame", {
-                Position = UDim2.fromOffset(0, 0),
-                Size = UDim2.fromOffset(3, 20),
+                Position = UDim2.new(1, -2, 0, 0),
+                Size = UDim2.fromOffset(2, 18),
                 BackgroundColor3 = textColor, BorderSizePixel = 0,
             }, row)
-            local textLabel = label(row, entry.Name.Text, 12,
-                textColor, Enum.TextXAlignment.Left)
-            textLabel.Font = Enum.Font.GothamSemibold
-            textLabel.Position = UDim2.fromOffset(10, 1)
-            textLabel.Size = UDim2.new(1, -16, 0, 18)
+            local textLabel = label(row, entry.Name.Text, 14,
+                textColor, Enum.TextXAlignment.Right)
+            textLabel.Font = Enum.Font.GothamBold
+            textLabel.Position = UDim2.fromOffset(2, 0)
+            textLabel.Size = UDim2.new(1, -8, 0, 18)
             textLabel.TextStrokeTransparency = 1
             textLabel.TextTruncate = Enum.TextTruncate.AtEnd
             entry.ModuleRow = row
@@ -8938,9 +9000,9 @@ function BedWars.BuildUI()
                             Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                             { BackgroundColor3 = targetColor }):Play()
                     end
-                    entry.Name.TextColor3 = active and dark
-                        or Color3.fromRGB(242, 244, 255)
-                    entry.Options.TextColor3 = active and dark or muted
+                    entry.Name.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    entry.Options.TextColor3 = active
+                        and Color3.fromRGB(232, 242, 255) or muted
                 end
             end
             local activeRows = {}
@@ -8972,22 +9034,21 @@ function BedWars.BuildUI()
             end
             BedWars.ModuleListShifted = canShift
             local rightOffset = canShift and 310 or 14
-            local columnWidth, columnGap, rowStep = 178, 8, 24
+            local columnWidth, columnGap, rowStep = 190, 12, 22
             local rowsThatFit = math.max(1, math.floor((viewport.Y - 98) / rowStep))
-            local targetRows = math.min(24, rowsThatFit)
+            local targetRows = math.min(18, rowsThatFit)
             local maxColumns = math.clamp(math.floor(
-                (viewport.X - rightOffset - 24) / 194), 1, 3)
+                (viewport.X - rightOffset - 24) / 202), 1, 3)
             local columnCount = math.min(maxColumns,
                 math.max(1, math.ceil(#activeRows / targetRows)))
             local rowsPerColumn = math.min(rowsThatFit,
                 math.max(1, math.ceil(#activeRows / columnCount)))
             local visibleCount = math.min(#activeRows, rowsPerColumn * columnCount)
             moduleList.Size = UDim2.fromOffset(
-                24 + columnCount * columnWidth + (columnCount - 1) * columnGap,
-                34 + rowsPerColumn * rowStep)
-            moduleBrand.Text = BRAND .. "   •   " .. tostring(visibleCount) .. " ACTIVE"
-                .. (visibleCount < #activeRows
-                    and ("   +" .. tostring(#activeRows - visibleCount)) or "")
+                columnCount * columnWidth + (columnCount - 1) * columnGap,
+                26 + rowsPerColumn * rowStep)
+            moduleBrand.Text = visibleCount < #activeRows
+                and (BRAND .. "  +" .. tostring(#activeRows - visibleCount)) or BRAND
             for index, entry in ipairs(activeRows) do
                 local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
                 local color = gold:Lerp(Color3.fromRGB(139, 92, 246), progress)
@@ -8998,8 +9059,9 @@ function BedWars.BuildUI()
                     local column = math.floor((index - 1) / rowsPerColumn)
                     local row = (index - 1) % rowsPerColumn
                     entry.ModuleRow.Position = UDim2.fromOffset(
-                        12 + column * (columnWidth + columnGap),
-                        32 + row * rowStep)
+                        moduleList.Size.X.Offset - column * (columnWidth + columnGap)
+                            - entry.ModuleRow.Size.X.Offset,
+                        26 + row * rowStep)
                 end
             end
             moduleList.Visible = Settings.SelectedGame == "BedWars"
@@ -9203,7 +9265,7 @@ function RivalsAim.BuildUI()
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 108), BackgroundTransparency = 1,
     }, RivalsUI)
-    local logoId = riftAsset("rift-logo.png")
+    local logoId = riftAsset("rift-logo-transparent.png")
     if logoId then
         new("ImageLabel", {
             Position = UDim2.fromOffset(19, 8), Size = UDim2.fromOffset(32, 32),
@@ -9229,7 +9291,7 @@ function RivalsAim.BuildUI()
         Position = UDim2.fromOffset(20, 67), Size = UDim2.fromOffset(445, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchFrame)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchFrame)
     border(searchFrame, Color3.fromRGB(74, 64, 128))
     local searchRing = new("Frame", {
         Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
@@ -9271,17 +9333,17 @@ function RivalsAim.BuildUI()
     local trashIcon
     if trashId then
         trashIcon = new("ImageLabel", {
-            Position = UDim2.fromOffset(3, 4), Size = UDim2.fromOffset(20, 21),
+            Position = UDim2.fromOffset(2, 3), Size = UDim2.fromOffset(23, 23),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             Image = trashId, ImageColor3 = gold,
-            ImageTransparency = 0.55, ScaleType = Enum.ScaleType.Fit,
+            ImageTransparency = 0, ScaleType = Enum.ScaleType.Fit,
         }, clearSearch)
     else
         riftTrashFallback(clearSearch, gold)
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         if trashIcon then
-            trashIcon.ImageTransparency = searchBox.Text == "" and 0.55 or 0
+            trashIcon.ImageTransparency = 0
         end
     end)
     clearSearch.MouseButton1Click:Connect(function()
@@ -9289,10 +9351,10 @@ function RivalsAim.BuildUI()
         searchBox:CaptureFocus()
     end)
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -41, 0, 21), Size = UDim2.fromOffset(26, 26),
+        Position = UDim2.new(1, -41, 0, 29), Size = UDim2.fromOffset(26, 26),
         BackgroundColor3 = Color3.fromRGB(47, 39, 79), BorderSizePixel = 0,
-        Font = Enum.Font.GothamBold, TextSize = 16,
-        Text = "×", TextColor3 = Color3.fromRGB(242, 244, 255),
+        Font = Enum.Font.GothamBold, TextSize = 13,
+        Text = "X", TextColor3 = Color3.fromRGB(242, 244, 255),
         AutoButtonColor = false,
     }, header)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
