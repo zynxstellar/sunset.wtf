@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-pregame-spider-k246"
+local SUNSET_BUILD = "20261004-rift-music-loading-k247"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -196,9 +196,18 @@ ENV.SunsetLoading = {}
 ENV.SunsetLoading.Gui = new("ScreenGui", {
     Name = "RiftLoading", DisplayOrder = 2147483647,
     ResetOnSpawn = false, IgnoreGuiInset = true,
+    ScreenInsets = Enum.ScreenInsets.None,
+    ClipToDeviceSafeArea = false,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 }, PlayerGui)
-pcall(function() ENV.SunsetLoading.Gui.ScreenInsets = Enum.ScreenInsets.None end)
+ENV.SunsetLoading.Backdrop = new("Frame", {
+    Name = "FullScreenBackdrop",
+    Position = UDim2.fromOffset(0, -64),
+    Size = UDim2.new(1, 0, 1, 128),
+    BackgroundColor3 = Color3.fromRGB(16, 18, 29),
+    BackgroundTransparency = 0, BorderSizePixel = 0,
+    ZIndex = 999,
+}, ENV.SunsetLoading.Gui)
 ENV.SunsetLoading.Overlay = new("Frame", {
     Name = "SunsetLoading", Size = UDim2.fromScale(1, 1),
     BackgroundColor3 = Color3.fromRGB(16, 18, 29),
@@ -2680,6 +2689,7 @@ BedWars = {
     VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     MinerESPOn = false, NotifyOn = false, SpotifyHUDOn = false,
+    MusicCoverFiles = {},
     MinerTrackerOn = false,
     MinerNearbyOn = true, MinerGatherOn = true, MinerRewardsOn = true,
     MinerRewards = 0, MinerLastReward = "",
@@ -2860,6 +2870,11 @@ do
         seconds = math.max(0, math.floor(tonumber(seconds) or 0))
         return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
     end
+    local function clearCover()
+        BedWars.MusicArtworkKey = nil
+        cover.Image = ""
+        icon.Visible = true
+    end
     makeDraggable(BedWars.SpotifyPanel, BedWars.SpotifyPanel)
     function BedWars.SpotifyStep()
         local url = "http://127.0.0.1:47821/now-playing"
@@ -2888,11 +2903,13 @@ do
             BedWars.SpotifyTitle.Text = "Start the music bridge"
             timeText.Text = "0:00 / 0:00"
             progressFill.Size = UDim2.fromScale(0, 1)
+            clearCover()
             return
         end
         local decoded, data = pcall(HttpService.JSONDecode, HttpService, body)
         if not decoded or type(data) ~= "table" then
             BedWars.SpotifyTitle.Text = "Music data unavailable"
+            clearCover()
         elseif data.available and type(data.title) == "string" then
             local artist = type(data.artist) == "string" and data.artist or ""
             BedWars.SpotifyTitle.Text = (artist ~= ""
@@ -2904,29 +2921,57 @@ do
             progressFill.Size = UDim2.fromScale(duration > 0 and position / duration or 0, 1)
             if type(data.artwork_key) == "string" and data.artwork_key ~= ""
                 and data.artwork_key ~= BedWars.MusicArtworkKey then
-                BedWars.MusicArtworkKey = data.artwork_key
-                local asset = type(getcustomasset) == "function" and getcustomasset
+                clearCover()
+                local asset = type(ENV.getcustomasset) == "function" and ENV.getcustomasset
+                    or type(getcustomasset) == "function" and getcustomasset
+                    or type(ENV.getsynasset) == "function" and ENV.getsynasset
                     or type(getsynasset) == "function" and getsynasset or nil
-                if requestFn and type(writefile) == "function" and asset then
-                    local imageOk, imageResponse = pcall(requestFn, {
-                        Url = "http://127.0.0.1:47821/cover", Method = "GET" })
+                local save = type(ENV.writefile) == "function" and ENV.writefile
+                    or type(writefile) == "function" and writefile or nil
+                if save and asset then
+                    local imageOk, imageResponse
+                    local imageRequest = {
+                        Url = "http://127.0.0.1:47821/cover", Method = "GET" }
+                    if requestFn then
+                        imageOk, imageResponse = pcall(requestFn, imageRequest)
+                    else
+                        imageOk, imageResponse = pcall(function()
+                            return HttpService:RequestAsync(imageRequest)
+                        end)
+                    end
                     if imageOk and type(imageResponse) == "table"
                         and tonumber(imageResponse.StatusCode or imageResponse.status_code) == 200
                         and type(imageResponse.Body or imageResponse.body) == "string" then
-                        local path = "SunsetConfigs/MusicCover.png"
-                        if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
-                        local wrote = pcall(writefile, path, imageResponse.Body or imageResponse.body)
+                        local folder = type(ENV.makefolder) == "function" and ENV.makefolder
+                            or type(makefolder) == "function" and makefolder or nil
+                        if folder then pcall(folder, "SunsetConfigs") end
+                        local headers = imageResponse.Headers or imageResponse.headers or {}
+                        local contentType = headers["Content-Type"] or headers["content-type"]
+                        local extension = type(contentType) == "string"
+                            and contentType:find("jpeg", 1, true) and ".jpg" or ".png"
+                        local path = "SunsetConfigs/MusicCover_"
+                            .. HttpService:GenerateGUID(false) .. extension
+                        local wrote = pcall(save, path,
+                            imageResponse.Body or imageResponse.body)
                         if wrote then
                             local loaded, imageId = pcall(asset, path)
-                            if loaded then cover.Image = imageId icon.Visible = false end
+                            if loaded and type(imageId) == "string" and imageId ~= "" then
+                                cover.Image = imageId
+                                icon.Visible = false
+                                BedWars.MusicArtworkKey = data.artwork_key
+                                table.insert(BedWars.MusicCoverFiles, path)
+                            end
                         end
                     end
                 end
+            elseif not data.artwork_key or data.artwork_key == "" then
+                clearCover()
             end
         else
             BedWars.SpotifyTitle.Text = "Nothing playing"
             timeText.Text = "0:00 / 0:00"
             progressFill.Size = UDim2.fromScale(0, 1)
+            clearCover()
         end
     end
     task.spawn(function()
@@ -3376,11 +3421,14 @@ function BedWars.VoidWater.Place(position, surfaceY, mode)
     mode = mode or "Void"
     local width = mode == "Fight"
         and math.ceil(math.max(40, (BedWars.WaterFightRange + 8) * 2) / 4) * 4
+        or mode == "NoFall" and 20
         or math.floor(BedWars.VoidWaterWidth / 4) * 4
-    local depth = mode == "Fight" and 32 or math.floor(BedWars.VoidWaterDepth / 4) * 4
+    local depth = mode == "Fight" and 32 or mode == "NoFall" and 16
+        or math.floor(BedWars.VoidWaterDepth / 4) * 4
     if voidWaterCenter and voidWaterTop == surfaceY and voidWaterMode == mode
         and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
-            < (mode == "Fight" and 4 or math.min(24, width / 4)) then
+            < (mode == "Fight" and 4 or mode == "NoFall" and 5
+                or math.min(24, width / 4)) then
         return
     end
     BedWars.VoidWater.Clear()
@@ -5699,23 +5747,6 @@ track(RunService.Heartbeat:Connect(function()
             pcall(drop.dropItemInHand, drop)
         end
     end
-    if BedWars.NoFallOn then
-        local character = LocalPlayer.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if root and humanoid and humanoid.Health > 0
-            and humanoid.FloorMaterial == Enum.Material.Air
-            and root.AssemblyLinearVelocity.Y < -50 then
-            local ray = RaycastParams.new()
-            ray.FilterType = Enum.RaycastFilterType.Exclude
-            ray.FilterDescendantsInstances = { character }
-            local hit = workspace:Raycast(root.Position, Vector3.new(0, -50, 0), ray)
-            if hit and root.Position.Y - hit.Position.Y < 18 then
-                local velocity = root.AssemblyLinearVelocity
-                root.AssemblyLinearVelocity = Vector3.new(velocity.X, -50, velocity.Z)
-            end
-        end
-    end
     if BedWars.AutoBalloonOn and os.clock() - BedWars.LastBalloon > 0.35 then
         local character = LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -6145,6 +6176,14 @@ function BedWars.Stop()
     BedWars.NotifyOn = false
     BedWars.SpotifyHUDOn = false
     if BedWars.SpotifyPanel then BedWars.SpotifyPanel.Visible = false end
+    local deleteCover = type(ENV.delfile) == "function" and ENV.delfile
+        or type(delfile) == "function" and delfile or nil
+    if deleteCover then
+        for _, path in ipairs(BedWars.MusicCoverFiles) do
+            pcall(deleteCover, path)
+        end
+    end
+    table.clear(BedWars.MusicCoverFiles)
     BedWars.WebhookOn = false
     BedWars.BedAlarmOn = false
     BedWars.AutoTeamUpgradeOn = false
@@ -6153,6 +6192,9 @@ function BedWars.Stop()
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
     BedWars.VoidWaterOn = false
+    BedWars.NoFallOn = false
+    BedWars.NoFallPeakY = nil
+    BedWars.NoFallWaterUntil = nil
     BedWars.WaterFightOn = false
     BedWars.AutoPlayAgainOn = false
     BedWars.SpiderOn = false
@@ -7204,7 +7246,7 @@ local function bedWarsSafeGround(position, character)
 end
 track(RunService.Heartbeat:Connect(function()
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
-    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn
+    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn and not BedWars.NoFallOn
         and not BedWars.WaterFightOn then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -7214,6 +7256,8 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.SafeRoot = root
         BedWars.LastSafeCFrame = nil
         BedWars.WaterGroundY = nil
+        BedWars.NoFallPeakY = nil
+        BedWars.NoFallWaterUntil = nil
     end
     if not root or not humanoid or humanoid.Health <= 0 then return end
     local _, solidGround = bedWarsSafeGround(root.Position, character)
@@ -7222,6 +7266,17 @@ track(RunService.Heartbeat:Connect(function()
     if grounded then
         BedWars.LastSafeCFrame = root.CFrame
         BedWars.WaterGroundY = root.Position.Y
+    end
+    if BedWars.NoFallOn then
+        if humanoid.FloorMaterial ~= Enum.Material.Air
+            and humanoid.FloorMaterial ~= Enum.Material.Water then
+            BedWars.NoFallPeakY = root.Position.Y
+        else
+            BedWars.NoFallPeakY = math.max(BedWars.NoFallPeakY or root.Position.Y,
+                root.Position.Y)
+        end
+    else
+        BedWars.NoFallPeakY = nil
     end
     local fightTarget = false
     if BedWars.WaterFightOn then
@@ -7238,9 +7293,36 @@ track(RunService.Heartbeat:Connect(function()
             end
         end
     end
+    local noFallHit, noFallPosition
+    if BedWars.NoFallOn and humanoid.FloorMaterial == Enum.Material.Air then
+        local velocity = root.AssemblyLinearVelocity
+        if velocity.Y < -30 then
+            local ray = RaycastParams.new()
+            ray.FilterType = Enum.RaycastFilterType.Exclude
+            ray.FilterDescendantsInstances = { character }
+            ray.RespectCanCollide = true
+            ray.IgnoreWater = true
+            noFallPosition = root.Position + Vector3.new(velocity.X * 0.12,
+                0, velocity.Z * 0.12)
+            noFallHit = workspace:Raycast(noFallPosition,
+                Vector3.new(0, -80, 0), ray)
+            if noFallHit then
+                local remaining = root.Position.Y - noFallHit.Position.Y
+                local drop = (BedWars.NoFallPeakY or root.Position.Y)
+                    - noFallHit.Position.Y
+                if remaining < 5 or remaining > 44 or drop < 18 then
+                    noFallHit = nil
+                end
+            end
+        end
+    end
     if fightTarget then
         BedWars.VoidWater.Place(root.Position,
             math.ceil((root.Position.Y + 16) / 4) * 4, "Fight")
+    elseif noFallHit then
+        BedWars.NoFallWaterUntil = os.clock() + 1.2
+        BedWars.VoidWater.Place(noFallPosition,
+            math.ceil((noFallHit.Position.Y + 10) / 4) * 4, "NoFall")
     else
         local voidBelow = false
         if BedWars.VoidWaterOn and BedWars.WaterGroundY
@@ -7257,7 +7339,10 @@ track(RunService.Heartbeat:Connect(function()
             BedWars.VoidWater.Place(root.Position,
                 math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4,
                 "Void")
-        elseif BedWars.VoidWater.Mode() then
+        elseif BedWars.VoidWater.Mode()
+            and not (BedWars.VoidWater.Mode() == "NoFall"
+                and BedWars.NoFallOn
+                and os.clock() < (BedWars.NoFallWaterUntil or 0)) then
             BedWars.VoidWater.Clear()
         end
     end
@@ -7417,6 +7502,11 @@ do
     local noFallSection = gameSection(gameName, MainTab.Right, "No Fall")
     Elements.Toggle(noFallSection, "No Fall", false, function(on)
         BedWars.NoFallOn = on
+        BedWars.NoFallPeakY = nil
+        BedWars.NoFallWaterUntil = nil
+        if not on and BedWars.VoidWater.Mode() == "NoFall" then
+            BedWars.VoidWater.Clear()
+        end
     end)
     local balloonSection = gameSection(gameName, MainTab.Right, "Auto Balloon")
     Elements.Toggle(balloonSection, "Auto Balloon", false, function(on)
@@ -8861,7 +8951,7 @@ function BedWars.BuildUI()
         ["Auto Clicker"] = "Repeats clicks while its activation condition is met.",
         ["Always Sprint"] = "Keeps sprint active while you move.",
         ["No Slowdown"] = "Reduces movement slowdown from supported actions.",
-        ["No Fall"] = "Uses supported recovery behavior to avoid fall damage.",
+        ["No Fall"] = "Places a temporary water cushion beneath damaging drops.",
         ["Auto Balloon"] = "Uses balloons automatically when a fall needs recovery.",
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
@@ -9791,6 +9881,8 @@ task.delay(0.45, function()
     task.wait(0.25)
     if not loading.Overlay.Parent then return end
     TweenService:Create(loading.Overlay, TweenInfo.new(0.32),
+        { BackgroundTransparency = 1 }):Play()
+    TweenService:Create(loading.Backdrop, TweenInfo.new(0.32),
         { BackgroundTransparency = 1 }):Play()
     for _, object in ipairs({ loading.Logo, loading.Status }) do
         TweenService:Create(object, TweenInfo.new(0.32),
