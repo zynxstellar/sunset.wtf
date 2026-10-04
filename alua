@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-polish-k244"
+local SUNSET_BUILD = "20261004-rift-scaffold-k245"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -3147,6 +3147,7 @@ do
     if LocalPlayer.Character then task.spawn(bindZoomReset, LocalPlayer.Character) end
     track(LocalPlayer.CharacterAdded:Connect(function(character)
         BedWars.InfiniteJumpCount = 0
+        BedWars.ScaffoldBridgeY = nil
         task.spawn(bindZoomReset, character)
     end))
 end
@@ -4084,6 +4085,11 @@ local function bedWarsScaffoldStep()
         and UIS:IsKeyDown(Enum.KeyCode.Space)
         and not UIS:GetFocusedTextBox()
     local feetY = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
+    local feetGridY = math.round((feetY - 1.5) / 3)
+    if BedWars.ScaffoldBridgeY == nil
+        or humanoid.FloorMaterial ~= Enum.Material.Air or towerRequested then
+        BedWars.ScaffoldBridgeY = feetGridY
+    end
     local overlap = OverlapParams.new()
     overlap.FilterType = Enum.RaycastFilterType.Exclude
     local ignored = { character }
@@ -4097,72 +4103,64 @@ local function bedWarsScaffoldStep()
     ray.FilterType = Enum.RaycastFilterType.Exclude
     ray.FilterDescendantsInstances = ignored
     ray.RespectCanCollide = true
-    local function emptyCell(position)
-        local grid = Vector3.new(math.round(position.X / 3), math.round((feetY - 1.5) / 3), math.round(position.Z / 3))
+    local function cellOpen(grid)
         local center = grid * 3
         for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center), Vector3.new(2.6, 2.6, 2.6), overlap)) do
-            if part.CanCollide then return nil end
+            if part.CanCollide then return false end
         end
-        return grid
+        return true
     end
     BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
     BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
     BedWars.ScaffoldConfirmed = BedWars.ScaffoldConfirmed or {}
     local now = os.clock()
-    local function hasNeighbor(candidate)
+    local function recentlyConfirmed(candidate)
+        return now - (BedWars.ScaffoldConfirmed[scaffoldGridKey(candidate)]
+            or -math.huge) < 0.8
+    end
+    local function hasSideSupport(candidate)
         local center = candidate * 3
         for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
-            Vector3.new(0, 3, 0), Vector3.new(0, -3, 0),
             Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-            local neighborKey = scaffoldGridKey(candidate + offset / 3)
-            if now - (BedWars.ScaffoldConfirmed[neighborKey] or -math.huge) < 0.8
+            if recentlyConfirmed(candidate + offset / 3)
                 or workspace:Raycast(center, offset, ray) then return true end
         end
         return false
     end
     local grid
-    local checked = {}
-    local function consider(position)
-        local candidate = emptyCell(position)
-        if not candidate then return false end
+    local function consider(candidate, supported)
+        if not supported or not cellOpen(candidate) then return false end
         local key = scaffoldGridKey(candidate)
-        if checked[key] then return false end
-        checked[key] = true
         if BedWars.ScaffoldInFlight[key]
-            or now - (BedWars.ScaffoldConfirmed[key] or -math.huge) < 0.8
-            or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
-            or not hasNeighbor(candidate) then return false end
+            or recentlyConfirmed(candidate)
+            or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now then return false end
         grid = candidate
         return true
     end
-    consider(root.Position)
-    if not grid and not towerRequested
+    local belowBridge = feetGridY < BedWars.ScaffoldBridgeY
+    local targetY = belowBridge and feetGridY or BedWars.ScaffoldBridgeY
+    local footGrid = Vector3.new(math.round(root.Position.X / 3),
+        targetY, math.round(root.Position.Z / 3))
+    local footSupported = not cellOpen(footGrid) or recentlyConfirmed(footGrid)
+    if not footSupported then
+        local supported = hasSideSupport(footGrid)
+        if not supported and (towerRequested or (BedWars.ScaffoldVoidRescue
+            and root.AssemblyLinearVelocity.Y < -8)) then
+            supported = workspace:Raycast(footGrid * 3,
+                Vector3.new(0, -3, 0), ray) ~= nil
+        end
+        consider(footGrid, supported)
+    end
+    if not grid and footSupported and not towerRequested and not belowBridge
         and humanoid.MoveDirection.Magnitude >= 0.05 then
         local direction = humanoid.MoveDirection.Unit
-        for _, lead in ipairs({ 3, 6, 9 }) do
-            if consider(root.Position + direction * lead) then break end
-        end
-        if not grid then
-            local xStep = math.sign(direction.X) * 3
-            local zStep = math.sign(direction.Z) * 3
-            if xStep ~= 0 then
-                consider(root.Position + Vector3.new(xStep, 0, 0))
-            end
-            if not grid and zStep ~= 0 then
-                consider(root.Position + Vector3.new(0, 0, zStep))
-            end
-        end
-    end
-    if not grid and BedWars.ScaffoldVoidRescue
-        and root.AssemblyLinearVelocity.Y < -8 then
-
-
-        for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
-            Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-            if consider(root.Position + offset)
-                and (grid * 3 - root.Position).Magnitude <= 18 then break end
-            grid = nil
-        end
+        local step = math.abs(direction.X) >= math.abs(direction.Z)
+            and Vector3.new(math.sign(direction.X), 0, 0)
+            or Vector3.new(0, 0, math.sign(direction.Z))
+        local nextGrid = footGrid + step
+        local supported = recentlyConfirmed(footGrid)
+            or workspace:Raycast(nextGrid * 3, -step * 3, ray) ~= nil
+        consider(nextGrid, supported)
     end
     if not grid then return end
 
@@ -4184,7 +4182,7 @@ local function bedWarsScaffoldStep()
     local key = scaffoldGridKey(grid)
     if BedWars.ScaffoldInFlight[key]
         or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
-        or (BedWars.ScaffoldPending or 0) >= 3 then return end
+        or (BedWars.ScaffoldPending or 0) >= 1 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldInFlight[key] = true
     BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
@@ -6107,6 +6105,7 @@ function BedWars.Stop()
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
+    BedWars.ScaffoldBridgeY = nil
     BedWars.NotifyOn = false
     BedWars.SpotifyHUDOn = false
     if BedWars.SpotifyPanel then BedWars.SpotifyPanel.Visible = false end
@@ -7444,6 +7443,7 @@ do
     local scaffoldSection = gameSection(gameName, MiscTab.Left, "Scaffold")
     Elements.Toggle(scaffoldSection, "Scaffold", false, function(on)
         BedWars.ScaffoldOn = on
+        BedWars.ScaffoldBridgeY = nil
         if not on then
             BedWars.BridgingNeeded = nil
             bedWarsReleaseScaffoldItem()
