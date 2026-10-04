@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-hits-k257"
+local SUNSET_BUILD = "20261004-rift-rivals-aim-frames-k258"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -9497,7 +9497,7 @@ function RivalsAim.Setup()
         local originKey, viewKey, hitKey, offsetKey = utf8.char(0), utf8.char(1), utf8.char(2), utf8.char(3)
         local origin, view = data[originKey], data[viewKey]
         if typeof(view) ~= "CFrame" then return end
-        local position = part.Position
+        local position = context.AimPosition
         if (position - view.Position).Magnitude < 0.001 then return end
         if RivalsAim.WallCheck then
             if not unobstructed(context.Fighter, part, view.Position) then return end
@@ -9511,8 +9511,12 @@ function RivalsAim.Setup()
         end
         local hit = castToward(context.Fighter, view.Position, position, whitelist)
         local corrected = table.clone(data)
-        -- Preserve the native origin field exactly. Hit metadata must describe
-        -- an actual collision, including a surface offset, rather than a made-up hit.
+        -- Keep native positions, but align both frames in the shot packet.
+        -- Gun's local tracer reads frame 1; leaving frame 0 pointed at the crosshair
+        -- makes the packet inconsistent even when that tracer reaches the target.
+        if typeof(origin) == "CFrame" and (position - origin.Position).Magnitude > 0.001 then
+            corrected[originKey] = CFrame.lookAt(origin.Position, position)
+        end
         corrected[viewKey] = CFrame.lookAt(view.Position, position)
         corrected[hitKey] = hit and hit.Instance or nil
         corrected[offsetKey] = hit and hit.Instance.CFrame:ToObjectSpace(CFrame.new(hit.Position)) or nil
@@ -9555,7 +9559,7 @@ function RivalsAim.Setup()
             if not ok or not target then return previousShot(item, ...) end
             local thread = coroutine.running()
             local previous = contexts[thread]
-            contexts[thread] = { Fighter = fighter, Target = target }
+            contexts[thread] = { Fighter = fighter, Target = target, AimPosition = target.Position }
             -- Always call the native shot exactly once. Ammo, held fire, burst queues,
             -- cooldowns, recoil, callbacks and nil return slots remain owned by Gun.
             local results = table.pack(pcall(previousShot, item, ...))

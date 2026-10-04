@@ -175,7 +175,7 @@ function Elements.Dropdown(p,t,options,d,cb)
     return c
 end
 Elements.Label=label
-local BRAND,SUNSET_BUILD="RIFT","test-k257"
+local BRAND,SUNSET_BUILD="RIFT","test-k258"
 local hooks,hookInstalls,originalCalls={},0,{}
 local currentMethod="Raycast"
 local caller=false
@@ -212,6 +212,7 @@ local gun={StartShooting=function(item,...)
     shots+=1
     shotArgs=table.pack(...)
     local data=item.ClientFighter:GetCameraData()
+    if item.BetweenQueries then item.BetweenQueries() end
     tracer=item.ClientFighter:GetCameraData("whitelist","spread",true)
     if item.Fail then error("native gun error") end
     if item.Blocked then return false end
@@ -314,9 +315,12 @@ for i=1,15 do
         "packet and tracer did not select the actual enemy fighter model")
     assert(result[3].Other=="keep" and packet[utf8.char(2)]==nil,"rewriter mutated native packet")
     local origin=result[3][utf8.char(0)]
-    assert(origin==packet[utf8.char(0)],"rewriter changed the native origin field")
+    assert(origin.Position==packet[utf8.char(0)].Position,"rewriter changed the native origin position")
+    assert(origin.LookVector:Dot((target.Position-origin.Position).Unit)>0.9999,
+        "shot frame stayed at the crosshair while the tracer frame moved")
     assert(result[3][utf8.char(1)].Position==packet[utf8.char(1)].Position)
-    assert(result[3][utf8.char(1)].LookVector.Z>0.9)
+    local view=result[3][utf8.char(1)]
+    assert(view.LookVector:Dot((target.Position-view.Position).Unit)>0.9999)
     assert(result[3][utf8.char(3)].Position.Z==-0.5,"hit offset lost the actual surface collision")
 end
 assert(shots==15 and cameraCalls==30,"aim duplicated or dropped native firing calls")
@@ -324,6 +328,18 @@ raycastResult=nil
 local noHit=select(3,gun.StartShooting(item))
 assert(noHit~=packet and noHit[utf8.char(2)]==nil and noHit[utf8.char(3)]==nil,
     "no native collision fabricated a hit part instead of using directional aim")
+local shotPosition=target.Position
+item.BetweenQueries=function() target.Position=Vector3.new(75,0,100) end
+local captured=select(3,gun.StartShooting(item))
+for _,data in ipairs({captured,tracer}) do
+    for i=0,1 do
+        local frame=data[utf8.char(i)]
+        assert(frame.LookVector:Dot((shotPosition-frame.Position).Unit)>0.9999,
+            "main packet and tracer used different points within one shot")
+    end
+end
+target.Position=shotPosition
+item.BetweenQueries=nil
 for _,name in ipairs({"Torso","Root"}) do
     RivalsAim.AimPart=name
     local part=enemy.Fighter.Entity.Model:FindFirstChild(name=="Torso" and "UpperTorso" or "HumanoidRootPart")
@@ -393,7 +409,7 @@ assert(gun.StartShooting==installed,"toggle stacked duplicate shot wrappers")
 state.Restore()
 assert(gun.StartShooting==nativeShot and rawget(localFighter,"GetCameraData")==nil,
     "unload did not restore native gun and inherited camera method")
-print("PASS Rivals shots: repeated shots, origin preservation, real surface/no-hit metadata, body choices, walls, cleanup")
+print("PASS Rivals shots: repeated shots, both aim frames, origin positions, real metadata, body choices, walls, cleanup")
 
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
