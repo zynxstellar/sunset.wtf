@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-sideways-spider-k253"
+local SUNSET_BUILD = "20261004-rift-module-backgrounds-k254"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -9208,32 +9208,35 @@ function BedWars.BuildUI()
     for index, entry in ipairs(cards) do
         if entry.Control and entry.Category ~= "Sunset"
             and entry.Category ~= "Dev Tools" then
-            local textWidth = math.ceil(game:GetService("TextService"):GetTextSize(
-                entry.Name.Text, 14, Enum.Font.GothamBold,
-                Vector2.new(1000, 25)).X)
             local textColor = gold
-            local row = new("Frame", {
-                Visible = false, Size = UDim2.fromOffset(math.min(textWidth + 8, 220), 18),
-                LayoutOrder = -textWidth * 1000 + index,
+            local row = new("TextLabel", {
+                Visible = false, Size = UDim2.fromOffset(0, 18),
+                AutomaticSize = Enum.AutomaticSize.X,
+                AnchorPoint = Vector2.new(1, 0),
+                Position = UDim2.new(1, 0, 0, 26),
+                LayoutOrder = index,
                 BackgroundColor3 = Color3.fromRGB(22, 27, 41),
                 BackgroundTransparency = 0.02,
                 BorderSizePixel = 0,
+                Text = entry.Name.Text, Font = Enum.Font.GothamBold,
+                TextSize = 14, TextColor3 = textColor,
+                TextXAlignment = Enum.TextXAlignment.Right,
+                TextWrapped = false, TextScaled = false,
+                TextStrokeTransparency = 1, TextTruncate = Enum.TextTruncate.None,
+                ClipsDescendants = true,
             }, moduleList)
+            new("UIPadding", {
+                PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 7),
+            }, row)
             new("UICorner", { CornerRadius = UDim.new(0, 2) }, row)
             local strip = new("Frame", {
-                Position = UDim2.new(1, -2, 0, 0),
+                Visible = false, AnchorPoint = Vector2.new(1, 0),
+                Position = UDim2.new(1, 0, 0, 26),
                 Size = UDim2.fromOffset(2, 18),
                 BackgroundColor3 = textColor, BorderSizePixel = 0,
-            }, row)
-            local textLabel = label(row, entry.Name.Text, 14,
-                textColor, Enum.TextXAlignment.Right)
-            textLabel.Font = Enum.Font.GothamBold
-            textLabel.Position = UDim2.fromOffset(2, 0)
-            textLabel.Size = UDim2.new(1, -7, 0, 18)
-            textLabel.TextStrokeTransparency = 1
-            textLabel.TextTruncate = Enum.TextTruncate.None
+            }, moduleList)
             entry.ModuleRow = row
-            entry.ModuleText = textLabel
+            entry.ModuleText = row
             entry.ModuleAccent = strip
         end
     end
@@ -9262,11 +9265,14 @@ function BedWars.BuildUI()
                 if entry.ModuleRow then
                     local active = entry.Control.Get() == true
                     entry.ModuleRow.Visible = active
+                    entry.ModuleAccent.Visible = active
                     anyActive = anyActive or active
                     if active then table.insert(activeRows, entry) end
                 end
             end
             table.sort(activeRows, function(a, b)
+                local aWidth, bWidth = a.ModuleText.TextBounds.X, b.ModuleText.TextBounds.X
+                if aWidth ~= bWidth then return aWidth > bWidth end
                 return a.ModuleRow.LayoutOrder < b.ModuleRow.LayoutOrder
             end)
             local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
@@ -9283,9 +9289,9 @@ function BedWars.BuildUI()
                 local color = gold:Lerp(Color3.fromRGB(139, 92, 246), progress)
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
-                entry.ModuleRow.Position = UDim2.fromOffset(
-                    moduleList.Size.X.Offset - entry.ModuleRow.Size.X.Offset,
+                entry.ModuleRow.Position = UDim2.new(1, 0, 0,
                     26 + (index - 1) * rowStep)
+                entry.ModuleAccent.Position = entry.ModuleRow.Position
             end
             moduleList.Visible = Settings.SelectedGame == "BedWars"
                 and Settings.ModuleListOn and not BedWarsUI.Visible and anyActive
