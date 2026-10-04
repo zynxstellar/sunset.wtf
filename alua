@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-scaffold-k245"
+local SUNSET_BUILD = "20261004-rift-pregame-spider-k246"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -193,12 +193,18 @@ function Settings.SetMenuBlur(size)
 end
 Settings.SetMenuBlur(20)
 ENV.SunsetLoading = {}
+ENV.SunsetLoading.Gui = new("ScreenGui", {
+    Name = "RiftLoading", DisplayOrder = 2147483647,
+    ResetOnSpawn = false, IgnoreGuiInset = true,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+}, PlayerGui)
+pcall(function() ENV.SunsetLoading.Gui.ScreenInsets = Enum.ScreenInsets.None end)
 ENV.SunsetLoading.Overlay = new("Frame", {
     Name = "SunsetLoading", Size = UDim2.fromScale(1, 1),
     BackgroundColor3 = Color3.fromRGB(16, 18, 29),
     BackgroundTransparency = 0.13, BorderSizePixel = 0,
     ZIndex = 1000,
-}, Gui)
+}, ENV.SunsetLoading.Gui)
 ENV.SunsetLoading.Logo = label(ENV.SunsetLoading.Overlay, BRAND, 45,
     Color3.fromRGB(200, 183, 255), Enum.TextXAlignment.Center)
 ENV.SunsetLoading.Logo.Font = Enum.Font.GothamBold
@@ -2665,6 +2671,7 @@ BedWars = {
     ScaffoldTowerSpeed = 38, AuraStatus = "Off",
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
+    SpiderOn = false, SpiderSpeed = 16,
     KillChatOn = false, KillChatQueue = {},
     AutoReplyOn = false, AutoReplyMode = "Mentions", AutoReplyText = "Rift <3",
     InfiniteJumpOn = false, InfiniteJumpMax = 6, InfiniteJumpCount = 0,
@@ -4854,6 +4861,7 @@ local function bedWarsController(name)
     if ok and knit then bedWarsKnitClient = knit end
     return bedWarsKnitClient and bedWarsKnitClient.Controllers[name] or nil
 end
+BedWars.Controller = bedWarsController
 function BedWars.ResolveAbilityController()
     if BedWars.AbilityController then return BedWars.AbilityController end
     local storage = game:GetService("ReplicatedStorage")
@@ -6079,6 +6087,34 @@ track(RunService.PreSimulation:Connect(function(delta)
         humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end))
+track(RunService.PreSimulation:Connect(function()
+    if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
+        or not BedWars.SpiderOn or BedWars.FlyOn
+        or not UIS:IsKeyDown(Enum.KeyCode.W) or UIS:GetFocusedTextBox() then return end
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health <= 0
+        or humanoid:GetState() == Enum.HumanoidStateType.Swimming
+        or humanoid.MoveDirection.Magnitude < 0.1 then return end
+    local facing = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+    if facing.Magnitude < 0.1 then return end
+    facing = facing.Unit
+    if humanoid.MoveDirection:Dot(facing) < 0.35 then return end
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.FilterDescendantsInstances = { character }
+    ray.RespectCanCollide = true
+    local hit = workspace:Raycast(root.Position, facing * 3, ray)
+    if not hit or math.abs(hit.Normal.Y) > 0.35 then return end
+    if typeof(isnetworkowner) == "function" then
+        local ok, owned = pcall(isnetworkowner, root)
+        if ok and not owned then return end
+    end
+    local velocity = root.AssemblyLinearVelocity
+    root.AssemblyLinearVelocity = Vector3.new(velocity.X,
+        math.max(velocity.Y, BedWars.SpiderSpeed), velocity.Z)
+end))
 track(RunService.Heartbeat:Connect(function()
     if (not BedWars.SpeedOn or not BedWars.Running)
         and BedWars.SpeedKnockbackController then
@@ -6119,6 +6155,7 @@ function BedWars.Stop()
     BedWars.VoidWaterOn = false
     BedWars.WaterFightOn = false
     BedWars.AutoPlayAgainOn = false
+    BedWars.SpiderOn = false
     BedWars.KillChatOn = false
     BedWars.AutoReplyOn = false
     table.clear(BedWars.KillChatQueue)
@@ -6972,49 +7009,86 @@ task.spawn(function()
     end
 end)
 do
-    local lastReplayClick = 0
+    local lastQueueAt = -math.huge
+    local lastMatchState = nil
+    local function gameState()
+        if not sessionStore then currentBedWarsKills() end
+        if not sessionStore then return nil end
+        local ok, state = pcall(function() return sessionStore:getState() end)
+        return ok and type(state) == "table" and state or nil
+    end
+    function BedWars.QueueNextMatch(reason)
+        if not BedWars.Running or Settings.SelectedGame ~= "BedWars"
+            or os.clock() - lastQueueAt < 12 then return false end
+        local state = gameState()
+        local gameData = state and state.Game
+        if gameData and gameData.customMatch then return false end
+        local queueType = (gameData and gameData.queueType)
+            or workspace:GetAttribute("QueueType")
+        if type(queueType) ~= "string" or queueType == ""
+            or queueType == "bedwars_test" then
+            BedWars.Notify("Matchmaking", "Choose a public BedWars mode first", true)
+            return false
+        end
+        local controller = BedWars.Controller("QueueController")
+        if not controller or type(controller.joinQueue) ~= "function" then
+            BedWars.Notify("Matchmaking", "BedWars queue is unavailable", true)
+            return false
+        end
+        local ok = pcall(controller.joinQueue, controller, queueType)
+        if not ok then
+            BedWars.Notify("Matchmaking", "Could not join the queue", true)
+            return false
+        end
+        lastQueueAt = os.clock()
+        BedWars.Notify("Matchmaking", reason == "Find Pregame"
+            and "Finding a fresh public match" or "Queued another match", true)
+        return true
+    end
     task.spawn(function()
-        while BedWars.Running do
-            if Settings.SelectedGame == "BedWars" and BedWars.AutoPlayAgainOn
-                and os.clock() - lastReplayClick > 6 then
-                local gui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-                if gui then
-                    for _, object in ipairs(gui:GetDescendants()) do
-                        if (object:IsA("TextButton") or object:IsA("TextLabel"))
-                            and string.find(string.lower(object.Text), "play again", 1, true) then
-                            local button = object:IsA("TextButton") and object
-                                or object:FindFirstAncestorWhichIsA("GuiButton")
-                            local visible = button ~= nil
-                            local ancestor = button
-                            while ancestor and ancestor ~= gui do
-                                if ancestor:IsA("GuiObject") and not ancestor.Visible then
-                                    visible = false
-                                    break
-                                elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
-                                    visible = false
-                                    break
-                                end
-                                ancestor = ancestor.Parent
-                            end
-                            if visible and button.AbsoluteSize.X > 0
-                                and button.AbsoluteSize.Y > 0 and virtualInput then
-                                local center = button.AbsolutePosition + button.AbsoluteSize / 2
-                                local ok = pcall(function()
-                                    virtualInput:SendMouseButtonEvent(center.X, center.Y,
-                                        0, true, game, 0)
-                                    virtualInput:SendMouseButtonEvent(center.X, center.Y,
-                                        0, false, game, 0)
-                                end)
-                                if ok then
-                                    lastReplayClick = os.clock()
-                                    break
-                                end
+        local storage = game:GetService("ReplicatedStorage")
+        local module = storage:FindFirstChild("TS")
+        module = module and module:FindFirstChild("remotes")
+        if not module then return end
+        local ok, exports = pcall(require, module)
+        local client = ok and exports and exports.default and exports.default.Client
+        if not client or type(client.WaitFor) ~= "function" then return end
+        for _, name in ipairs({ "MatchEndEvent", "EntityDeathEvent" }) do
+            local eventName = name
+            pcall(function()
+                client:WaitFor(eventName):andThen(function(remote)
+                    if not BedWars.Running then return end
+                    local connection = remote:Connect(function(data)
+                        if not BedWars.AutoPlayAgainOn then return end
+                        if eventName == "MatchEndEvent" then
+                            BedWars.QueueNextMatch("Auto Play Again")
+                        elseif type(data) == "table" and data.finalKill
+                            and data.entityInstance == LocalPlayer.Character then
+                            local state = gameState()
+                            local party = state and state.Party
+                            if party and type(party.members) == "table"
+                                and #party.members == 0 then
+                                BedWars.QueueNextMatch("Auto Play Again")
                             end
                         end
-                    end
+                    end)
+                    track(connection)
+                end)
+            end)
+        end
+    end)
+    task.spawn(function()
+        while BedWars.Running do
+            if Settings.SelectedGame == "BedWars" then
+                local state = gameState()
+                local current = state and state.Game and state.Game.matchState
+                if BedWars.AutoPlayAgainOn and current == 2
+                    and lastMatchState == 1 then
+                    BedWars.QueueNextMatch("Auto Play Again")
                 end
+                if type(current) == "number" then lastMatchState = current end
             end
-            task.wait(0.6)
+            task.wait(0.5)
         end
     end)
 end
@@ -7189,9 +7263,26 @@ track(RunService.Heartbeat:Connect(function()
     end
 
     if BedWars.AntiVoidOn and not grounded and BedWars.LastSafeCFrame then
-        local hit = bedWarsSafeGround(root.Position, character)
-        if (not hit or root.Position.Y - hit.Position.Y > 20)
-            and root.AssemblyLinearVelocity.Y < -8
+        local ray = RaycastParams.new()
+        ray.FilterType = Enum.RaycastFilterType.Exclude
+        ray.FilterDescendantsInstances = { character }
+        ray.RespectCanCollide = true
+        ray.IgnoreWater = true
+        local velocity = root.AssemblyLinearVelocity
+        local direction = humanoid.MoveDirection
+        local forward = direction.Magnitude > 0.1 and direction.Unit * 3
+            or Vector3.zero
+        local voidBelow = true
+        for _, offset in ipairs({ Vector3.zero, forward,
+            Vector3.new(1.5, 0, 0), Vector3.new(-1.5, 0, 0),
+            Vector3.new(0, 0, 1.5), Vector3.new(0, 0, -1.5) }) do
+            if workspace:Raycast(root.Position + offset,
+                Vector3.new(0, -1024, 0), ray) then
+                voidBelow = false
+                break
+            end
+        end
+        if voidBelow and velocity.Y < -8
             and root.Position.Y < BedWars.LastSafeCFrame.Position.Y - 7
             and os.clock() - (BedWars.LastVoidRescue or 0) > 0.8 then
             BedWars.LastVoidRescue = os.clock()
@@ -7317,6 +7408,12 @@ do
     Elements.Toggle(speedSection, "Always Jump", false, function(on)
         BedWars.SpeedAlwaysJump = on
     end, nil, true)
+    local spiderSection = gameSection(gameName, MainTab.Right, "Spider")
+    Elements.Toggle(spiderSection, "Spider", false, function(on)
+        BedWars.SpiderOn = on
+    end)
+    Elements.Slider(spiderSection, "Climb Speed", 5, 30, 16, "studs",
+        function(value) BedWars.SpiderSpeed = value end)
     local noFallSection = gameSection(gameName, MainTab.Right, "No Fall")
     Elements.Toggle(noFallSection, "No Fall", false, function(on)
         BedWars.NoFallOn = on
@@ -7493,6 +7590,17 @@ do
         Elements.Toggle(replaySection, "Auto Play Again", false, function(on)
             BedWars.AutoPlayAgainOn = on
         end)
+        local pregameSection = gameSection(gameName, MiscTab.Right, "Find Pregame")
+        local pregameToggle
+        pregameToggle = Elements.Toggle(pregameSection, "Find Pregame", false,
+            function(on)
+                if on then
+                    task.defer(function()
+                        BedWars.QueueNextMatch("Find Pregame")
+                        if pregameToggle then pregameToggle.Set(false) end
+                    end)
+                end
+            end)
     end
     local pickupSection = gameSection(gameName, PlayerTab.Right, "Pickup Range")
     Elements.Toggle(pickupSection, "Pickup Range", false, function(on)
@@ -8613,6 +8721,7 @@ function BedWars.BuildUI()
         { "Movement", "Always Sprint", "Movement", "BedWars", "Sprint", "Always Sprint" },
         { "Movement", "Speed", "Movement", "BedWars", "Speed", "Speed" },
         { "Movement", "Fly", "Movement", "BedWars", "Fly", "Fly" },
+        { "Movement", "Spider", "Movement", "BedWars", "Spider", "Spider" },
         { "Movement", "Launch", "Movement", "BedWars", "Launch", "Launch" },
         { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
         { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
@@ -8658,6 +8767,7 @@ function BedWars.BuildUI()
         { "Misc", "Scaffold", "Misc", "BedWars", "Scaffold", "Scaffold" },
         { "Misc", "Water Fight", "Misc", "BedWars", "Water Fight", "Water Fight" },
         { "Misc", "Auto Play Again", "Misc", "BedWars", "Auto Play Again", "Auto Play Again" },
+        { "Misc", "Find Pregame", "Misc", "BedWars", "Find Pregame", "Find Pregame" },
         { "Misc", "Bed Protector", "Misc", "BedWars", "Bed Protector", "Bed Protector" },
         { "Misc", "Bed Alarm", "Misc", "BedWars", "Bed Alarm", "Bed Alarm" },
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
@@ -8755,6 +8865,7 @@ function BedWars.BuildUI()
         ["Auto Balloon"] = "Uses balloons automatically when a fall needs recovery.",
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
+        ["Spider"] = "Climbs a wall while you hold W against it.",
         ["Void Water"] = "Places water when void is detected beneath you.",
         ["Noclip"] = "Lets your character pass through local collision surfaces.",
         ["Auto Bed"] = "Targets nearby enemy beds with supported tools.",
@@ -8776,6 +8887,7 @@ function BedWars.BuildUI()
         ["Orbiting Stars"] = "Adds orbiting cosmetic stars around your character.",
         ["Water Fight"] = "Places water around you when an enemy gets close.",
         ["Auto Play Again"] = "Queues another match after the current one ends.",
+        ["Find Pregame"] = "Queues for a fresh public BedWars match in your current mode.",
         ["Trap Disabler"] = "Attempts to disable nearby enemy traps.",
         ["Staff Detector"] = "Alerts when a detected staff account joins.",
         ["Anti AFK"] = "Keeps you active while idle.",
@@ -9529,6 +9641,9 @@ ENV.SunsetUnload = function()
         pcall(function() c:Disconnect() end)
     end
     table.clear(Connections)
+    if ENV.SunsetLoading and ENV.SunsetLoading.Gui then
+        ENV.SunsetLoading.Gui:Destroy()
+    end
     if Gui then Gui:Destroy() end
     if Settings.MenuBlurEffect then Settings.MenuBlurEffect:Destroy() end
     ENV.SunsetLoading = nil
@@ -9686,7 +9801,7 @@ task.delay(0.45, function()
     TweenService:Create(loading.Fill, TweenInfo.new(0.32),
         { BackgroundTransparency = 1 }):Play()
     task.wait(0.35)
-    if loading.Overlay.Parent then loading.Overlay:Destroy() end
+    if loading.Gui and loading.Gui.Parent then loading.Gui:Destroy() end
     if ENV.SunsetLoading == loading then ENV.SunsetLoading = nil end
     if detectedGame == "BedWars" and BedWarsUI then
         BedWarsUI.Visible = true
