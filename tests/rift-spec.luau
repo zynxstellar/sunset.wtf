@@ -341,12 +341,12 @@ Persistence.HUDFrames={ModuleList=listFrame,TargetHUD=hudFrame}
 Persistence.RestoreHUDPositions({ModuleList={1,-310,0,38},TargetHUD={0,50,0,60}},false)
 assert(listFrame.Position.X.Offset==-14 and hudFrame.Position.X.Offset==50, "saved shifted module position was restored")
 BedWars.Notify("Feature enabled","Scaffold",true)
-assert(BedWars.NotifyStack.AnchorPoint.X==0 and BedWars.NotifyStack.Position.X.Scale==0
-    and BedWars.NotifyStack.Position.Y.Scale==1, "notifications are not bottom-left")
+assert(BedWars.NotifyStack.AnchorPoint.X==1 and BedWars.NotifyStack.Position.X.Scale==1
+    and BedWars.NotifyStack.Position.Y.Scale==1, "notifications are not bottom-right")
 assert(Persistence.SavedHUDPositions().ModuleList[2]==-14, "saved list position drifted")
 advance(5)
 assert(BedWars.NotifyActiveCount==0, "expired toast was not removed")
-print("PASS UI: bottom-left toast, expiry, shifted-config repair, other HUD positions preserved")
+print("PASS UI: bottom-right toast, expiry, shifted-config repair, other HUD positions preserved")
 
 BedWars.ShopCatalog=nil
 assert(bedWarsShopCatalog()==nil, "missing native shop should be retried later")
