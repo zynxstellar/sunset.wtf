@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-aim-frames-k258"
+local SUNSET_BUILD = "20261004-rift-rivals-packet-codec-k259"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -9388,7 +9388,7 @@ function RivalsAim.Setup()
         oldState.Active, oldState.Resolve, oldState.Select = false, nil, nil
         if type(oldState.Restore) == "function" then pcall(oldState.Restore) end
     end
-    local state = { Version = 3, Active = false }
+    local state = { Version = 4, Active = false }
     ENV.SunsetRivalsAimHook = state
     local controller, gun, shotWrapper, originalShot
     local cameraPatches = {}
@@ -9432,12 +9432,13 @@ function RivalsAim.Setup()
     local function targetPart(entity)
         local model = entity.Model
         if RivalsAim.AimPart == "Torso" then
-            return model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
+            return model:FindFirstChild("HitboxBody", true)
+                or model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
                 or model:FindFirstChild("HumanoidRootPart") or entity.RootPart
         elseif RivalsAim.AimPart == "Root" then
             return model:FindFirstChild("HumanoidRootPart") or entity.RootPart
         end
-        return model:FindFirstChild("Head")
+        return model:FindFirstChild("HitboxHead", true) or model:FindFirstChild("Head")
     end
     local function castToward(fighter, origin, position, whitelist)
         local params = RaycastParams.new()
@@ -9491,18 +9492,53 @@ function RivalsAim.Setup()
         end
         return closest
     end
+    -- GetCameraData returns CFrames for local tracers, but six-component tables
+    -- for firing: XYZ position followed by YXZ orientation (ToOrientation).
+    local function frameKeys(value)
+        if type(value) ~= "table" then return end
+        local keys = {}
+        local stringKeys = value[utf8.char(0)] ~= nil
+        for i = 0, 5 do
+            local key = stringKeys and utf8.char(i) or i
+            local component = value[key]
+            if type(component) ~= "number" or component ~= component
+                or math.abs(component) == math.huge then return end
+            keys[i + 1] = key
+        end
+        return keys
+    end
+    local function readFrame(value)
+        if typeof(value) == "CFrame" then return value end
+        local keys = frameKeys(value)
+        if not keys then return end
+        return CFrame.new(value[keys[1]], value[keys[2]], value[keys[3]])
+            * CFrame.fromOrientation(value[keys[4]], value[keys[5]], value[keys[6]])
+    end
+    local function writeFrame(frame, template)
+        if typeof(template) == "CFrame" then return frame end
+        local keys = frameKeys(template)
+        if not keys then return end
+        local x, y, z = frame:ToOrientation()
+        local position = frame.Position
+        local values = { position.X, position.Y, position.Z, x, y, z }
+        local result = table.clone(template)
+        for i, key in ipairs(keys) do result[key] = values[i] end
+        return result
+    end
     local function redirectData(data, context, whitelist)
         local part = context.Target
         if type(data) ~= "table" or not part or not part:IsDescendantOf(workspace) then return end
         local originKey, viewKey, hitKey, offsetKey = utf8.char(0), utf8.char(1), utf8.char(2), utf8.char(3)
-        local origin, view = data[originKey], data[viewKey]
-        if typeof(view) ~= "CFrame" then return end
+        local originValue, viewValue = data[originKey], data[viewKey]
+        local origin, view = readFrame(originValue), readFrame(viewValue)
+        if not view then return end
         local position = context.AimPosition
         if (position - view.Position).Magnitude < 0.001 then return end
         if RivalsAim.WallCheck then
             if not unobstructed(context.Fighter, part, view.Position) then return end
-            local originPosition = typeof(origin) == "Vector3" and origin
-                or origin and origin.Position
+            local originPosition = origin and origin.Position
+                or typeof(originValue) == "Vector3" and originValue
+                or type(originValue) == "table" and originValue.Position
             if typeof(originPosition) == "Vector3"
                 and not unobstructed(context.Fighter, part, originPosition) then return end
         end
@@ -9511,15 +9547,20 @@ function RivalsAim.Setup()
         end
         local hit = castToward(context.Fighter, view.Position, position, whitelist)
         local corrected = table.clone(data)
-        -- Keep native positions, but align both frames in the shot packet.
-        -- Gun's local tracer reads frame 1; leaving frame 0 pointed at the crosshair
-        -- makes the packet inconsistent even when that tracer reaches the target.
-        if typeof(origin) == "CFrame" and (position - origin.Position).Magnitude > 0.001 then
-            corrected[originKey] = CFrame.lookAt(origin.Position, position)
+        -- Preserve each field's native representation, including the hit offset.
+        if origin and (position - origin.Position).Magnitude > 0.001 then
+            corrected[originKey] = writeFrame(CFrame.lookAt(origin.Position, position), originValue)
         end
-        corrected[viewKey] = CFrame.lookAt(view.Position, position)
+        corrected[viewKey] = writeFrame(CFrame.lookAt(view.Position, position), viewValue)
         corrected[hitKey] = hit and hit.Instance or nil
-        corrected[offsetKey] = hit and hit.Instance.CFrame:ToObjectSpace(CFrame.new(hit.Position)) or nil
+        if hit then
+            local offset = writeFrame(hit.Instance.CFrame:ToObjectSpace(CFrame.new(hit.Position)),
+                data[offsetKey] or viewValue)
+            if not offset then return end
+            corrected[offsetKey] = offset
+        else
+            corrected[offsetKey] = nil
+        end
         return corrected
     end
     local function patchCamera(fighter)

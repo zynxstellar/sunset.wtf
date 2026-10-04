@@ -40,14 +40,28 @@ local TweenService={Create=function() return {Play=function() end,Cancel=functio
     Destroy=function() end,Completed=signal()} end}
 local Ray={new=function(o,d) return {Origin=o,Direction=d,_type="Ray"} end}
 local CFrame={}
-function CFrame.new(p)
-    return {Position=p,_type="CFrame",ToObjectSpace=function(self,other)
+local frameMeta={}
+function CFrame.new(p,y,z)
+    if type(p)=="number" then p=Vector3.new(p,y,z) end
+    return setmetatable({Position=p or Vector3.new(),_type="CFrame",Angles={0,0,0},ToObjectSpace=function(self,other)
         return CFrame.new(other.Position-self.Position)
-    end}
+    end,ToOrientation=function(self) return table.unpack(self.Angles) end},frameMeta)
+end
+function CFrame.fromOrientation(x,y,z)
+    local f=CFrame.new()
+    f.Angles={x,y,z}
+    f.LookVector=Vector3.new(-math.sin(y)*math.cos(x),math.sin(x),-math.cos(y)*math.cos(x))
+    return f
+end
+function frameMeta.__mul(a,b)
+    local f=CFrame.fromOrientation(table.unpack(b.Angles))
+    f.Position=a.Position
+    return f
 end
 function CFrame.lookAt(p,target)
-    local frame=CFrame.new(p)
-    frame.LookVector=(target-p).Unit
+    local direction=(target-p).Unit
+    local frame=CFrame.fromOrientation(math.asin(direction.Y),math.atan2(-direction.X,-direction.Z),0)
+    frame.Position=p
     return frame
 end
 local function typeof(v)
@@ -175,7 +189,7 @@ function Elements.Dropdown(p,t,options,d,cb)
     return c
 end
 Elements.Label=label
-local BRAND,SUNSET_BUILD="RIFT","test-k258"
+local BRAND,SUNSET_BUILD="RIFT","test-k259"
 local hooks,hookInstalls,originalCalls={},0,{}
 local currentMethod="Raycast"
 local caller=false
@@ -198,10 +212,11 @@ end
 local packet={[utf8.char(0)]=CFrame.new(Vector3.new(0,0,0)),
     [utf8.char(1)]=CFrame.new(Vector3.new(0,1,0)),Other="keep"}
 local cameraCalls,shots,tracer,shotArgs=0,0,nil,nil
+local networkPacket
 local nativeCamera=function(self,...)
     cameraCalls+=1
     self.CameraArgs=table.pack(...)
-    return packet,nil,"camera-extra"
+    return networkPacket and select(3,...)~=true and networkPacket or packet,nil,"camera-extra"
 end
 local fighterPrototype={GetCameraData=nativeCamera}
 local localFighter=setmetatable({IsLocalPlayer=true,
@@ -406,6 +421,106 @@ assert(not state.Active and select(3,gun.StartShooting(item))==packet)
 local installed=gun.StartShooting
 RivalsAim.SetEnabled(true)
 assert(gun.StartShooting==installed,"toggle stacked duplicate shot wrappers")
+
+-- Regression from the user's live k258 probe: firing uses six-component tables,
+-- while the tracer query's third argument requests raw CFrames. The position and
+-- YXZ angles below were captured from GetCameraData, rather than invented fields.
+local fixture0={100.26226806640625,-676.2423095703125,1179.3311767578125,
+    0.17469914257526398,-0.7852363586425781,0}
+local fixture1={91.49556732177734,-675.494384765625,1188.1007080078125,
+    0.00018309835286345333,-0.7851985692977905,7.275957614183426e-12}
+local fixture3={3.0888671875,0.856201171875,-1.750244140625,0,-3.1112923622131348,0}
+-- Independent matrix entries validate the observed YXZ convention against raw
+-- frame 0; XYZ order would put a nonzero value in row 2, column 1.
+assert(math.abs(math.cos(fixture0[5])-0.7072212100028992)<1e-6)
+assert(math.abs(math.sin(fixture0[5])*math.sin(fixture0[4])+0.12288365513086319)<1e-6)
+assert(math.abs(-math.sin(fixture0[4])+0.1738118678331375)<1e-6)
+local savedPacket=packet
+local function fixtureFrame(values)
+    return CFrame.new(values[1],values[2],values[3])
+        * CFrame.fromOrientation(values[4],values[5],values[6])
+end
+packet={[utf8.char(0)]=fixtureFrame(fixture0),[utf8.char(1)]=fixtureFrame(fixture1),
+    [utf8.char(3)]=fixtureFrame(fixture3),Other="keep"}
+local model=enemy.Fighter.Entity.Model
+local hitbox=new("BasePart",{Name="HitboxHead",Position=Vector3.new(35,0,100)},model)
+hitbox.CFrame=CFrame.new(hitbox.Position)
+hitbox.IsDescendantOf=target.IsDescendantOf
+local bodybox=new("BasePart",{Name="HitboxBody",Position=Vector3.new(35,1,100)},model)
+bodybox.CFrame=CFrame.new(bodybox.Position)
+bodybox.IsDescendantOf=target.IsDescendantOf
+for _,stringKeys in ipairs({true,false}) do
+    local function key(i) return stringKeys and utf8.char(i) or i end
+    local function serialize(values)
+        local t={CodecExtra="keep"}
+        for i=0,5 do t[key(i)]=values[i+1] end
+        return t
+    end
+    networkPacket={[utf8.char(0)]=serialize(fixture0),[utf8.char(1)]=serialize(fixture1),
+        [utf8.char(3)]=serialize(fixture3),Other="keep"}
+    local function checkDirection(encoded,expected,fixture)
+        assert(typeof(encoded)=="table" and encoded.CodecExtra=="keep",
+            "firing frame became a CFrame or lost native fields")
+        local position=Vector3.new(encoded[key(0)],encoded[key(1)],encoded[key(2)])
+        assert(position.X==fixture[1] and position.Y==fixture[2] and position.Z==fixture[3],
+            "encoded firing origin moved")
+        local pitch,yaw=encoded[key(3)],encoded[key(4)]
+        local direction=Vector3.new(-math.sin(yaw)*math.cos(pitch),math.sin(pitch),
+            -math.cos(yaw)*math.cos(pitch))
+        assert(direction:Dot((expected-position).Unit)>0.9999,
+            "encoded firing frame still aims at the crosshair")
+    end
+    raycastResult={Instance=hitbox,Position=hitbox.Position-Vector3.new(0,0,0.5)}
+    for i=1,10 do
+        local result=table.pack(gun.StartShooting(item,nil,"encoded",nil))
+        local data=result[3]
+        assert(result.n==5 and result[5]=="encoded" and data~=networkPacket)
+        assert(data[utf8.char(2)]==hitbox and tracer[utf8.char(2)]==hitbox,
+            "aim ignored the native head hitbox")
+        for field=0,1 do
+            checkDirection(data[utf8.char(field)],hitbox.Position,field==0 and fixture0 or fixture1)
+            local raw=tracer[utf8.char(field)]
+            assert(typeof(raw)=="CFrame" and raw.LookVector:Dot((hitbox.Position-raw.Position).Unit)>0.9999)
+        end
+        local offset=data[utf8.char(3)]
+        assert(typeof(offset)=="table" and offset[key(2)]==-0.5 and offset.CodecExtra=="keep",
+            "network hit offset was not encoded like native firing data")
+        assert(networkPacket[utf8.char(0)][key(3)]==fixture0[4] and networkPacket[utf8.char(2)]==nil,
+            "encoded native data was mutated")
+    end
+    local nativeOffset=networkPacket[utf8.char(3)]
+    networkPacket[utf8.char(3)]=nil
+    local formerlyMissed=select(3,gun.StartShooting(item))
+    assert(typeof(formerlyMissed[utf8.char(3)])=="table"
+        and formerlyMissed[utf8.char(3)][key(2)]==-0.5,
+        "aiming away from geometry produced an unencoded hit offset")
+    networkPacket[utf8.char(3)]={UnknownEncoding=true}
+    assert(select(3,gun.StartShooting(item))==networkPacket,
+        "unknown offset encoding produced a partial shot packet")
+    networkPacket[utf8.char(3)]=nativeOffset
+    RivalsAim.AimPart="Torso"
+    raycastResult={Instance=bodybox,Position=bodybox.Position}
+    local torsoData=select(3,gun.StartShooting(item))
+    checkDirection(torsoData[utf8.char(1)],bodybox.Position,fixture1)
+    RivalsAim.AimPart="Head"
+    raycastResult=nil
+    local noCollision=select(3,gun.StartShooting(item))
+    assert(noCollision[utf8.char(2)]==nil and noCollision[utf8.char(3)]==nil)
+    local view=networkPacket[utf8.char(1)]
+    local component=view[key(5)]
+    view[key(5)]=nil
+    assert(select(3,gun.StartShooting(item))==networkPacket,"unknown codec shape did not fail open")
+    view[key(5)]=component
+    RivalsAim.SetEnabled(false)
+    assert(select(3,gun.StartShooting(item))==networkPacket,"disabled aim changed encoded data")
+    RivalsAim.SetEnabled(true)
+end
+networkPacket=nil
+packet=savedPacket
+table.remove(model.children,table.find(model.children,hitbox))
+table.remove(model.children,table.find(model.children,bodybox))
+raycastResult=nil
+print("PASS Rivals serialized firing: captured YXZ tables, raw tracers, native hitboxes, offsets, fail-open, disabled data")
 state.Restore()
 assert(gun.StartShooting==nativeShot and rawget(localFighter,"GetCameraData")==nil,
     "unload did not restore native gun and inherited camera method")
