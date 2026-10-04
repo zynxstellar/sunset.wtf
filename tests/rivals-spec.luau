@@ -15,10 +15,17 @@ local Enum = setmetatable({}, {__index=function(t,k)
     local group=setmetatable({}, {__index=function(g,n) rawset(g,n,n) return n end})
     rawset(t,k,group) return group
 end})
+Enum.KeyCode=setmetatable({}, {__index=function(t,name)
+    local key={Name=name}
+    rawset(t,name,key)
+    return key
+end})
+Enum.RenderPriority={Camera={Value=200}}
 local vectors={}
 local Vector3={new=function(x,y,z) return setmetatable({X=x or 0,Y=y or 0,Z=z or 0},vectors) end}
 local Vector2={new=function(x,y) return Vector3.new(x,y,0) end}
 function vectors.__sub(a,b) return Vector3.new(a.X-b.X,a.Y-b.Y,a.Z-b.Z) end
+function vectors.__add(a,b) return Vector3.new(a.X+b.X,a.Y+b.Y,a.Z+b.Z) end
 function vectors.__mul(a,b) return Vector3.new(a.X*b,a.Y*b,a.Z*b) end
 function vectors.__index(a,k)
     if k=="Magnitude" then return math.sqrt(a.X*a.X+a.Y*a.Y+a.Z*a.Z) end
@@ -26,7 +33,7 @@ function vectors.__index(a,k)
     if k=="Dot" then return function(_,b) return a.X*b.X+a.Y*b.Y+a.Z*b.Z end end
 end
 local function color(r,g,b)
-    return {R=r,G=g,B=b,Lerp=function(self) return self end,ToHSV=function() return 0,1,1 end}
+    return {R=r,G=g,B=b,_type="Color3",Lerp=function(self) return self end,ToHSV=function() return 0,1,1 end}
 end
 local Color3={new=color,fromRGB=function(r,g,b) return color(r/255,g/255,b/255) end}
 local T={element=color(0,0,0),text=color(1,1,1),dim=color(0.5,0.5,0.5),red=color(1,0,1)}
@@ -46,7 +53,15 @@ function CFrame.new(p,y,z)
     if type(p)=="number" then p=Vector3.new(p,y,z) end
     return setmetatable({Position=p or Vector3.new(),_type="CFrame",Angles={0,0,0},ToObjectSpace=function(self,other)
         return CFrame.new(other.Position-self.Position)
-    end,ToOrientation=function(self) return table.unpack(self.Angles) end},frameMeta)
+    end,ToOrientation=function(self) return table.unpack(self.Angles) end,
+        Lerp=function(self,goal,alpha)
+            local f=CFrame.fromOrientation(self.Angles[1]+(goal.Angles[1]-self.Angles[1])*alpha,
+                self.Angles[2]+(goal.Angles[2]-self.Angles[2])*alpha,
+                self.Angles[3]+(goal.Angles[3]-self.Angles[3])*alpha)
+            f.Position=self.Position
+            f.LerpAlpha=alpha
+            return f
+        end},frameMeta)
 end
 function CFrame.fromOrientation(x,y,z)
     local f=CFrame.new()
@@ -55,6 +70,7 @@ function CFrame.fromOrientation(x,y,z)
     return f
 end
 function frameMeta.__mul(a,b)
+    if getmetatable(b)==vectors then return a.Position+b end
     local f=CFrame.fromOrientation(table.unpack(b.Angles))
     f.Position=a.Position
     return f
@@ -116,6 +132,12 @@ local function makeDraggable() end
 local connections={}
 local function track(c) table.insert(connections,c) return c end
 local RunService={Heartbeat=signal(),RenderStepped=signal()}
+RunService.Bindings={}
+function RunService:BindToRenderStep(name,priority,callback)
+    assert(priority==201)
+    self.Bindings[name]=callback
+end
+function RunService:UnbindFromRenderStep(name) self.Bindings[name]=nil end
 local Gui=new("ScreenGui",{},nil)
 Gui.Parent=true
 local PlayerGui=new("Folder",{},nil)
@@ -138,13 +160,18 @@ local mouse={}
 local LocalPlayer={CameraMode="LockFirstPerson",GetMouse=function() return mouse end,
     GetAttribute=function() return 1 end}
 local Players={GetPlayers=function() return {LocalPlayer} end}
+local aimMouseHeld=false
 local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
     InputBegan=signal(),GetFocusedTextBox=function() return nil end,
-    IsMouseButtonPressed=function() return false end,GetMouseLocation=function() return Vector2.new(100,100) end}
+    IsMouseButtonPressed=function(_,button) return aimMouseHeld and button==Enum.UserInputType.MouseButton2 end,
+    GetMouseLocation=function() return Vector2.new(100,100) end}
 local ENV={}
 local useScriptable=true
 local function anyMenuVisible() return Window.Visible or RivalsUI and RivalsUI.Visible or false end
 local RivalsAim={Enabled=false,FOVVisible=false,Radius=150,AimPart="Head",WallCheck=true}
+RivalsAim.Assist={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true,Strength=8}
+RivalsAim.Aimbot={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true}
+local RivalsVisuals={BoxesOn=false,OutlinesOn=false,BoxColor=color(1,0,0),OutlineColor=color(0,1,0)}
 local BedWars={KitCatalog=function() error("Rivals must not read BedWars kit modules") end}
 local Persistence={HUDFrames={}}
 local ConfigControls,gameSections,Tabs={},{},{}
@@ -191,8 +218,9 @@ function Elements.Dropdown(p,t,options,d,cb)
     c.Options=options
     return c
 end
+function Elements.ColorPicker(p,t,d,cb) return addControl(p,t,"color",d,cb) end
 Elements.Label=label
-local BRAND,SUNSET_BUILD="RIFT","test-k259"
+local BRAND,SUNSET_BUILD="RIFT","test-k262"
 local hooks,hookInstalls,originalCalls={},0,{}
 local currentMethod="Raycast"
 local caller=false
@@ -268,13 +296,14 @@ local function combatPlayer(team,x,health,environment)
         for _,c in ipairs(self.children) do if c.Name==name then return c end end
     end
     function model:IsDescendantOf(parent) return self.Parent==parent end
+    function model:GetBoundingBox() return CFrame.new(head.Position),Vector3.new(4,6,2) end
     function head:IsDescendantOf(parent) return parent==model or parent==workspace end
     torso.IsDescendantOf,root.IsDescendantOf=head.IsDescendantOf,head.IsDescendantOf
     return {Character={},GetAttribute=function() return team end,
         Fighter={Entity={Model=model,RootPart=head},Get=function() return environment or "arena" end}},head
 end
 function Camera:WorldToViewportPoint(position)
-    return Vector3.new(960+position.X,540,position.Z),true
+    return Vector3.new(960+position.X,540-position.Y,position.Z),true
 end
 
 -- INSERT_RIVALS_PRODUCTION
@@ -529,6 +558,7 @@ assert(gun.StartShooting==nativeShot and rawget(localFighter,"GetCameraData")==n
     "unload did not restore native gun and inherited camera method")
 print("PASS Rivals shots: repeated shots, both aim frames, origin positions, real metadata, body choices, walls, cleanup")
 
+RivalsAim.Setup()
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
 assert(RivalsUI.Size.X.Offset==1740 and RivalsUI.Size.Y.Offset==770)
@@ -538,23 +568,141 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="Silent Aim" then cards.aim=o end
     if o:IsA("TextButton") and o.Name=="FOV Circle" then cards.fov=o end
     if o:IsA("TextButton") and o.Name=="Fly" then cards.fly=o end
+    if o:IsA("TextButton") and o.Name=="Aim Assist" then cards.assist=o end
+    if o:IsA("TextButton") and o.Name=="Aimbot" then cards.aimbot=o end
+    if o:IsA("TextButton") and o.Name=="Enemy Outlines" then cards.outlines=o end
+    if o:IsA("TextButton") and o.Name=="ESP Boxes" then cards.boxes=o end
     if o.Parent==RivalsUI and o:IsA("Frame") and o.Name~="Frame" then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
+assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
+local function findConfig(key)
+    for _,c in ipairs(ConfigControls) do if c.Key==key then return c end end
+    error("missing config "..key)
+end
+local cameraStep=RunService.Bindings.RiftRivalsCameraAim
+assert(cameraStep,"camera aim was not scheduled after the game camera")
+cards.aimbot.MouseButton1Click:Fire()
+local cameraBefore=Camera.CFrame
+cameraStep(1/60)
+assert(Camera.CFrame==cameraBefore,"hold-right-mouse mode moved without activation")
+aimMouseHeld=true
+cameraStep(1/60)
+assert(Camera.CFrame.LookVector:Dot((target.Position-Camera.CFrame.Position).Unit)>0.9999)
+assert(Camera.CFrame.Position==cameraBefore.Position,"aimbot moved the camera position")
+cameraBefore=Camera.CFrame
+Window.Visible=true
+cameraStep(1/60)
+assert(Camera.CFrame==cameraBefore,"aimbot ran while the menu was open")
+Window.Visible=false
+RivalsAim.Radius=10
+cameraStep(1/60)
+assert(Camera.CFrame==cameraBefore,"aimbot ignored the FOV radius")
+RivalsAim.Radius=150
+raycastResult={Instance=wall,Position=Vector3.new(0,0,20)}
+cameraStep(1/60)
+assert(Camera.CFrame==cameraBefore,"camera aim ignored a wall")
+raycastResult=nil
+findConfig("Combat/Rivals/Aimbot/Aim Part").Set("Root")
+cameraStep(1/60)
+local aimRoot=enemy.Fighter.Entity.Model:FindFirstChild("HumanoidRootPart")
+assert(Camera.CFrame.LookVector:Dot((aimRoot.Position-Camera.CFrame.Position).Unit)>0.9999,
+    "camera aim ignored its own selected body part")
+findConfig("Combat/Rivals/Aimbot/Aim Part").Set("Head")
+cards.aimbot.MouseButton1Click:Fire()
+cards.assist.MouseButton1Click:Fire()
+Camera.CFrame=CFrame.lookAt(Vector3.new(),Vector3.new(0,0,-100))
+cameraStep(1/60)
+assert(math.abs(Camera.CFrame.LerpAlpha-(1-math.exp(-8/60)))<1e-8,
+    "aim assist smoothing did not account for frame time")
+assert(Camera.CFrame.LookVector:Dot((target.Position-Camera.CFrame.Position).Unit)<0.9999,
+    "aim assist snapped instead of smoothing")
+cards.aimbot.MouseButton1Click:Fire()
+cameraStep(1/60)
+assert(Camera.CFrame.LerpAlpha==nil
+    and Camera.CFrame.LookVector:Dot((target.Position-Camera.CFrame.Position).Unit)>0.9999,
+    "aimbot did not take priority when both aim modes were enabled")
+cards.aimbot.MouseButton1Click:Fire()
+cards.assist.MouseButton1Click:Fire()
+aimMouseHeld=false
+print("PASS camera aim: activation, enemy filtering, FOV, walls, body selection, smoothing, priority, menu pause")
+
+local outlineColor,boxColor=color(0.4,0.2,0.9),color(0.2,0.8,0.4)
+findConfig("Visuals/Rivals/Enemy Outlines/Color").Set(outlineColor)
+findConfig("Visuals/Rivals/ESP Boxes/Color").Set(boxColor)
+cards.outlines.MouseButton1Click:Fire()
+cards.boxes.MouseButton1Click:Fire()
+RunService.RenderStepped:Fire(1/60)
+local function liveVisuals()
+    local outlines,boxes={},{}
+    for _,o in ipairs(created) do
+        if o.Name=="RiftEnemyOutline" and o.Parent then table.insert(outlines,o) end
+        if o.Name=="EnemyBox" and o.Parent then table.insert(boxes,o) end
+    end
+    return outlines,boxes
+end
+local highlights,boxes=liveVisuals()
+assert(#highlights==1 and #boxes==1,"visuals included local, allied, dead, or foreign-arena models")
+assert(highlights[1].Adornee==enemy.Fighter.Entity.Model and highlights[1].OutlineColor==outlineColor)
+assert(boxes[1].Visible and boxes[1].Size.X.Offset==4 and boxes[1].Size.Y.Offset==6,
+    "ESP box did not use projected model bounds")
+assert(boxes[1]:FindFirstChildOfClass("UIStroke").Color==boxColor,"box color did not update")
+local humanoid=enemy.Fighter.Entity.Model:FindFirstChildOfClass("Humanoid")
+humanoid.Health=0
+RunService.RenderStepped:Fire(1/60)
+highlights,boxes=liveVisuals()
+assert(#highlights==0 and #boxes==0,"dead enemy visuals remained")
+humanoid.Health=100
+local oldEntity=enemy.Fighter.Entity
+local replacement=combatPlayer(2,40)
+enemy.Fighter.Entity=replacement.Fighter.Entity
+RunService.RenderStepped:Fire(1/60)
+highlights,boxes=liveVisuals()
+assert(#highlights==1 and highlights[1].Adornee==enemy.Fighter.Entity.Model,
+    "respawned entity did not replace the old visual")
+enemy.Fighter.Entity=oldEntity
+cards.outlines.MouseButton1Click:Fire()
+cards.boxes.MouseButton1Click:Fire()
+RunService.RenderStepped:Fire(1/60)
+highlights,boxes=liveVisuals()
+assert(#highlights==0 and #boxes==0,"disabled visuals remained")
+print("PASS Rivals visuals: real enemy models, independent colors, projected boxes, death, respawn, toggle cleanup")
 local flightControl
 for _,c in ipairs(ConfigControls) do
     if c.Key=="Movement/Rivals/Fly/Fly" then flightControl=c end
 end
 assert(flightControl and flightControl.GetBind()==nil)
-assert(flightControl.SetBind(Enum.KeyCode.F)==false,"saved Fly keybind was accepted")
+for _,c in ipairs(ConfigControls) do
+    if c.Kind=="toggle" then
+        assert(c.Row:FindFirstChildOfClass("TextButton").Visible,"a toggle has no keybind editor")
+    end
+end
 cards.fly.MouseButton1Click:Fire()
 assert(Settings.FlyEnabled and flightStarts==1,"Fly menu card did not start flight")
 cards.fly.MouseButton1Click:Fire()
 assert(not Settings.FlyEnabled and flightStops==1,"Fly menu card did not stop flight")
 UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.F},false)
 assert(not Settings.FlyEnabled and flightStarts==1,"F toggled Fly")
+cards.fly.MouseButton2Click:Fire()
+local bindButton=flightControl.Row:FindFirstChildOfClass("TextButton")
+assert(bindButton and bindButton.Visible,"Fly keybind editor is hidden")
+bindButton.MouseButton1Click:Fire()
+UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.F},false)
+assert(flightControl.GetBind()==Enum.KeyCode.F and not Settings.FlyEnabled,
+    "assigning a key either failed or toggled the module")
+UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.F},false)
+assert(Settings.FlyEnabled and flightStarts==2,"user-assigned Fly key did not work")
+assert(flightControl.SetBind(Settings.MenuKey)==false and flightControl.GetBind()==Enum.KeyCode.F,
+    "module bind stole the menu key")
+bindButton.MouseButton1Click:Fire()
+UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.Backspace},false)
+assert(flightControl.GetBind()==nil,"Backspace did not clear a module bind")
+flightControl.Set(false)
+UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.F},false)
+assert(not Settings.FlyEnabled and flightStarts==2,"removed bind remained active")
+print("PASS optional keybinds: unbound default, editor, user assignment, activation, menu-key protection, removal")
 assert(cards.aim.Parent:IsA("ScrollingFrame"),"Rivals lost shared scrolling card list")
 local radius,partControl,wallControl
 for _,c in ipairs(ConfigControls) do
@@ -591,6 +739,14 @@ Settings.ActiveSearchBox.Text="silent"
 Settings.ActiveSearchBox:GetPropertyChangedSignal("Text"):Fire()
 assert(cards.aim.Visible and not cards.fov.Visible,"shared search filtering failed")
 print("PASS Rivals board: shared BedWars layout/cards/search, game-specific controls, FOV slider")
+cards.outlines.MouseButton1Click:Fire()
+RunService.RenderStepped:Fire(1/60)
+assert(#liveVisuals()==1)
+ENV.SunsetRivalsAimHook.Restore()
+local remainingOutlines,remainingBoxes=liveVisuals()
+assert(#remainingOutlines==0 and #remainingBoxes==0 and RunService.Bindings.RiftRivalsCameraAim==nil,
+    "unload left camera aim or enemy visuals active")
+print("PASS Rivals unload: camera binding removed and visual instances destroyed")
 
 BedWars.KitCatalog=function() return {},{} end
 Settings.SelectedGame="BedWars"

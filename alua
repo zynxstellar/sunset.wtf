@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-fly-configs-blur-k261"
+local SUNSET_BUILD = "20261004-rift-rivals-aim-esp-k262"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -97,7 +97,11 @@ local Settings = {
 }
 local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150,
     AimPart = "Head", WallCheck = true,
+    Assist = { Enabled = false, AimPart = "Head", WallCheck = true, HoldMouse = true, Strength = 8 },
+    Aimbot = { Enabled = false, AimPart = "Head", WallCheck = true, HoldMouse = true },
     Available = false }
+local RivalsVisuals = { BoxesOn = false, OutlinesOn = false,
+    BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
 
 
 
@@ -771,13 +775,13 @@ local function keyName(key)
     return symbols[key.Name] or ("[" .. key.Name:upper() .. "]")
 end
 
-function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
+function Elements.Toggle(parent, text, default, callback, defaultKey)
     local row = new("TextButton", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, parent)
     local box = new("Frame", { Size = UDim2.fromOffset(11, 11), Position = UDim2.fromOffset(0, 2), BackgroundColor3 = T.element, BorderSizePixel = 0 }, row)
     border(box, T.border)
     local l = label(row, text)
     l.Position = UDim2.fromOffset(18, 0)
-    l.Size = UDim2.new(1, noBind and -20 or -60, 1, 0)
+    l.Size = UDim2.new(1, -60, 1, 0)
 
     local bindBtn = new("TextButton", {
         Size = UDim2.fromOffset(40, 14), Position = UDim2.new(1, -40, 0, 1),
@@ -787,7 +791,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     }, row)
     border(bindBtn, T.border)
     new("UICorner", { CornerRadius = UDim.new(0, 6) }, bindBtn)
-    bindBtn.Visible = not noBind
+    bindBtn.Visible = true
 
     local obj = { _row = row }
     local state = default or false
@@ -809,7 +813,6 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     function obj.Get() return state end
     function obj.GetBind() return Binds[obj] end
     function obj.SetBind(key)
-        if noBind then return false end
         if key == Settings.MenuKey then return false end
         if key then
             for other, assigned in pairs(Binds) do
@@ -823,7 +826,6 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
 
     row.MouseButton1Click:Connect(function() obj.Set(not state) end)
     bindBtn.MouseButton1Click:Connect(function()
-        if noBind then return end
         if listeningFor then listeningFor.SetBind(listeningFor.GetBind()) end
         listeningFor = obj
         bindBtn.Text = "..."
@@ -836,7 +838,8 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     if callback and state then task.spawn(callback, state) end
     table.insert(ConfigControls, { Kind = "toggle", Key = configKey(parent, text),
         Get = obj.Get, Set = obj.Set,
-        GetBind = obj.GetBind, SetBind = obj.SetBind, Box = parent.Parent, Row = row })
+        GetBind = obj.GetBind, SetBind = obj.SetBind,
+        Box = parent.Parent, Row = row })
     return obj
 end
 
@@ -2743,6 +2746,7 @@ BedWars = {
     AutoBedRange = 18, AutoBedBreakCover = true,
     AuraPriority = "Lower HP", ProjectilesOn = false, ProjectileRange = 60,
     BedColor = Color3.fromRGB(255, 204, 82),
+    PlayerOutlineColor = Color3.fromRGB(139, 92, 246),
     UseTeamBedColors = true,
     WallCheck = false, ProjectileWallCheck = false,
     TargetHUDOn = false, SessionInfoOn = false,
@@ -4902,7 +4906,7 @@ local function refreshBedWarsPlayers()
                 seen[model] = true
                 local teammate = BedWars.TeamCheck and teamRelation(model) == "friendly"
                 setBedWarsMark("Players", model, teammate
-                    and Color3.fromRGB(75, 225, 120) or Settings.EspBoxColor)
+                    and Color3.fromRGB(75, 225, 120) or BedWars.PlayerOutlineColor)
             end
         end
     end
@@ -7947,6 +7951,9 @@ do
     Elements.Toggle(outlineSection, "Player Outlines", false, function(on)
         BedWars.PlayersOn = on
     end)
+    Elements.ColorPicker(outlineSection, "Color", BedWars.PlayerOutlineColor, function(color)
+        BedWars.PlayerOutlineColor = color
+    end)
     Elements.Toggle(outlineSection, "Team Check", true, function(on)
         BedWars.TeamCheck = on
     end, nil, true)
@@ -8972,8 +8979,12 @@ function BedWars.BuildUI(boardGame)
     if isRivals then
         specs = {
             { "Combat", "Silent Aim", "Combat", "Rivals", "Silent Aim", "Silent Aim" },
+            { "Combat", "Aim Assist", "Combat", "Rivals", "Aim Assist", "Aim Assist" },
+            { "Combat", "Aimbot", "Combat", "Rivals", "Aimbot", "Aimbot" },
             { "Movement", "Fly", "Movement", "Rivals", "Fly", "Fly" },
             { "Visuals", "FOV Circle", "Visuals", "Rivals", "FOV Circle", "FOV Circle" },
+            { "Visuals", "Enemy Outlines", "Visuals", "Rivals", "Enemy Outlines", "Enemy Outlines" },
+            { "Visuals", "ESP Boxes", "Visuals", "Rivals", "ESP Boxes", "ESP Boxes" },
             { "Sunset", "Module List", "Sunset", "Rivals", "Module List", "Module List" },
             { "Sunset", "Configs", "Sunset", "All", "Configs" },
             { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
@@ -9046,6 +9057,8 @@ function BedWars.BuildUI(boardGame)
         ["Auto Reply"] = "Replies to mentions or chat using your saved message.",
         ["Module List"] = "Shows active modules along the screen edge.",
         ["Aim Assist"] = "Steers your aim toward nearby enemy players.",
+        ["Aimbot"] = "Locks the camera onto an enemy inside the selected FOV.",
+        ["Enemy Outlines"] = "Outlines living enemies in your current arena.",
         ["Trigger Bot"] = "Attacks when your crosshair is over an enemy.",
         ["Reach"] = "Adjusts the distance used by supported melee actions.",
         ["Hit Boxes"] = "Shows or adjusts the target area around players.",
@@ -9129,6 +9142,8 @@ function BedWars.BuildUI(boardGame)
         if box and (not toggleName or control) then
             local hasSettings = control == nil
             if control then
+                hasSettings = type(control.GetBind) == "function"
+                    and type(control.SetBind) == "function"
                 for _, option in ipairs(ConfigControls) do
                     if option.Box == box and option ~= control then
                         hasSettings = true
@@ -9398,10 +9413,13 @@ function RivalsAim.Setup()
         oldState.Active, oldState.Resolve, oldState.Select = false, nil, nil
         if type(oldState.Restore) == "function" then pcall(oldState.Restore) end
     end
-    local state = { Version = 4, Active = false }
+    local state = { Version = 5, Active = false }
     ENV.SunsetRivalsAimHook = state
     local controller, gun, shotWrapper, originalShot
     local cameraPatches = {}
+    local visualEntries = {}
+    local visualsConnection, visualsScreen
+    local cameraBinding = "RiftRivalsCameraAim"
     local contexts = setmetatable({}, { __mode = "k" })
     local function withGameIdentity(callback)
         local getIdentity = getthreadidentity or getidentity
@@ -9439,13 +9457,14 @@ function RivalsAim.Setup()
         RivalsAim.LoadError = ok and "Weapon modules not found" or tostring(fighterApi)
         return false
     end
-    local function targetPart(entity)
+    local function targetPart(entity, selectedPart)
         local model = entity.Model
-        if RivalsAim.AimPart == "Torso" then
+        selectedPart = selectedPart or RivalsAim.AimPart
+        if selectedPart == "Torso" then
             return model:FindFirstChild("HitboxBody", true)
                 or model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
                 or model:FindFirstChild("HumanoidRootPart") or entity.RootPart
-        elseif RivalsAim.AimPart == "Root" then
+        elseif selectedPart == "Root" then
             return model:FindFirstChild("HumanoidRootPart") or entity.RootPart
         end
         return model:FindFirstChild("HitboxHead", true) or model:FindFirstChild("Head")
@@ -9469,33 +9488,36 @@ function RivalsAim.Setup()
         local hit = castToward(fighter, origin, part.Position)
         return not hit or hit.Instance:IsDescendantOf(part.Parent)
     end
-    local function closestTarget(localFighter)
+    local function enemyEntity(player, localFighter)
+        if player == LocalPlayer then return end
+        local team = LocalPlayer:GetAttribute("TeamID")
+        if team ~= nil and player:GetAttribute("TeamID") == team then return end
+        if team == nil and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
+        local fighter = controller:GetFighter(player)
+        local entity = fighter and fighter.Entity
+        local model = entity and entity.Model
+        if not model or not model:IsDescendantOf(workspace)
+            or fighter:Get("EnvironmentID") ~= localFighter:Get("EnvironmentID") then return end
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.Health <= 0 then return end
+        return entity
+    end
+    local function closestTarget(localFighter, options)
+        options = options or RivalsAim
         local camera = workspace.CurrentCamera
         if not camera then return end
         local center = camera.ViewportSize * 0.5
         local closest, score = nil, RivalsAim.Radius
-        local team = LocalPlayer:GetAttribute("TeamID")
-        local environment = localFighter:Get("EnvironmentID")
         for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer
-                and (team == nil or player:GetAttribute("TeamID") ~= team) then
-                local fighter = controller:GetFighter(player)
-                local entity = fighter and fighter.Entity
-                local model = entity and entity.Model
-                if model and model:IsDescendantOf(workspace)
-                    and fighter:Get("EnvironmentID") == environment then
-                    local humanoid = model:FindFirstChildOfClass("Humanoid")
-                    local part = targetPart(entity)
-                    if (not humanoid or humanoid.Health > 0) and part
-                        and part:IsA("BasePart") and part:IsDescendantOf(model) then
-                        local point, onScreen = camera:WorldToViewportPoint(part.Position)
-                        if onScreen and point.Z > 0 then
-                            local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
-                            if distance < score and (not RivalsAim.WallCheck
-                                or unobstructed(localFighter, part, camera.CFrame.Position)) then
-                                closest, score = part, distance
-                            end
-                        end
+            local entity = enemyEntity(player, localFighter)
+            local part = entity and targetPart(entity, options.AimPart)
+            if part and part:IsA("BasePart") and part:IsDescendantOf(entity.Model) then
+                local point, onScreen = camera:WorldToViewportPoint(part.Position)
+                if onScreen and point.Z > 0 then
+                    local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
+                    if distance < score and (not options.WallCheck
+                        or unobstructed(localFighter, part, camera.CFrame.Position)) then
+                        closest, score = part, distance
                     end
                 end
             end
@@ -9623,6 +9645,16 @@ function RivalsAim.Setup()
     end
     function state.Restore()
         state.Active = false
+        state.Restored = true
+        RivalsAim.Assist.Enabled, RivalsAim.Aimbot.Enabled = false, false
+        pcall(function() RunService:UnbindFromRenderStep(cameraBinding) end)
+        if visualsConnection then visualsConnection:Disconnect() visualsConnection = nil end
+        for model, entry in pairs(visualEntries) do
+            entry.Box:Destroy()
+            entry.Highlight:Destroy()
+            visualEntries[model] = nil
+        end
+        if visualsScreen then visualsScreen:Destroy() visualsScreen = nil end
         if gun and gun.StartShooting == shotWrapper then gun.StartShooting = originalShot end
         for fighter, patch in pairs(cameraPatches) do
             pcall(function()
@@ -9645,6 +9677,94 @@ function RivalsAim.Setup()
         end
     end
     track({ Disconnect = state.Restore })
+
+    function RivalsAim.SetCameraEnabled(name, on)
+        local options = RivalsAim[name]
+        options.Enabled = on == true and not state.Restored and loadApi() or false
+        if on and not options.Enabled then
+            warn("[Rift] " .. name .. " could not start: " .. tostring(RivalsAim.LoadError))
+            if options.Toggle then options.Toggle.Set(false) end
+        end
+    end
+    RunService:BindToRenderStep(cameraBinding, Enum.RenderPriority.Camera.Value + 1, function(delta)
+        if state.Restored or Settings.SelectedGame ~= "Rivals" or anyMenuVisible() then return end
+        local function active(options)
+            return options.Enabled and (not options.HoldMouse
+                or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
+        end
+        local options = active(RivalsAim.Aimbot) and RivalsAim.Aimbot
+            or active(RivalsAim.Assist) and RivalsAim.Assist
+        if not options then return end
+        pcall(function()
+            local fighter = controller and controller.LocalFighter
+            local camera = workspace.CurrentCamera
+            if not fighter or not camera then return end
+            local part = closestTarget(fighter, options)
+            if not part or (part.Position - camera.CFrame.Position).Magnitude < 0.001 then return end
+            local goal = CFrame.lookAt(camera.CFrame.Position, part.Position)
+            if options == RivalsAim.Aimbot then
+                camera.CFrame = goal
+            else
+                local alpha = 1 - math.exp(-options.Strength * math.clamp(delta or 1 / 60, 0, 0.1))
+                camera.CFrame = camera.CFrame:Lerp(goal, alpha)
+            end
+        end)
+    end)
+    visualsScreen = new("ScreenGui", {
+        Name = "RiftRivalsESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = -1,
+    }, PlayerGui)
+    visualsConnection = RunService.RenderStepped:Connect(function()
+        if state.Restored then return end
+        local seen = {}
+        local fighter = controller and controller.LocalFighter
+        local camera = workspace.CurrentCamera
+        if fighter and camera and Settings.SelectedGame == "Rivals" and not anyMenuVisible()
+            and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn) then
+            for _, player in ipairs(Players:GetPlayers()) do
+                local ok, entity = pcall(enemyEntity, player, fighter)
+                if ok and entity then
+                    local model = entity.Model
+                    seen[model] = true
+                    local entry = visualEntries[model]
+                    if not entry then
+                        local box = new("Frame", {
+                            Name = "EnemyBox", Visible = false, BackgroundTransparency = 1,
+                            BorderSizePixel = 0,
+                        }, visualsScreen)
+                        entry = { Box = box, Stroke = border(box, RivalsVisuals.BoxColor, 1.5),
+                            Highlight = new("Highlight", {
+                                Name = "RiftEnemyOutline", Adornee = model, Enabled = false,
+                                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+                                FillTransparency = 1, OutlineTransparency = 0,
+                            }, model) }
+                        visualEntries[model] = entry
+                    end
+                    entry.Highlight.Enabled = RivalsVisuals.OutlinesOn
+                    entry.Highlight.OutlineColor = RivalsVisuals.OutlineColor
+                    entry.Stroke.Color = RivalsVisuals.BoxColor
+                    entry.Box.Visible = false
+                    if RivalsVisuals.BoxesOn then
+                        local projected, x, y, width, height = pcall(function()
+                            local frame, size = model:GetBoundingBox()
+                            return projectBounds(camera, frame, size)
+                        end)
+                        if projected and x then
+                            entry.Box.Position = UDim2.fromOffset(x, y)
+                            entry.Box.Size = UDim2.fromOffset(width, height)
+                            entry.Box.Visible = true
+                        end
+                    end
+                end
+            end
+        end
+        for model, entry in pairs(visualEntries) do
+            if not seen[model] then
+                entry.Box:Destroy()
+                entry.Highlight:Destroy()
+                visualEntries[model] = nil
+            end
+        end
+    end)
 
     local overlay = new("ScreenGui", {
         Name = "SunsetRivalsFOV", ResetOnSpawn = false,
@@ -9681,6 +9801,39 @@ function RivalsAim.BuildUI()
     end)
     Elements.Toggle(aim, "Wall Check", true, function(on)
         RivalsAim.WallCheck = on
+    end)
+    for _, spec in ipairs({ { "Aim Assist", "Assist" }, { "Aimbot", "Aimbot" } }) do
+        local name, key = spec[1], spec[2]
+        local options = RivalsAim[key]
+        local section = gameSection("Rivals", AimTab.Left, name)
+        Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Root" }, "Head", function(value)
+            options.AimPart = value
+        end)
+        options.Toggle = Elements.Toggle(section, name, false, function(on)
+            RivalsAim.SetCameraEnabled(key, on)
+        end)
+        Elements.Toggle(section, "Hold Right Mouse", true, function(on) options.HoldMouse = on end)
+        Elements.Toggle(section, "Wall Check", true, function(on) options.WallCheck = on end)
+        if key == "Assist" then
+            Elements.Slider(section, "Strength", 1, 30, 8, "", function(value)
+                options.Strength = value
+            end)
+        end
+        Elements.Label(section, "Uses the radius in FOV Circle settings.")
+    end
+    local outlines = gameSection("Rivals", VisualsTab.Left, "Enemy Outlines")
+    Elements.Toggle(outlines, "Enemy Outlines", false, function(on)
+        RivalsVisuals.OutlinesOn = on
+    end)
+    Elements.ColorPicker(outlines, "Color", RivalsVisuals.OutlineColor, function(color)
+        RivalsVisuals.OutlineColor = color
+    end)
+    local boxes = gameSection("Rivals", VisualsTab.Left, "ESP Boxes")
+    Elements.Toggle(boxes, "ESP Boxes", false, function(on)
+        RivalsVisuals.BoxesOn = on
+    end)
+    Elements.ColorPicker(boxes, "Color", RivalsVisuals.BoxColor, function(color)
+        RivalsVisuals.BoxColor = color
     end)
     local fov = gameSection("Rivals", VisualsTab.Left, "FOV Circle")
     Elements.Toggle(fov, "FOV Circle", false, function(on)

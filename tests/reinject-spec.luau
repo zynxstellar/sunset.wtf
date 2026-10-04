@@ -1,7 +1,7 @@
 -- Exercise saved-setting migration and execute the actual queued teleport loader.
 local ENV={}
 local Settings={SelectedGame="Rivals",MenuKey={Name="RightShift"}}
-local Enum={KeyCode={RightShift="RightShift"}}
+local Enum={KeyCode={RightShift="RightShift",Q={Name="Q"},R={Name="R"}}}
 local enabled=true
 local control={Key="Sunset/All/Arena Travel/Auto Reinject",Kind="toggle",
     Get=function() return enabled end,Set=function(on) enabled=on end}
@@ -40,11 +40,14 @@ control.Set(true)
 assert(Persistence.Restore("BedWars") and not enabled,"BedWars setting changed during Rivals migration")
 
 local rivalsFly,bedwarsAura,menuBlur=true,true,true
+local rivalsBind,bedwarsBind=Enum.KeyCode.Q,Enum.KeyCode.R
 local hidden={Visible=false}
 local rivalsControl={Key="Movement/Rivals/Fly/Fly",Kind="toggle",Box=hidden,Row=hidden,
-    Get=function() return rivalsFly end,Set=function(on) rivalsFly=on end}
+    Get=function() return rivalsFly end,Set=function(on) rivalsFly=on end,
+    GetBind=function() return rivalsBind end,SetBind=function(key) rivalsBind=key end}
 local bedwarsControl={Key="Combat/BedWars/Kill Aura/Kill Aura",Kind="toggle",Box=hidden,Row=hidden,
-    Get=function() return bedwarsAura end,Set=function(on) bedwarsAura=on end}
+    Get=function() return bedwarsAura end,Set=function(on) bedwarsAura=on end,
+    GetBind=function() return bedwarsBind end,SetBind=function(key) bedwarsBind=key end}
 local blurControl={Key="Sunset/All/Menu Blur/Enabled",Kind="toggle",Box=hidden,Row=hidden,
     Get=function() return menuBlur end,Set=function(on) menuBlur=on end}
 ConfigControls={control,rivalsControl,bedwarsControl,blurControl}
@@ -57,12 +60,15 @@ bedwarsAura,menuBlur=false,false
 assert(Persistence.Save())
 assert(#ENV.SunsetSettingsSnapshot.Controls==3)
 rivalsFly,bedwarsAura,menuBlur=false,true,false
+rivalsBind,bedwarsBind=nil,nil
 ENV.SunsetSettingsSnapshot=nil
 assert(Persistence.Restore("Rivals") and rivalsFly and menuBlur and bedwarsAura,
     "Rivals selection did not restore independently from its file")
+assert(rivalsBind==Enum.KeyCode.Q and bedwarsBind==nil,"Rivals keybind did not restore independently")
 ENV.SunsetSettingsSnapshot=nil
 assert(Persistence.Restore("BedWars") and not bedwarsAura and not menuBlur and rivalsFly,
     "BedWars selection did not restore independently from its file")
+assert(bedwarsBind==Enum.KeyCode.R and rivalsBind==Enum.KeyCode.Q,"BedWars keybind did not restore independently")
 assert(files["SunsetConfigs/SunsetAuto_Rivals.json"]~=files["SunsetConfigs/SunsetAuto_BedWars.json"])
 print("PASS per-game configs: hidden module settings saved, enabled selections restored, separate files and blur settings")
 

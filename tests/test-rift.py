@@ -58,6 +58,7 @@ def main():
         subprocess.run([str(runtime), str(spec_path)], check=True)
         rivals_chunks = [
             between(inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
+            between(inner, 'local function projectBounds(', '\nlocal ESP = {}'),
             between(inner, 'local savedCamType, savedCamMode, camOffset',
                     '\ntrack(Window:GetPropertyChangedSignal("Visible")'),
             between(inner, 'function BedWars.BuildUI(boardGame)',
