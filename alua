@@ -1,11 +1,11 @@
 local source = [========[
---[[
-    RIFT  -  BedWars and Rivals UI
-    RightShift  : open / close
-    ESP         : 2D boxes + names around other players
-]]
 
--- Only BedWars and Rivals are supported. Do not build the legacy menu elsewhere.
+
+
+
+
+
+
 if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
     and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082 then
     return
@@ -24,28 +24,28 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-polish-k243"
+local SUNSET_BUILD = "20261003-rift-polish-k244"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
--- ============================================================
--- Kill any previously injected copy (fly, esp, loops, guis) before building
--- ============================================================
+
+
+
 local ENV = (typeof(getgenv) == "function" and getgenv()) or _G
 if typeof(ENV.SunsetUnload) == "function" then
     pcall(ENV.SunsetUnload)
 end
 
--- every long-lived connection goes through track() so Unload can kill it
+
 local Connections = {}
 local function track(conn)
     table.insert(Connections, conn)
     return conn
 end
 
--- ============================================================
--- Theme
--- ============================================================
+
+
+
 local T = {
     bg        = Color3.fromRGB(16, 18, 29),
     panel     = Color3.fromRGB(22, 27, 41),
@@ -71,9 +71,9 @@ local spinToggle
 local AutoReinject = { enabled = true }
 local RefreshConfigList
 
--- ============================================================
--- Settings (state the features read from)
--- ============================================================
+
+
+
 local Settings = {
     MenuKey        = Enum.KeyCode.RightShift,
     FlyEnabled     = false,
@@ -98,9 +98,9 @@ local Settings = {
 local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150,
     Available = false }
 
--- ============================================================
--- Tiny UI helpers
--- ============================================================
+
+
+
 local function new(class, props, parent)
     local i = Instance.new(class)
     for k, v in pairs(props) do i[k] = v end
@@ -172,9 +172,9 @@ local function riftTrashFallback(parent, color)
     border(bin, color)
 end
 
--- ============================================================
--- Root window
--- ============================================================
+
+
+
 for _, name in ipairs({ "MenuUI", "EspGui" }) do
     local old = PlayerGui:FindFirstChild(name)
     if old then old:Destroy() end
@@ -253,14 +253,14 @@ fitMenu()
 track(RunService.Heartbeat:Connect(fitMenu))
 new("UICorner", { CornerRadius = UDim.new(0, 2) }, Window)
 
--- title bar
+
 local TitleBar = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = T.bg, BorderSizePixel = 0 }, Window)
 local Title = label(TitleBar, "  Rift", 13)
 Title.Size = UDim2.new(1, 0, 1, 0)
 new("Frame", { Size = UDim2.new(1, -16, 0, 2), Position = UDim2.fromOffset(8, 22), BackgroundColor3 = T.red, BorderSizePixel = 0 }, Window)
 
 local listeningFor = nil
--- The menu is available as soon as its window is created.
+
 track(UIS.InputBegan:Connect(function(i, gp)
     if Settings.SelectedGame and not listeningFor
         and not ENV.SunsetLoading and i.KeyCode == Settings.MenuKey
@@ -276,13 +276,13 @@ track(UIS.InputBegan:Connect(function(i, gp)
     end
 end))
 
--- Free the cursor while the menu is open, even in first person.
--- While open: camera goes Scriptable (so the camera scripts stop re-locking the mouse and the
--- view stops spinning under the cursor), CameraMode is forced to Classic, and MouseBehavior is
--- pinned to Default every frame after the camera step. Everything is restored on close.
--- With hookmetamethod available we can stop other scripts re-locking the mouse directly, so the
--- camera is left alone and keeps following the character (important for teleports).
--- Without it we fall back to a Scriptable camera that we move ourselves to follow the character.
+
+
+
+
+
+
+
 local canHook = typeof(hookmetamethod) == "function" and typeof(newcclosure) == "function" and typeof(checkcaller) == "function"
 local useScriptable = not canHook
 
@@ -330,7 +330,7 @@ local function forceUnlock()
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Scriptable
         end
-        -- keep the frozen camera glued to the character so teleports are visible
+
         local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if root and camOffset then
             Camera.CFrame = root.CFrame * camOffset
@@ -342,14 +342,14 @@ local function forceUnlock()
     UIS.MouseIconEnabled = true
 end
 
--- hit every stage of the frame so whatever re-locks the mouse gets undone right after
+
 local UNLOCK_NAME = "SunsetCursorUnlock"
 pcall(RunService.UnbindFromRenderStep, RunService, UNLOCK_NAME)
 RunService:BindToRenderStep(UNLOCK_NAME, Enum.RenderPriority.Last.Value, forceUnlock)
 track(RunService.Stepped:Connect(forceUnlock))
 track(RunService.Heartbeat:Connect(forceUnlock))
 
--- Executor-only extra: block other scripts from setting MouseBehavior / CameraType while open.
+
 if canHook then
     local oldNewIndex
     oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
@@ -368,10 +368,10 @@ track({ Disconnect = function()
     if savedCamMode then LocalPlayer.CameraMode = savedCamMode end
 end })
 
--- menu starts open, so apply once now
+
 onMenuVisibility()
 
--- inner panel
+
 local Panel = new("Frame", {
     Size = UDim2.new(1, -16, 1, -38),
     Position = UDim2.fromOffset(8, 30),
@@ -380,15 +380,15 @@ local Panel = new("Frame", {
 }, Window)
 border(Panel, T.border)
 
--- ============================================================
--- Tabs
--- ============================================================
+
+
+
 local TabBar = new("Frame", { Size = UDim2.new(1, -16, 0, 22), Position = UDim2.fromOffset(8, 6), BackgroundTransparency = 1 }, Panel)
 new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, TabBar)
 
 local PageHolder = new("Frame", { Size = UDim2.new(1, -16, 1, -44), Position = UDim2.fromOffset(8, 36), BackgroundTransparency = 1 }, Panel)
 
--- generic drag: move `frame` by dragging `handle`
+
 local function makeDraggable(frame, handle)
     local dragging, dragStart, startPos
     handle.InputBegan:Connect(function(i)
@@ -455,9 +455,9 @@ local function makeTab(name)
     return tab
 end
 
--- ============================================================
--- Section (titled box)
--- ============================================================
+
+
+
 local function makeSection(column, title)
     local box = new("Frame", {
         Size = UDim2.new(1, 0, 0, 30),
@@ -489,9 +489,9 @@ local function makeSection(column, title)
     return content
 end
 
--- ============================================================
--- Elements
--- ============================================================
+
+
+
 local Elements = {}
 local ConfigControls = {}
 local Persistence = {}
@@ -682,7 +682,7 @@ function Elements.Label(parent, text, rightText)
     if rightText then
         label(row, rightText, 13, T.text, Enum.TextXAlignment.Right).Size = UDim2.new(1, 0, 1, 0)
     end
-    return l -- the TextLabel, so callers can restyle it
+    return l
 end
 
 function Elements.Line(parent)
@@ -707,10 +707,10 @@ function Elements.Button(parent, text, callback)
     return b
 end
 
--- Keybind registry: every toggle gets a "[KEY]" button on its right.
--- Click it, press a key to bind (Backspace/Escape clears). Pressing the key flips the toggle.
-local Binds = {}          -- { [toggleObj] = Enum.KeyCode }
--- listeningFor is shared with the early menu listener.
+
+
+local Binds = {}
+
 
 local function keyName(key)
     if not key then return "-" end
@@ -791,7 +791,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey, noBind)
     return obj
 end
 
--- one listener handles both "waiting for a key" and firing bound keys
+
 track(UIS.InputBegan:Connect(function(i, gp)
     if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
     if UIS:GetFocusedTextBox() then return end
@@ -817,8 +817,8 @@ track(UIS.InputBegan:Connect(function(i, gp)
     end
 end))
 
--- Circular HSV picker: angle selects hue, radius selects saturation, and the
--- bar below it sets brightness. Opening the picker never changes the color.
+
+
 function Elements.ColorPicker(parent, text, default, callback)
     local color = default or Color3.new(1, 1, 1)
     local hue, saturation, value = color:ToHSV()
@@ -935,7 +935,7 @@ function Elements.ColorPicker(parent, text, default, callback)
         Box = parent.Parent })
     return picker
 end
--- Numeric fields accept finite numbers, round to the slider step, and clamp.
+
 local function sliderNumber(raw, low, high, previous, step)
     local number = tonumber(raw)
     if not number or number ~= number or number == math.huge or number == -math.huge then return previous end
@@ -1057,7 +1057,7 @@ function Elements.Dropdown(parent, text, options, default, callback, noConfig)
                 if callback then task.spawn(callback, opt) end
             end)
         end
-        -- keep the current value if it still exists, otherwise fall back to the first
+
         if not table.find(newOptions, obj.Value) then
             obj.Value = newOptions[1] or "none"
             btn.Text = "  " .. obj.Value
@@ -1160,7 +1160,7 @@ function Elements.Keybind(parent, text)
     local object = {}
     function object.GetBind() return Settings.MenuKey end
     function object.SetBind(key)
-        key = key or Enum.KeyCode.RightShift -- never leave the menu inaccessible
+        key = key or Enum.KeyCode.RightShift
         for toggle, assigned in pairs(Binds) do
             if assigned == key then toggle.SetBind(nil) end
         end
@@ -1177,10 +1177,10 @@ function Elements.Keybind(parent, text)
     end)
     return object
 end
--- ============================================================
--- ============================================================
--- FLY
--- ============================================================
+
+
+
+
 local Fly = {}
 do
     local bv, bg, conn, physicsConn, postPhysicsConn, flightRoot
@@ -1213,8 +1213,8 @@ do
         local function enforceFlight()
             if not flightRoot or not flightRoot.Parent then return end
             if desiredVelocity.Magnitude < 0.01 and idlePosition then
-                -- Gun recoil and other scripts can move the root even with zero velocity.
-                -- Keep the position fixed until the player presses a movement key.
+
+
                 flightRoot.CFrame = CFrame.new(idlePosition) * flightRoot.CFrame.Rotation
                 flightRoot.AssemblyLinearVelocity = Vector3.zero
             else
@@ -1265,7 +1265,7 @@ do
         if hum then hum.PlatformStand = false end
     end
 
-    -- re-apply after respawn
+
     track(LocalPlayer.CharacterAdded:Connect(function(char)
         char:WaitForChild("HumanoidRootPart")
         task.wait(0.5)
@@ -1273,8 +1273,8 @@ do
     end))
 end
 
--- "Map floor" reference = the height you SPAWN at. It is only ever set right after a spawn
--- (never while teleporting), so being dragged underground can't pollute it.
+
+
 local MapFloorY = math.huge
 local function captureFloor()
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1287,8 +1287,8 @@ track(LocalPlayer.CharacterAdded:Connect(function(char)
 end))
 captureFloor()
 
--- true if there's solid map geometry directly above `part` (i.e. it's under the map / in a
--- holding area). Characters are ignored so other players standing on top don't count.
+
+
 local upParams = RaycastParams.new()
 upParams.FilterType = Enum.RaycastFilterType.Exclude
 local function isUnderMap(part)
@@ -1301,16 +1301,16 @@ local function isUnderMap(part)
     return hit ~= nil and hit.Instance.CanCollide
 end
 
--- true when `plr` is on the same team as us (neutral / no team never counts as a teammate)
+
 local function isTeammate(plr)
     local myTeam = LocalPlayer.Team
     return myTeam ~= nil and plr.Team == myTeam
 end
 
--- ============================================================
--- ESP (2D boxes + names)
--- ============================================================
--- Shared model registry: discover once, then update as parts spawn or disappear.
+
+
+
+
 local TargetModels = {}
 local function registerTargetPart(part)
     if not part:IsA("BasePart") then return end
@@ -1324,7 +1324,7 @@ for _, descendant in ipairs(workspace:GetDescendants()) do registerTargetPart(de
 local function modelPart(model, name)
     local direct = model:FindFirstChild(name)
     if direct and direct:IsA("BasePart") then return direct end
-    -- A head/root can be inside a folder rather than directly under the model.
+
     for _, descendant in ipairs(model:GetDescendants()) do
         if descendant:IsA("BasePart") and descendant.Name == name
             and descendant:FindFirstAncestorOfClass("Model") == model then
@@ -1333,7 +1333,7 @@ local function modelPart(model, name)
     end
     return nil
 end
--- Resolve nested rig models to their actual player character.
+
 local function owningPlayer(model)
     local ancestor = model
     while ancestor and ancestor ~= workspace do
@@ -1345,7 +1345,7 @@ local function owningPlayer(model)
     end
     return nil
 end
--- A missing team is unknown, not proof that a model is an enemy.
+
 Settings.AimSkipUnknown = false
 Settings.AimTeamField = ""
 local function normalizeTeam(value)
@@ -1410,11 +1410,11 @@ local function eligibleModel(model, teamCheck)
     if humanoid and humanoid.Health <= 0 then return false end
     local player = owningPlayer(model)
     if player == LocalPlayer then return false end
-    -- Compare assigned teams on every validation, including the current lock.
+
     if teamCheck and teamRelation(model) == "friendly" then return false end
     return true
 end
--- Project all eight corners of a model's bounds into a 2D rectangle.
+
 local function projectBounds(camera, boxFrame, boxSize)
     local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
     for x = -1, 1, 2 do
@@ -1422,7 +1422,7 @@ local function projectBounds(camera, boxFrame, boxSize)
             for z = -1, 1, 2 do
                 local corner = boxFrame * Vector3.new(boxSize.X*x/2, boxSize.Y*y/2, boxSize.Z*z/2)
                 local point = camera:WorldToViewportPoint(corner)
-                -- Avoid huge or inverted boxes when crossing the camera near plane.
+
                 if point.Z <= 0.05 then return nil end
                 minX, minY = math.min(minX, point.X), math.min(minY, point.Y)
                 maxX, maxY = math.max(maxX, point.X), math.max(maxY, point.Y)
@@ -1497,9 +1497,9 @@ do
         screen:Destroy()
     end
 end
--- ============================================================
--- Watermark
--- ============================================================
+
+
+
 local Watermark = new("TextLabel", {
     Position = UDim2.fromOffset(10, 10),
     Size = UDim2.fromOffset(300, 20),
@@ -1531,9 +1531,9 @@ task.spawn(function()
     end))
 end)
 
--- ============================================================
--- Build pages
--- ============================================================
+
+
+
 local MainTab = makeTab("Movement")
 local PlayerTab = makeTab("Player")
 local VisualsTab = makeTab("Visuals")
@@ -1543,7 +1543,7 @@ local FunTab = makeTab("Fun")
 makeTab("Dev Tools")
 local SettingsTab = makeTab("Sunset")
 SettingsTab.Button.Text = BRAND
--- ---- Settings / Watermark
+
 do
     local s = makeSection(SettingsTab.Left, "Watermark")
     Elements.Toggle(s, "Enabled", true, function(on) Settings.WatermarkOn = on end)
@@ -1557,7 +1557,7 @@ do
     end, nil, true)
 end
 
--- ---- Main / Movement
+
 do
     local s = makeSection(MainTab.Left, "Fly")
     table.insert(bedWarsHiddenSections, s.Parent)
@@ -1569,7 +1569,7 @@ do
 
 end
 
--- ---- Main / Noclip (separate from Fly)
+
 do
     local s = makeSection(MainTab.Left, "Noclip")
     local enabled = false
@@ -1610,7 +1610,7 @@ do
     end })
 end
 
--- ---- Main / Speed
+
 do
     local s = makeSection(MainTab.Right, "Speed")
     table.insert(bedWarsHiddenSections, s.Parent)
@@ -1656,7 +1656,7 @@ do
     track(RunService.Stepped:Connect(apply))
     track({ Disconnect = function() Settings.WalkSpeedEnabled = false restore() end })
 end
--- ---- Misc / Spinbot
+
 do
     local s = makeSection(MiscTab.Left, "Spinbot")
     local enabled = false
@@ -1678,7 +1678,7 @@ do
     Elements.Toggle(s, "Reverse Spin", false, function(on) direction = on and -1 or 1 end)
     track(RunService.Stepped:Connect(function(_, dt)
         if not enabled then return end
-        -- Avoid competing with movement modules that own the character rotation.
+
         if Settings.FlyEnabled or Settings.AutoTp then restoreSpin() return end
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -1701,7 +1701,7 @@ do
     track({ Disconnect = function() enabled = false restoreSpin() end })
 end
 
--- ---- Misc / Ghost Pulse
+
 local GhostPulse = { Enabled = false, Speed = 2,
     Color = Color3.fromRGB(170, 105, 255), Rainbow = false }
 do
@@ -1749,7 +1749,7 @@ do
     end))
 end
 
--- ---- Player / Third Person
+
 do
     local s = makeSection(PlayerTab.Right, "Third Person")
     table.insert(bedWarsHiddenSections, s.Parent)
@@ -1797,7 +1797,7 @@ do
         LocalPlayer.CameraMaxZoomDistance = math.max(distance, LocalPlayer.CameraMinZoomDistance)
         LocalPlayer.CameraMinZoomDistance = distance
         LocalPlayer.CameraMaxZoomDistance = distance
-        -- Let the menu's cursor-unlock camera keep control while it is visible.
+
         if not anyMenuVisible() then
             local character = LocalPlayer.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -1824,14 +1824,14 @@ do
         restoreView(true)
     end })
 end
--- ---- Main / Player
+
 do
     local s = makeSection(PlayerTab.Left, "God Mode")
     table.insert(bedWarsHiddenSections, s.Parent)
 
-    -- God mode: pins health to max every frame, refuses damage states, and re-applies on respawn.
-    -- Note: only beats damage that's applied client-side or replicated from your client;
-    -- games with fully server-side health will still kill you.
+
+
+
     local godConn, godHum = nil, nil
 
     local function hookHumanoid(hum)
@@ -1886,7 +1886,7 @@ do
     end))
 end
 
--- ---- Visuals / Atmosphere
+
 local atmosphereEnabled, atmospherePreset = false, "Sunset"
 local atmosphereNoFog, atmosphereFullBright = false, false
 local atmosphereCustomTime, atmosphereTime = false, 18
@@ -2042,7 +2042,7 @@ local function setAtmosphereEnabled(on)
     applyAtmosphere()
 end
 
--- ---- Main / Visuals
+
 do
     local s = makeSection(VisualsTab.Left, "ESP Boxes")
     s.Parent.LayoutOrder = 1
@@ -2082,7 +2082,7 @@ do
     end, 0.5)
 end
 
--- ---- Main / Teleport
+
 do
     local s = makeSection(PlayerTab.Left, "Teleport")
     table.insert(bedWarsHiddenSections, s.Parent)
@@ -2106,8 +2106,8 @@ do
     end)
     Elements.Button(s, "Refresh List", function() dropdown.SetOptions(playerNames()) end)
 
-    -- alive + has a root part + on a different team (when team check is on)
-    -- + within Max Distance of you + not way below you (under the map)
+
+
     local function isValidTarget(plr)
         if not plr or plr == LocalPlayer or plr.Parent ~= Players then return false end
         if Settings.TpTeamCheck and isTeammate(plr) then return false end
@@ -2122,18 +2122,18 @@ do
             if diff.Magnitude > Settings.TpMaxDistance then return false end
         end
         if Settings.TpIgnoreBelow then
-            -- below spawn height by more than the limit -> underground holding area
+
             if MapFloorY ~= math.huge and tRoot.Position.Y < MapFloorY - Settings.TpBelowLimit then return false end
-            -- a bit below spawn AND map geometry above their head -> also underground
+
             if MapFloorY ~= math.huge and tRoot.Position.Y < MapFloorY - 3 and isUnderMap(tRoot) then return false end
-            -- skip people falling into the void
+
             if hum:GetState() == Enum.HumanoidStateType.Freefall and tRoot.AssemblyLinearVelocity.Y < -40 then return false end
             if tRoot.Position.Y < workspace.FallenPartsDestroyHeight + 50 then return false end
         end
         return true
     end
 
-    -- point the camera (and therefore the cursor / crosshair) at the target's head
+
     local function aimAtHead(target)
         local head = target.Character and (target.Character:FindFirstChild("Head") or target.Character:FindFirstChild("HumanoidRootPart"))
         if not head then return end
@@ -2159,7 +2159,7 @@ do
         end
 
         local function place()
-            -- 3 studs behind them, level with them, facing the way they face
+
             local behind = tRoot.CFrame * CFrame.new(0, 0, 3)
             myRoot.AssemblyLinearVelocity = Vector3.zero
             myRoot.AssemblyAngularVelocity = Vector3.zero
@@ -2167,7 +2167,7 @@ do
             aimAtHead(target)
         end
 
-        -- apply over a few frames so physics / the game's own movement can't pull you back
+
         place()
         task.spawn(function()
             for _ = 1, 4 do
@@ -2179,8 +2179,8 @@ do
         return true
     end
 
-    -- Random valid enemy (different team, in range). Cycles through everyone: a player who was
-    -- already targeted isn't picked again until every other valid enemy has had a turn.
+
+
     local recentlyTargeted = {}
     local function pickEnemy(exclude)
         local fresh, all = {}, {}
@@ -2192,7 +2192,7 @@ do
         end
         local pool = fresh
         if #pool == 0 then
-            -- everyone in range has been hit once: start a new round
+
             table.clear(recentlyTargeted)
             pool = all
         end
@@ -2214,9 +2214,9 @@ do
         end
     end)
 
-    -- Auto: teleport behind a random enemy and stay on them. Every AutoTpDelay seconds the
-    -- player list is refreshed and the target is checked; once they're dead / gone, a new
-    -- random enemy (different team) is picked and we teleport behind them, aiming at their head.
+
+
+
     local autoTarget = nil
     local autoConn = nil
     local lockConn = nil
@@ -2227,9 +2227,9 @@ do
         autoTarget = nil
     end
 
-    -- every frame the target is alive: re-teleport behind them (so they can't get away)
-    -- and keep the camera locked on their head
-    -- last place we stood that was on the map; used to climb back out if we get dragged under
+
+
+
     local lastSafe = nil
     local function updateSafe(myRoot)
         if MapFloorY == math.huge then return end
@@ -2264,10 +2264,10 @@ do
             if os.clock() - lastTick < Settings.AutoTpDelay then return end
             lastTick = os.clock()
 
-            -- refresh the dropdown list at the same rate
+
             dropdown.SetOptions(playerNames())
 
-            if isValidTarget(autoTarget) then return end -- still alive, stay on them
+            if isValidTarget(autoTarget) then return end
 
             local nextTarget = pickEnemy(autoTarget)
             if nextTarget then
@@ -2277,7 +2277,7 @@ do
             else
                 autoTarget = nil
                 status.Text = "Target: none in range"
-                -- nobody valid: if we're under the map, climb back to the last safe spot
+
                 local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if myRoot and lastSafe and MapFloorY ~= math.huge
                     and (myRoot.Position.Y < MapFloorY - 3 or isUnderMap(myRoot)) then
@@ -2305,7 +2305,7 @@ do
     Elements.Toggle(s, "Skip Below Map", true, function(on) Settings.TpIgnoreBelow = on end)
     Elements.Slider(s, "Height Limit", 5, 200, 25, " studs", function(v) Settings.TpBelowLimit = v end)
 
-    -- after we respawn, go back behind the current target (or a new one if they died meanwhile)
+
     track(LocalPlayer.CharacterAdded:Connect(function(char)
         char:WaitForChild("HumanoidRootPart")
         task.wait(0.5)
@@ -2318,12 +2318,12 @@ do
         end
     end))
 
-    -- keep the list current as people join / leave
+
     track(Players.PlayerAdded:Connect(function() task.wait(0.5) dropdown.SetOptions(playerNames()) end))
     track(Players.PlayerRemoving:Connect(function() task.wait(0.1) dropdown.SetOptions(playerNames()) end))
 end
 
--- ---- Settings / Main
+
 local menuKeyControl
 do
     local s = makeSection(SettingsTab.Left, "Main")
@@ -2333,7 +2333,7 @@ do
     Elements.Button(s, "Unload", function() ENV.SunsetUnload() end)
 end
 
--- ---- Settings / Theme
+
 do
     local s = makeSection(SettingsTab.Right, "Colors")
     local original = {}
@@ -2450,7 +2450,7 @@ do
         end
     end)
 end
--- ---- Sunset / Configs
+
 do
     local s = makeSection(SettingsTab.Right, "Configs")
     local nameHolder = Elements.TextBox(s, "Config Name", "default", nil)
@@ -2628,7 +2628,7 @@ do
 end
 MainTab.Select()
 
--- Game-specific controls live in the same main window.
+
 local gameSections = {}
 local function gameSection(gameName, column, title)
     local content = makeSection(column, title)
@@ -2655,8 +2655,8 @@ local function showGameSections(gameName)
     if bedWarsNamesToggle then bedWarsNamesToggle._row.Visible = not isBedWars end
 end
 
--- BedWars starter modules use replicated players and map objects. No lobby
--- remotes are fired, so the controls remain useful after entering a match.
+
+
 BedWars = {
     PlayersOn = false, BedsOn = false, TeamCheck = true,
     WorldESPOn = false, OutlineOre = true, OutlineEnchant = true,
@@ -3509,7 +3509,7 @@ function BedWars.Remote(name, blockEngine)
     local managed = out and out:FindFirstChild("_NetManaged")
     local found = managed and managed:FindFirstChild(name)
     if found then return found end
-    -- BedWars has moved some network objects between module folders over time.
+
     local storage = game:GetService("ReplicatedStorage")
     found = storage:FindFirstChild(name, true)
     if found and (found:IsA("RemoteEvent") or found:IsA("RemoteFunction")) then
@@ -3643,7 +3643,10 @@ function BedWars.FindWool()
     local inventory = BedWars.Inventory()
     if not inventory then return nil end
     for _, item in ipairs(inventory:GetChildren()) do
-        if BedWars.WoolItem(item) then return item end
+        if BedWars.WoolItem(item)
+            and (tonumber(item:GetAttribute("Amount")) or 1) > 0 then
+            return item
+        end
     end
     return nil
 end
@@ -3660,7 +3663,7 @@ function BedWars.HoldingAbility()
         or name:find("bow", 1, true)
         or name:find("snowball", 1, true)
         or name:find("fireball", 1, true) then return false end
-    -- All other held utility or kit tools take priority over automatic swaps.
+
     return true
 end
 function BedWars.Enemy(player)
@@ -3764,7 +3767,7 @@ local function bedWarsAuraStep()
     for _, player in ipairs(Players:GetPlayers()) do
         if BedWars.Enemy(player) then consider(player.Character) end
     end
-    -- Practice arenas use enemy dummies, which are not in Players.
+
     local overlap = OverlapParams.new()
     overlap.FilterType = Enum.RaycastFilterType.Exclude
     overlap.FilterDescendantsInstances = { character }
@@ -3781,8 +3784,8 @@ local function bedWarsAuraStep()
         BedWars.ReleaseAuraItem()
         return
     end
-    -- BedWars validates SwordHit against the item actually equipped.
-    -- Only switch when an enemy is in range, and do not interrupt a held click.
+
+
     if not BedWars.MeleeItem(weapon) then
         if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
             BedWars.AuraStatus = "Using held item"
@@ -3905,8 +3908,8 @@ local function bedWarsProjectileTarget(character, root, range, origin)
             end
         end
     end
-    -- Do not skip a close player to shoot someone farther away. Sword range
-    -- takes precedence over Projectile Aura for the nearest enemy.
+
+
     if not nearest or nearestDistance > range
         or nearestDistance <= BedWars.AttackRange() then return nil end
     if not BedWars.Visible(character, nearest.model, origin, nearest.root,
@@ -3982,7 +3985,7 @@ local function bedWarsProjectileStep()
     BedWars.ProjectileTimes = BedWars.ProjectileTimes or {}
     local nextTime = BedWars.ProjectileTimes[selected.item.Name] or 0
     if now < nextTime then return end
-    -- Give a ready shot priority over Scaffold's continuous block placement.
+
     BedWars.ProjectilePriorityUntil = now + 0.35
     if BedWars.ItemBusy then return end
     BedWars.ItemBusy = true
@@ -4057,7 +4060,6 @@ local function bedWarsReleaseScaffoldItem()
         BedWars.ItemBusy = false
     end
 end
-local scaffoldPauseUntil = 0
 local function scaffoldGridKey(grid)
     return tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
 end
@@ -4065,7 +4067,6 @@ local function bedWarsScaffoldStep()
     if BedWars.ItemBusy then return end
     if BedWars.HoldingAbility()
         and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
-    if os.clock() < scaffoldPauseUntil then return end
     if BedWars.ProjectilePriorityUntil
         and os.clock() < BedWars.ProjectilePriorityUntil then return end
     local character = LocalPlayer.Character
@@ -4085,10 +4086,16 @@ local function bedWarsScaffoldStep()
     local feetY = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight
     local overlap = OverlapParams.new()
     overlap.FilterType = Enum.RaycastFilterType.Exclude
-    overlap.FilterDescendantsInstances = { character }
+    local ignored = { character }
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character and player.Character ~= character then
+            table.insert(ignored, player.Character)
+        end
+    end
+    overlap.FilterDescendantsInstances = ignored
     local ray = RaycastParams.new()
     ray.FilterType = Enum.RaycastFilterType.Exclude
-    ray.FilterDescendantsInstances = { character }
+    ray.FilterDescendantsInstances = ignored
     ray.RespectCanCollide = true
     local function emptyCell(position)
         local grid = Vector3.new(math.round(position.X / 3), math.round((feetY - 1.5) / 3), math.round(position.Z / 3))
@@ -4096,29 +4103,24 @@ local function bedWarsScaffoldStep()
         for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center), Vector3.new(2.6, 2.6, 2.6), overlap)) do
             if part.CanCollide then return nil end
         end
-        -- Check only the space immediately below the feet; distant ground
-        -- must not stop a bridge block from being placed over a gap.
-        if workspace:Raycast(Vector3.new(position.X, feetY + 0.35, position.Z), Vector3.new(0, -2.4, 0), ray) then
-            return nil
-        end
         return grid
     end
     BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
     BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
+    BedWars.ScaffoldConfirmed = BedWars.ScaffoldConfirmed or {}
+    local now = os.clock()
     local function hasNeighbor(candidate)
         local center = candidate * 3
         for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
             Vector3.new(0, 3, 0), Vector3.new(0, -3, 0),
-            Vector3.new(0, 0, 3), Vector3.new(0, 0, -3),
-            Vector3.new(3, 0, 3), Vector3.new(3, 0, -3),
-            Vector3.new(-3, 0, 3), Vector3.new(-3, 0, -3) }) do
-            if BedWars.ScaffoldInFlight[scaffoldGridKey(candidate + offset / 3)]
+            Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
+            local neighborKey = scaffoldGridKey(candidate + offset / 3)
+            if now - (BedWars.ScaffoldConfirmed[neighborKey] or -math.huge) < 0.8
                 or workspace:Raycast(center, offset, ray) then return true end
         end
         return false
     end
     local grid
-    local now = os.clock()
     local checked = {}
     local function consider(position)
         local candidate = emptyCell(position)
@@ -4127,6 +4129,7 @@ local function bedWarsScaffoldStep()
         if checked[key] then return false end
         checked[key] = true
         if BedWars.ScaffoldInFlight[key]
+            or now - (BedWars.ScaffoldConfirmed[key] or -math.huge) < 0.8
             or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
             or not hasNeighbor(candidate) then return false end
         grid = candidate
@@ -4139,11 +4142,21 @@ local function bedWarsScaffoldStep()
         for _, lead in ipairs({ 3, 6, 9 }) do
             if consider(root.Position + direction * lead) then break end
         end
+        if not grid then
+            local xStep = math.sign(direction.X) * 3
+            local zStep = math.sign(direction.Z) * 3
+            if xStep ~= 0 then
+                consider(root.Position + Vector3.new(xStep, 0, 0))
+            end
+            if not grid and zStep ~= 0 then
+                consider(root.Position + Vector3.new(0, 0, zStep))
+            end
+        end
     end
     if not grid and BedWars.ScaffoldVoidRescue
         and root.AssemblyLinearVelocity.Y < -8 then
-        -- While dropping beside a bridge, try a reachable side cell at foot
-        -- height instead of waiting to land on a block that is not there.
+
+
         for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
             Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
             if consider(root.Position + offset)
@@ -4152,26 +4165,26 @@ local function bedWarsScaffoldStep()
         end
     end
     if not grid then return end
-    -- Keep bridging when the block path is over a deep gap; otherwise let
-    -- nearby combat take priority and leave the player's held item alone.
+
+
     local gapOrigin = grid * 3 + Vector3.new(0, 1.5, 0)
     local groundBelow = workspace:Raycast(gapOrigin, Vector3.new(0, -24, 0), ray)
     local overVoid = not groundBelow or (gapOrigin.Y - groundBelow.Position.Y) > 12
     if not overVoid and bedWarsEnemyInSwordRange(root) then return end
     if not item then return end
-    if BedWars.ScaffoldWoolItem and BedWars.ScaffoldPreviousItem
+    if BedWars.ScaffoldWoolItem
         and BedWars.HeldItem() ~= BedWars.ScaffoldWoolItem then
-        -- Another action (or the player) changed items. Do not fight it.
-        BedWars.ScaffoldPreviousItem = nil
+
+
+        local held = BedWars.HeldItem()
+        if held and held ~= item then BedWars.ScaffoldPreviousItem = held end
         BedWars.ScaffoldWoolItem = nil
-        scaffoldPauseUntil = os.clock() + 0.05
-        return
     end
     BedWars.BridgingNeeded = os.clock()
     local key = scaffoldGridKey(grid)
     if BedWars.ScaffoldInFlight[key]
         or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
-        or (BedWars.ScaffoldPending or 0) >= 5 then return end
+        or (BedWars.ScaffoldPending or 0) >= 3 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldInFlight[key] = true
     BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
@@ -4196,12 +4209,15 @@ local function bedWarsScaffoldStep()
             BedWars.ScaffoldWoolItem = item
             if item.Parent == BedWars.Inventory() and BedWars.HeldItem() == item then
                 dispatched = true
-                -- Keep the wool equipped, but do not stall the next block on
-                -- this RemoteFunction's round-trip.
+
+
                 task.spawn(function()
                     local ok, result = pcall(function()
                         return remote:InvokeServer({ blockType = item.Name, position = grid })
                     end)
+                    if ok and result ~= false then
+                        BedWars.ScaffoldConfirmed[key] = os.clock()
+                    end
                     if ok and result ~= false and towerRequested
                         and BedWars.ScaffoldOn and root.Parent then
                         local velocity = root.AssemblyLinearVelocity
@@ -4254,7 +4270,7 @@ local function bedWarsBlockBreaker()
     local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
     local module = scripts and scripts:FindFirstChild("block-break-controller", true)
     if not module then return nil end
-    -- Requiring the module returns the same Knit controller instance the game uses.
+
     local directOk, direct = pcall(require, module)
     if directOk and direct and direct.BlockBreakController then
         blockBreakController = direct.BlockBreakController
@@ -4294,7 +4310,7 @@ end
 local function bedWarsIsIronOre(node)
     if not node:IsA("BasePart") then return false end
     if string.lower(node.Name) ~= "iron_ore_mesh_block" then return false end
-    -- Item drops and decorative ore displays use similar names but are not blocks.
+
     if CollectionService:HasTag(node, "ItemDrop") then return false end
     return node:IsDescendantOf(workspace)
 end
@@ -4433,8 +4449,8 @@ local function bedWarsAutoOreStep()
                 bedWarsOreNotice("ore is blocked or outside mining range")
                 break
             end
-            -- Batch a few hits to avoid paying two equip round-trips for every
-            -- swing; yield after one hit when Scaffold needs the held item.
+
+
             if hits >= maxHits then break end
             task.wait(hitInterval)
         end
@@ -4543,7 +4559,7 @@ local function bedWarsTeamColor(bed, strictNames)
         end
         node = node.Parent
     end
-    -- Color is only evidence of ownership when it matches a real team.
+
     for _, team in ipairs(teams) do
         local color = team.TeamColor.Color
         if math.abs(bed.Color.R - color.R) < 0.08
@@ -4819,8 +4835,8 @@ local function refreshBedWarsMap()
         end
     end
 end
--- BedWars controller-backed modules adapted from Voidware. Keep each patch
--- reversible so reinjection does not leave changed game functions behind.
+
+
 do
 local bedWarsPatched = {}
 local bedWarsKnitClient
@@ -5222,7 +5238,7 @@ local function bedWarsAutoBuyStep()
         for index, name in ipairs(swords) do
             if inventory:FindFirstChild(name) then tier = math.max(tier, index) end
         end
-        if tier == 0 then tier = 1 end -- the match starts with a wood sword
+        if tier == 0 then tier = 1 end
         local nextName = swords[tier + 1]
         if nextName and buy(nextName) then return end
     end
@@ -6131,8 +6147,8 @@ function BedWars.Stop()
 end
 end
 
--- BedWars overlays use the same ScreenGui as the menu, but stay visible when
--- the menu is closed. Their toggles are independent from combat automation.
+
+
 do
 local targetHUD = new("Frame", {
     Name = "BedWarsTargetHUD", Visible = false,
@@ -7172,7 +7188,7 @@ track(RunService.Heartbeat:Connect(function()
             BedWars.VoidWater.Clear()
         end
     end
-    -- Restore the original last-safe-position rescue when falling into the void.
+
     if BedWars.AntiVoidOn and not grounded and BedWars.LastSafeCFrame then
         local hit = bedWarsSafeGround(root.Position, character)
         if (not hit or root.Position.Y - hit.Position.Y > 20)
@@ -7758,7 +7774,7 @@ do
             end
         end)
     end
-    -- Private webhook URL is supplied by the executor or a local file, not the UI.
+
     BedWars.WebhookUrl = type(ENV.SunsetWebhookUrl) == "string"
         and ENV.SunsetWebhookUrl or ""
     if BedWars.WebhookUrl == "" and typeof(readfile) == "function" then
@@ -7835,7 +7851,7 @@ do
     end)
     end
 end
--- Client-only visual projectiles. These never call a game combat remote.
+
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
     Color = Color3.fromRGB(255, 116, 82), Active = {},
     OrbitOn = false, OrbitRadius = 3, OrbitSpeed = 2,
@@ -8019,13 +8035,13 @@ do
     end)
 end
 
--- ============================================================
--- Dragging + keybinds
--- ============================================================
+
+
+
 makeDraggable(Window, TitleBar)
 
--- BedWars uses a compact module board. It drives the same controls as the
--- classic menu, so keybinds, callbacks, and saved configurations stay shared.
+
+
 function BedWars.KitCatalog()
     local names = {}
     local ids = {}
@@ -8446,7 +8462,7 @@ function BedWars.BuildUI()
         holder.BackgroundTransparency = 1
         TweenService:Create(holder, TweenInfo.new(0.18, Enum.EasingStyle.Quad,
             Enum.EasingDirection.Out), { BackgroundTransparency = 0 }):Play()
-        -- Keep the keybind beside its toggle in the narrow BedWars column.
+
         for _, option in ipairs(ConfigControls) do
             if option.Box == box and option.Kind == "toggle" and option.Row then
                 local row = option.Row
@@ -8665,8 +8681,8 @@ function BedWars.BuildUI()
         { "Sunset", "Colors", "Sunset", "All", "Colors" },
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
-    -- Include future BedWars sections automatically so a module never exists
-    -- only in the hidden legacy menu when a spec is forgotten above.
+
+
     local listedSections = {}
     for _, spec in ipairs(specs) do
         listedSections[spec[3] .. "/" .. spec[4] .. "/" .. spec[5]] = true
@@ -9078,8 +9094,8 @@ if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
     BedWars.BuildUI()
 end
 
--- Rivals targeting is isolated from BedWars. Executor hooks stay installed across
--- reinjection, but the active resolver is replaced or cleared on unload.
+
+
 function RivalsAim.Setup()
     local function firing()
         return RivalsAim.Enabled and not anyMenuVisible()
@@ -9222,7 +9238,7 @@ function RivalsAim.Setup()
     track({ Disconnect = function() overlay:Destroy() end })
 end
 
--- Only Rivals controls are exposed here; BedWars cards stay on their own board.
+
 function RivalsAim.BuildUI()
     local accent = Color3.fromRGB(139, 92, 246)
     local gold = Color3.fromRGB(77, 224, 208)
@@ -9487,9 +9503,9 @@ if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
     RivalsAim.BuildUI()
 end
 
--- ============================================================
--- Unload: stops everything and removes every GUI so a re-inject never overlaps
--- ============================================================
+
+
+
 ENV.SunsetUnload = function()
     Persistence.Save()
     RivalsAim.Enabled = false
@@ -9521,8 +9537,8 @@ end
 
 print(BRAND .. " [" .. SUNSET_BUILD .. "] loaded. RightShift to open/close.")
 
--- The Roblox experience is detected automatically. Match subplaces share the
--- same universe ID, so entering a BedWars round keeps the BedWars modules.
+
+
 local supportedGames = {
     { Name = "BedWars", Place = 6872265039, Universe = 2619619496 },
     { Name = "Rivals", Place = 17625359962, Universe = 6035872082 },
@@ -9535,8 +9551,8 @@ for _, entry in ipairs(supportedGames) do
     end
 end
 
--- Queue before travel: some executors stop the old client before OnTeleport fires.
--- The queued code checks the destination so unrelated games remain untouched.
+
+
 if detectedGame then
     local queueTeleport = queue_on_teleport or queueonteleport
         or (syn and syn.queue_on_teleport)
