@@ -173,7 +173,14 @@ local RivalsAim={Enabled=false,FOVVisible=false,Radius=150,AimPart="Head",WallCh
 RivalsAim.Assist={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true,Strength=8}
 RivalsAim.Aimbot={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true}
 local RivalsVisuals={BoxesOn=false,OutlinesOn=false,BoxColor=color(1,0,0),OutlineColor=color(0,1,0)}
+local RivalsKillChat={Enabled=false,Message="GG! - Rift",Cooldown=2,Queue={}}
+local clockNow=0
+local os={clock=function() return clockNow end}
+local chatMessages={}
+local warnings={}
+local function warn(message) table.insert(warnings,message) end
 local BedWars={KitCatalog=function() error("Rivals must not read BedWars kit modules") end}
+function BedWars.KillChatSend(message) table.insert(chatMessages,message) return true end
 local Persistence={HUDFrames={}}
 local ConfigControls,gameSections,Tabs={},{},{}
 local AimTab={Left=new("Frame",{},nil)}
@@ -181,11 +188,13 @@ local VisualsTab={Left=new("Frame",{},nil)}
 local SettingsTab={Left=new("Frame",{},nil)}
 local MainTab={Left=new("Frame",{},nil)}
 local MiscTab={Left=new("Frame",{},nil)}
+local FunTab={Left=new("Frame",{},nil)}
 local flightStarts,flightStops=0,0
 local Fly={Start=function() flightStarts+=1 end,Stop=function() flightStops+=1 end}
 Tabs.Combat={Left=AimTab.Left,Right=new("Frame",{},nil)}
 Tabs.Movement={Left=MainTab.Left,Right=new("Frame",{},nil)}
 Tabs.Misc={Left=MiscTab.Left,Right=new("Frame",{},nil)}
+Tabs.Fun={Left=FunTab.Left,Right=new("Frame",{},nil)}
 Tabs.Visuals={Left=VisualsTab.Left,Right=new("Frame",{},nil)}
 Tabs.Sunset={Left=SettingsTab.Left,Right=new("Frame",{},nil)}
 local function gameSection(gameName,column,title)
@@ -222,6 +231,7 @@ function Elements.Dropdown(p,t,options,d,cb)
     return c
 end
 function Elements.ColorPicker(p,t,d,cb) return addControl(p,t,"color",d,cb) end
+function Elements.TextBox(p,t,placeholder,cb,d) return addControl(p,t,"text",d,cb) end
 Elements.Label=label
 local BRAND,SUNSET_BUILD="RIFT","test-k262"
 local hooks,hookInstalls,originalCalls={},0,{}
@@ -268,12 +278,27 @@ local gun={StartShooting=function(item,...)
     return true,"StartShooting",data,nil,shotArgs[2]
 end}
 local nativeShot=gun.StartShooting
+local eliminationCalls=0
+local nativeElimination=function(self,...)
+    eliminationCalls+=1
+    self.LastArgs=table.pack(...)
+    if self.Fail then error("native elimination error") end
+    return "effect",nil,"extra"
+end
+local eliminationApi={EliminationEffect=nativeElimination}
 local scripts=new("Folder",{},nil)
 function scripts:FindFirstChild(name)
     return {FindFirstChild=function(_,child)
         if name=="Controllers" and child=="FighterController" then return controller end
         if name=="Modules" and child=="ItemTypes" then
             return {FindFirstChild=function(_,n) if n=="Gun" then return gun end end}
+        end
+        if name=="Modules" and child=="ClientReplicatedClasses" then
+            return {FindFirstChild=function(_,n)
+                if n=="ClientFighter" then return {FindFirstChild=function(_,m)
+                    if m=="FighterInterface" then return eliminationApi end
+                end} end
+            end}
         end
     end}
 end
@@ -579,6 +604,7 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="ESP Boxes" then cards.boxes=o end
     if o:IsA("TextButton") and o.Name=="Spinbot" then cards.spin=o end
     if o:IsA("TextButton") and o.Name=="FOV" then cards.cameraFOV=o end
+    if o:IsA("TextButton") and o.Name=="Kill Chat" then cards.killChat=o end
     if o.Parent==RivalsUI and o:IsA("Frame") and o.Name~="Frame" then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
@@ -586,6 +612,7 @@ assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
 assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")
+assert(cards.killChat and eliminationApi.EliminationEffect==nativeElimination,"Kill Chat missing or enabled on startup")
 local function findConfig(key)
     for _,c in ipairs(ConfigControls) do if c.Key==key then return c end end
     error("missing config "..key)
@@ -639,6 +666,50 @@ spin.Set(false)
 assert(hum.AutoRotate and spin.GetBind()==nil,"spin toggle did not restore rotation")
 LocalPlayer.Character=nil
 print("PASS Rivals Spinbot/FOV: speed/reverse/flight cleanup, camera swaps, disabled values, unload restoration")
+local chatToggle=findConfig("Fun/Rivals/Kill Chat/Kill Chat")
+local chatText=findConfig("Fun/Rivals/Kill Chat/Message")
+local chatDelay=findConfig("Fun/Rivals/Kill Chat/Message Delay")
+assert(chatToggle.GetBind()==nil and chatDelay.Min==1 and chatDelay.Max==10)
+chatText.Set("  Nice fight!\nGG  ")
+chatDelay.Set(2)
+chatToggle.Set(true)
+assert(identity==8 and RivalsKillChat.Enabled,"Kill Chat activation/identity restore failed")
+local localInterface={ClientFighter={IsLocalPlayer=true}}
+local remoteInterface={ClientFighter={IsLocalPlayer=false}}
+local result=table.pack(eliminationApi.EliminationEffect(localInterface,"enemy",7))
+assert(result.n==3 and result[1]=="effect" and result[2]==nil and result[3]=="extra",
+    "elimination observer changed return values")
+assert(localInterface.LastArgs[1]=="enemy" and localInterface.LastArgs[2]==7,"arguments changed")
+eliminationApi.EliminationEffect(remoteInterface,"enemy")
+assert(#RivalsKillChat.Queue==1,"remote player's elimination queued chat")
+RunService.Heartbeat:Fire()
+assert(#chatMessages==1 and chatMessages[1]=="Nice fight! GG","local elimination message failed")
+eliminationApi.EliminationEffect(localInterface,"enemy2")
+RunService.Heartbeat:Fire()
+assert(#chatMessages==1,"message delay not respected")
+clockNow=2
+RunService.Heartbeat:Fire()
+assert(#chatMessages==2,"queued message did not send after delay")
+localInterface.Fail=true
+assert(not pcall(eliminationApi.EliminationEffect,localInterface,"enemy3") and #RivalsKillChat.Queue==0,
+    "native errors swallowed or failed effects queued")
+localInterface.Fail=false
+chatText.Set("  ")
+eliminationApi.EliminationEffect(localInterface,"enemy")
+assert(#RivalsKillChat.Queue==0,"empty message queued")
+chatText.Set(string.rep("é",220))
+eliminationApi.EliminationEffect(localInterface,"enemy")
+assert(utf8.len(RivalsKillChat.Queue[1])==200,"message truncation split Unicode")
+chatToggle.Set(false)
+assert(eliminationApi.EliminationEffect==nativeElimination and #RivalsKillChat.Queue==0,
+    "disable did not restore method/clear queue")
+requireFailure=true
+chatToggle.Set(true)
+assert(not chatToggle.Get() and not RivalsKillChat.Enabled and identity==8,"require failure left enabled")
+requireFailure=false
+chatText.Set("GG! - Rift")
+chatToggle.Set(true)
+print("PASS Rivals Kill Chat: local feedback, native results/errors, editable messages, Unicode, delay, disable/failure cleanup")
 local cameraStep=RunService.Bindings.RiftRivalsCameraAim
 assert(cameraStep,"camera aim was not scheduled after the game camera")
 cards.aimbot.MouseButton1Click:Fire()
@@ -800,6 +871,8 @@ cards.outlines.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
 assert(#liveVisuals()==1)
 ENV.SunsetRivalsAimHook.Restore()
+assert(not RivalsKillChat.Enabled and eliminationApi.EliminationEffect==nativeElimination
+    and #RivalsKillChat.Queue==0,"unload did not clean up Kill Chat")
 local remainingOutlines,remainingBoxes=liveVisuals()
 assert(#remainingOutlines==0 and #remainingBoxes==0 and RunService.Bindings.RiftRivalsCameraAim==nil,
     "unload left camera aim or enemy visuals active")

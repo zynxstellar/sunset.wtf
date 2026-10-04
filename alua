@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-sliders-spin-fov-k263"
+local SUNSET_BUILD = "20261004-rift-rivals-kill-chat-k264"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -102,6 +102,7 @@ local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150,
     Available = false }
 local RivalsVisuals = { BoxesOn = false, OutlinesOn = false,
     BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
+local RivalsKillChat = { Enabled = false, Message = "GG! - Rift", Cooldown = 2, Queue = {} }
 
 
 
@@ -9024,6 +9025,7 @@ function BedWars.BuildUI(boardGame)
             { "Visuals", "FOV Circle", "Visuals", "Rivals", "FOV Circle", "FOV Circle" },
             { "Visuals", "Enemy Outlines", "Visuals", "Rivals", "Enemy Outlines", "Enemy Outlines" },
             { "Visuals", "ESP Boxes", "Visuals", "Rivals", "ESP Boxes", "ESP Boxes" },
+            { "Fun", "Kill Chat", "Fun", "Rivals", "Kill Chat", "Kill Chat" },
             { "Sunset", "Module List", "Sunset", "Rivals", "Module List", "Module List" },
             { "Sunset", "Configs", "Sunset", "All", "Configs" },
             { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
@@ -9496,6 +9498,64 @@ function RivalsAim.Setup()
         RivalsAim.LoadError = ok and "Weapon modules not found" or tostring(fighterApi)
         return false
     end
+    local killChatApi, killChatOriginal, killChatWrapper
+    function RivalsKillChat.SetEnabled(on)
+        RivalsKillChat.Enabled = false
+        table.clear(RivalsKillChat.Queue)
+        if not on or state.Restored then
+            if killChatApi and killChatApi.EliminationEffect == killChatWrapper then
+                killChatApi.EliminationEffect = killChatOriginal
+            end
+            killChatApi, killChatOriginal, killChatWrapper = nil, nil, nil
+            return
+        end
+        if not killChatApi then
+            local ok, api = pcall(function()
+                local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+                local modules = scripts and scripts:FindFirstChild("Modules")
+                local classes = modules and modules:FindFirstChild("ClientReplicatedClasses")
+                local fighter = classes and classes:FindFirstChild("ClientFighter")
+                local module = fighter and fighter:FindFirstChild("FighterInterface")
+                if not module then error("Elimination interface not ready") end
+                return withGameIdentity(function() return require(module) end)
+            end)
+            if not ok or type(api) ~= "table" or type(api.EliminationEffect) ~= "function" then
+                warn("[Rift] Kill Chat could not start: " .. tostring(ok and "Elimination interface unavailable" or api))
+                if RivalsKillChat.Toggle then RivalsKillChat.Toggle.Set(false) end
+                return
+            end
+            killChatApi, killChatOriginal = api, api.EliminationEffect
+            killChatWrapper = function(self, ...)
+                local results = table.pack(killChatOriginal(self, ...))
+                -- Observe the game's local elimination feedback, rather than guessing from enemy deaths.
+                if RivalsKillChat.Enabled and not state.Restored and Settings.SelectedGame == "Rivals"
+                    and self.ClientFighter and self.ClientFighter.IsLocalPlayer and not self._destroyed
+                    and #RivalsKillChat.Queue < 8 then
+                    local message = RivalsKillChat.Message:gsub("[%c]", " "):match("^%s*(.-)%s*$")
+                    local valid, cut = pcall(utf8.offset, message, 201)
+                    if valid and message ~= "" then
+                        table.insert(RivalsKillChat.Queue, cut and message:sub(1, cut - 1) or message)
+                    end
+                end
+                return table.unpack(results, 1, results.n)
+            end
+            killChatApi.EliminationEffect = killChatWrapper
+        end
+        RivalsKillChat.Enabled = true
+    end
+    local killChatSending, killChatLastSent = false, -math.huge
+    track(RunService.Heartbeat:Connect(function()
+        if state.Restored or not RivalsKillChat.Enabled or Settings.SelectedGame ~= "Rivals"
+            or killChatSending or #RivalsKillChat.Queue == 0
+            or os.clock() - killChatLastSent < RivalsKillChat.Cooldown then return end
+        local message = table.remove(RivalsKillChat.Queue, 1)
+        killChatSending, killChatLastSent = true, os.clock()
+        task.spawn(function()
+            local ok, sent = pcall(BedWars.KillChatSend, message)
+            if not ok or not sent then warn("[Rift] Kill Chat: chat is unavailable or the message could not be sent") end
+            killChatSending = false
+        end)
+    end))
     local function targetPart(entity, selectedPart)
         local model = entity.Model
         selectedPart = selectedPart or RivalsAim.AimPart
@@ -9685,6 +9745,7 @@ function RivalsAim.Setup()
     function state.Restore()
         state.Active = false
         state.Restored = true
+        RivalsKillChat.SetEnabled(false)
         RivalsAim.Assist.Enabled, RivalsAim.Aimbot.Enabled = false, false
         pcall(function() RunService:UnbindFromRenderStep(cameraBinding) end)
         if visualsConnection then visualsConnection:Disconnect() visualsConnection = nil end
@@ -9918,6 +9979,16 @@ function RivalsAim.BuildUI()
         RivalsFOV.Apply()
     end)
     buildSpinbot(gameSection("Rivals", MiscTab.Left, "Spinbot"))
+    local killChat = gameSection("Rivals", FunTab.Left, "Kill Chat")
+    RivalsKillChat.Toggle = Elements.Toggle(killChat, "Kill Chat", false, function(on)
+        RivalsKillChat.SetEnabled(on)
+    end)
+    Elements.TextBox(killChat, "Message", "Message after an elimination", function(value)
+        RivalsKillChat.Message = value
+    end, RivalsKillChat.Message, true)
+    Elements.Slider(killChat, "Message Delay", 1, 10, 2, "seconds", function(value)
+        RivalsKillChat.Cooldown = value
+    end, 0.5)
     local list = gameSection("Rivals", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on)
         Settings.ModuleListOn = on
