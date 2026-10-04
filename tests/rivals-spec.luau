@@ -39,7 +39,17 @@ local TweenInfo={new=function() return {} end}
 local TweenService={Create=function() return {Play=function() end,Cancel=function() end,
     Destroy=function() end,Completed=signal()} end}
 local Ray={new=function(o,d) return {Origin=o,Direction=d,_type="Ray"} end}
-local CFrame={new=function(p) return {Position=p} end}
+local CFrame={}
+function CFrame.new(p)
+    return {Position=p,_type="CFrame",ToObjectSpace=function(self,other)
+        return CFrame.new(other.Position-self.Position)
+    end}
+end
+function CFrame.lookAt(p,target)
+    local frame=CFrame.new(p)
+    frame.LookVector=(target-p).Unit
+    return frame
+end
 local function typeof(v)
     if getmetatable(v)==vectors then return "Vector3" end
     return type(v)=="table" and v._type or type(v)
@@ -88,7 +98,8 @@ local function border(parent,c) return new("UIStroke",{Color=c},parent) end
 local function riftAsset() return nil end
 local function riftTrashFallback() end
 local function makeDraggable() end
-local function track(c) return c end
+local connections={}
+local function track(c) table.insert(connections,c) return c end
 local RunService={Heartbeat=signal(),RenderStepped=signal()}
 local Gui=new("ScreenGui",{},nil)
 Gui.Parent=true
@@ -100,7 +111,8 @@ local Camera={CameraType="Custom",CFrame=CFrame.new(Vector3.new()),ViewportSize=
 Camera.CFrame.LookVector=Vector3.new(0,0,1)
 local workspace={CurrentCamera=Camera}
 local mouse={}
-local LocalPlayer={CameraMode="LockFirstPerson",GetMouse=function() return mouse end}
+local LocalPlayer={CameraMode="LockFirstPerson",GetMouse=function() return mouse end,
+    GetAttribute=function() return 1 end}
 local Players={GetPlayers=function() return {LocalPlayer} end}
 local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
     IsMouseButtonPressed=function() return false end,GetMouseLocation=function() return Vector2.new(100,100) end}
@@ -137,10 +149,16 @@ local function addControl(parent,text,kind,default,callback)
     table.insert(ConfigControls,c)
     return c
 end
-function Elements.Toggle(p,t,d,cb) return addControl(p,t,"toggle",d,cb) end
+function Elements.Toggle(p,t,d,cb)
+    local c=addControl(p,t,"toggle",d,cb)
+    new("Frame",{Size=UDim2.fromOffset(12,12)},c.Row)
+    label(c.Row,t)
+    new("TextButton",{Visible=true,Text="-"},c.Row)
+    return c
+end
 function Elements.Slider(p,t,a,b,d,s,cb) return addControl(p,t,"number",d,cb) end
 Elements.Label=label
-local BRAND,SUNSET_BUILD="RIFT","test-k255"
+local BRAND,SUNSET_BUILD="RIFT","test-k256"
 local hooks,hookInstalls,originalCalls={},0,{}
 local currentMethod="Raycast"
 local caller=false
@@ -156,6 +174,59 @@ local hookmetamethod=function(_,name,fn)
     end
     hooks[name]=fn
     return previous
+end
+
+-- Native Gun contract observed in Dex: two calls per shot (packet and tracers),
+-- encoded CFrame/hit-part fields, and five return slots including nils.
+local packet={[utf8.char(0)]=CFrame.new(Vector3.new(0,0,0)),
+    [utf8.char(1)]=CFrame.new(Vector3.new(0,1,0)),Other="keep"}
+local cameraCalls,shots,tracer,shotArgs=0,0,nil,nil
+local nativeCamera=function(self,...)
+    cameraCalls+=1
+    self.CameraArgs=table.pack(...)
+    return packet,nil,"camera-extra"
+end
+local fighterPrototype={GetCameraData=nativeCamera}
+local localFighter=setmetatable({IsLocalPlayer=true,
+    Get=function() return "arena" end},{__index=fighterPrototype})
+local controller={LocalFighter=localFighter,GetFighter=function(_,p) return p.Fighter end}
+local gun={StartShooting=function(item,...)
+    shots+=1
+    shotArgs=table.pack(...)
+    local data=item.ClientFighter:GetCameraData()
+    tracer=item.ClientFighter:GetCameraData("whitelist","spread",true)
+    if item.Fail then error("native gun error") end
+    if item.Blocked then return false end
+    return true,"StartShooting",data,nil,shotArgs[2]
+end}
+local nativeShot=gun.StartShooting
+local scripts=new("Folder",{},nil)
+function scripts:FindFirstChild(name)
+    return {FindFirstChild=function(_,child)
+        if name=="Controllers" and child=="FighterController" then return controller end
+        if name=="Modules" and child=="ItemTypes" then
+            return {FindFirstChild=function(_,n) if n=="Gun" then return gun end end}
+        end
+    end}
+end
+function LocalPlayer:FindFirstChild(name) if name=="PlayerScripts" then return scripts end end
+local require=function(module) return module end
+local function combatPlayer(team,x,health,environment)
+    local model=new("Model",{},nil)
+    model.Parent=workspace
+    local head=new("BasePart",{Name="Head",Position=Vector3.new(x,0,100)},model)
+    head.CFrame=CFrame.new(head.Position)
+    new("Humanoid",{Health=health or 100},model)
+    function model:FindFirstChild(name)
+        for _,c in ipairs(self.children) do if c.Name==name then return c end end
+    end
+    function model:IsDescendantOf(parent) return self.Parent==parent end
+    function head:IsDescendantOf(parent) return parent==model or parent==workspace end
+    return {Character={},GetAttribute=function() return team end,
+        Fighter={Entity={Model=model,RootPart=head},Get=function() return environment or "arena" end}},head
+end
+function Camera:WorldToViewportPoint(position)
+    return Vector3.new(960+position.X,540,position.Z),true
 end
 
 -- INSERT_RIVALS_PRODUCTION
@@ -190,24 +261,66 @@ assert(UIS.MouseBehavior=="LockCenter" and UIS.MouseIconEnabled==false,
 print("PASS Rivals input: first-person camera preserved, focus released, mouse restored on close/unload")
 
 RivalsAim.Setup()
-assert(hookInstalls==0,"disabled aim installed hooks")
+assert(hookInstalls==0 and gun.StartShooting==nativeShot,"disabled aim patched a game method")
 RivalsAim.SetEnabled(true)
-assert(RivalsAim.Enabled and hookInstalls==2)
+assert(RivalsAim.Enabled and hookInstalls==0)
 local state=ENV.SunsetRivalsAimHook
-state.Active=true
-state.Resolve=function() error("target disappeared") end
-local result=table.pack(hooks.__namecall(workspace,Vector3.new(),Vector3.new(0,0,100),nil,"last"))
-assert(result.n==3 and result[1]=="original result" and result[3]=="third result")
-local call=originalCalls[#originalCalls]
-assert(call.Args.n==4 and call.Args[3]==nil and call.Args[4]=="last","fallback changed original arguments")
-state.Select=function() error("target disappeared") end
-assert(hooks.__index(mouse,"Hit")=="original property")
+local enemy,target=combatPlayer(2,30)
+local ally=combatPlayer(1,0)
+local dead=combatPlayer(2,0,0)
+local elsewhere=combatPlayer(2,0,100,"other arena")
+Players.GetPlayers=function() return {LocalPlayer,ally,dead,elsewhere,enemy} end
+local item={ClientFighter=localFighter,Info={IsRaycast=true}}
+for i=1,15 do
+    local result=table.pack(gun.StartShooting(item,nil,"last",nil))
+    assert(result.n==5 and result[1] and result[2]=="StartShooting" and result[4]==nil and result[5]=="last")
+    assert(shotArgs.n==3 and shotArgs[1]==nil and shotArgs[3]==nil)
+    assert(result[3][utf8.char(2)]==target and tracer[utf8.char(2)]==target,
+        "packet and tracer did not select the actual enemy fighter model")
+    assert(result[3].Other=="keep" and packet[utf8.char(2)]==nil,"rewriter mutated native packet")
+    local origin=result[3][utf8.char(0)]
+    assert(origin.Position==packet[utf8.char(0)].Position and origin.LookVector.Z>0.9)
+    assert(result[3][utf8.char(1)].Position==packet[utf8.char(1)].Position)
+    assert(result[3][utf8.char(3)].Position.Magnitude==0,"hit offset is not in part space")
+end
+assert(shots==15 and cameraCalls==30,"aim duplicated or dropped native firing calls")
+local extra=table.pack(localFighter:GetCameraData(nil,"ordinary query"))
+assert(extra.n==3 and extra[1]==packet and extra[2]==nil and extra[3]=="camera-extra",
+    "camera query outside a gun call changed")
+assert(localFighter.CameraArgs.n==2 and localFighter.CameraArgs[1]==nil)
+item.Blocked=true
+local blocked=table.pack(gun.StartShooting(item))
+assert(blocked.n==1 and blocked[1]==false,"aim changed native cooldown/reload refusal")
+item.Blocked=false
+Window.Visible=true
+assert(select(3,gun.StartShooting(item))==packet,"menu-open shot was redirected")
+Window.Visible=false
+RivalsAim.Radius=10
+assert(select(3,gun.StartShooting(item))==packet,"out-of-FOV target selected")
+RivalsAim.Radius=150
+item.Info.IsRaycast=false
+assert(select(3,gun.StartShooting(item))==packet,"non-raycast gun was altered")
+item.Info.IsRaycast=true
+local foreign=setmetatable({IsLocalPlayer=false},{__index=fighterPrototype})
+assert(select(3,gun.StartShooting({ClientFighter=foreign,Info={IsRaycast=true}}))==packet)
+local originalProjection=Camera.WorldToViewportPoint
+Camera.WorldToViewportPoint=function() error("target disappeared") end
+assert(select(3,gun.StartShooting(item))==packet,"selection failure blocked native firing")
+Camera.WorldToViewportPoint=originalProjection
+item.Fail=true
+local ok,err=pcall(gun.StartShooting,item)
+assert(not ok and tostring(err):find("native gun error",1,true))
+item.Fail=false
+assert(localFighter:GetCameraData()==packet,"native error leaked shot context")
 RivalsAim.SetEnabled(false)
-hooks.__namecall(workspace,"unchanged",nil)
-assert(not state.Active and originalCalls[#originalCalls].Args.n==2)
+assert(not state.Active and select(3,gun.StartShooting(item))==packet)
+local installed=gun.StartShooting
 RivalsAim.SetEnabled(true)
-assert(hookInstalls==2,"toggle stacked duplicate hooks")
-print("PASS Rivals hooks: lazy install, disabled pass-through, errors preserve calls/results/nil arguments")
+assert(gun.StartShooting==installed,"toggle stacked duplicate shot wrappers")
+state.Restore()
+assert(gun.StartShooting==nativeShot and rawget(localFighter,"GetCameraData")==nil,
+    "unload did not restore native gun and inherited camera method")
+print("PASS Rivals shots: 15 repeated shots, native packet/tracer targets, teams/arenas/FOV, pass-through, cleanup")
 
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
@@ -223,10 +336,18 @@ assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
 assert(cards.aim.Parent:IsA("ScrollingFrame"),"Rivals lost shared scrolling card list")
 local radius
-for _,c in ipairs(ConfigControls) do if c.Key=="Combat/Rivals/Silent Aim/FOV Radius" then radius=c end end
+for _,c in ipairs(ConfigControls) do if c.Key=="Visuals/Rivals/FOV Circle/Radius" then radius=c end end
 assert(radius and radius.Kind=="number")
 radius.Set(275)
 assert(RivalsAim.Radius==275)
+cards.aim.MouseButton2Click:Fire()
+local aimControl
+for _,c in ipairs(ConfigControls) do if c.Key=="Combat/Rivals/Silent Aim/Silent Aim" then aimControl=c end end
+local row=aimControl.Row
+assert(row.Size.Y.Offset==22)
+assert(row:FindFirstChildOfClass("Frame").Position.Y.Scale==0.5)
+assert(row:FindFirstChildOfClass("TextButton").Position.Y.Scale==0.5)
+assert(row:FindFirstChildOfClass("TextLabel").TextYAlignment==Enum.TextYAlignment.Center)
 Settings.ActiveSearchBox.Text="silent"
 Settings.ActiveSearchBox:GetPropertyChangedSignal("Text"):Fire()
 assert(cards.aim.Visible and not cards.fov.Visible,"shared search filtering failed")

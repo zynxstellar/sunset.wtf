@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-input-k255"
+local SUNSET_BUILD = "20261004-rift-rivals-shots-k256"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -618,7 +618,7 @@ do
                     control.Set(data.RivalsAim.Enabled == true)
                 elseif control.Key == "Visuals/Rivals/FOV Circle/FOV Circle" then
                     control.Set(data.RivalsAim.FOVVisible == true)
-                elseif control.Key == "Combat/Rivals/Silent Aim/FOV Radius" then
+                elseif control.Key == "Visuals/Rivals/FOV Circle/Radius" then
                     control.Set(math.clamp(tonumber(data.RivalsAim.Radius) or 150, 50, 400))
                 end
             end
@@ -658,6 +658,10 @@ do
             if gameName == "BedWars" and item.Kind == "number"
                 and item.Key == "Movement/BedWars/Speed/Speed" then
                 control = byKey["Movement/BedWars/Speed/Move Speed"]
+            end
+            if gameName == "Rivals" and item.Kind == "number"
+                and item.Key == "Combat/Rivals/Silent Aim/FOV Radius" then
+                control = byKey["Visuals/Rivals/FOV Circle/Radius"]
             end
             if control and control.Kind == item.Kind
                 and (gameName ~= "Rivals"
@@ -2581,6 +2585,7 @@ do
             if control.Key then byKey[control.Key] = control end
         end
         local legacyKeys = {
+            ["Combat/Rivals/Silent Aim/FOV Radius"] = "Visuals/Rivals/FOV Circle/Radius",
             ["Combat/BedWars/Combat/Kill Aura"] = "Combat/BedWars/Kill Aura/Kill Aura",
             ["Combat/BedWars/Combat/Target Priority"] = "Combat/BedWars/Kill Aura/Target Priority",
             ["Combat/BedWars/Combat/Wall Check"] = "Combat/BedWars/Kill Aura/Wall Check",
@@ -8721,11 +8726,22 @@ function BedWars.BuildUI(boardGame)
                 local row = option.Row
                 local toggleName = row:FindFirstChildOfClass("TextLabel")
                 local bindButton = row:FindFirstChildOfClass("TextButton")
-                if toggleName and bindButton and bindButton.Visible then
+                if toggleName then
                     row.Size = UDim2.new(1, 0, 0, 22)
-                    toggleName.Size = UDim2.new(1, -61, 0, 20)
+                    local checkbox = row:FindFirstChildOfClass("Frame")
+                    if checkbox then
+                        checkbox.AnchorPoint = Vector2.new(0, 0.5)
+                        checkbox.Position = UDim2.new(0, 0, 0.5, 0)
+                    end
+                    toggleName.Position = UDim2.fromOffset(18, 0)
+                    toggleName.Size = UDim2.new(1,
+                        bindButton and bindButton.Visible and -61 or -18, 1, 0)
                     toggleName.TextTruncate = Enum.TextTruncate.AtEnd
-                    bindButton.Position = UDim2.new(1, -40, 0, 3)
+                    toggleName.TextYAlignment = Enum.TextYAlignment.Center
+                end
+                if bindButton and bindButton.Visible then
+                    bindButton.AnchorPoint = Vector2.new(1, 0.5)
+                    bindButton.Position = UDim2.new(1, 0, 0.5, 0)
                     bindButton.Size = UDim2.fromOffset(40, 16)
                     bindButton.TextScaled = false
                     bindButton.TextSize = 10
@@ -9356,32 +9372,60 @@ end
 
 
 function RivalsAim.Setup()
-    local cachedTarget
-    local function firing()
-        return RivalsAim.Enabled and not anyMenuVisible()
-            and (UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-                or UIS.TouchEnabled)
+    -- Retire the global ray/mouse wrappers left by older builds.
+    local oldState = ENV.SunsetRivalsAimHook
+    if type(oldState) == "table" then
+        oldState.Active, oldState.Resolve, oldState.Select = false, nil, nil
+        if type(oldState.Restore) == "function" then pcall(oldState.Restore) end
     end
-    local function closestTarget()
-        if not firing() then return nil end
+    local state = { Version = 3, Active = false }
+    ENV.SunsetRivalsAimHook = state
+    local controller, gun, shotWrapper, originalShot
+    local cameraPatches = {}
+    local contexts = setmetatable({}, { __mode = "k" })
+    local function loadApi()
+        if controller and gun then return true end
+        local ok, fighterApi, gunApi = pcall(function()
+            local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+            local controllers = scripts and scripts:FindFirstChild("Controllers")
+            local modules = scripts and scripts:FindFirstChild("Modules")
+            local types = modules and modules:FindFirstChild("ItemTypes")
+            local fighterModule = controllers and controllers:FindFirstChild("FighterController")
+            local gunModule = types and types:FindFirstChild("Gun")
+            if not fighterModule or not gunModule then return end
+            return require(fighterModule), require(gunModule)
+        end)
+        if ok and type(fighterApi) == "table" and type(fighterApi.GetFighter) == "function"
+            and type(gunApi) == "table" and type(gunApi.StartShooting) == "function" then
+            controller, gun = fighterApi, gunApi
+            return true
+        end
+        return false
+    end
+    local function closestTarget(localFighter)
         local camera = workspace.CurrentCamera
-        if not camera then return nil end
+        if not camera then return end
         local center = camera.ViewportSize * 0.5
         local closest, score = nil, RivalsAim.Radius
+        local team = LocalPlayer:GetAttribute("TeamID")
+        local environment = localFighter:Get("EnvironmentID")
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer
-                and (not LocalPlayer.Team or player.Team ~= LocalPlayer.Team) then
-                local character = player.Character
-                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                local part = character and (character:FindFirstChild("Head")
-                    or character:FindFirstChild("UpperTorso")
-                    or character:FindFirstChild("HumanoidRootPart"))
-                if humanoid and humanoid.Health > 0 and part and part:IsA("BasePart") then
-                    local point, onScreen = camera:WorldToViewportPoint(part.Position)
-                    if onScreen and point.Z > 0 then
-                        local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
-                        if distance < score then
-                            closest, score = part, distance
+                and (team == nil or player:GetAttribute("TeamID") ~= team) then
+                local fighter = controller:GetFighter(player)
+                local entity = fighter and fighter.Entity
+                local model = entity and entity.Model
+                if model and model:IsDescendantOf(workspace)
+                    and fighter:Get("EnvironmentID") == environment then
+                    local humanoid = model:FindFirstChildOfClass("Humanoid")
+                    local part = model:FindFirstChild("Head")
+                        or model:FindFirstChild("UpperTorso") or entity.RootPart
+                    if (not humanoid or humanoid.Health > 0) and part
+                        and part:IsA("BasePart") and part:IsDescendantOf(model) then
+                        local point, onScreen = camera:WorldToViewportPoint(part.Position)
+                        if onScreen and point.Z > 0 then
+                            local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
+                            if distance < score then closest, score = part, distance end
                         end
                     end
                 end
@@ -9389,122 +9433,95 @@ function RivalsAim.Setup()
         end
         return closest
     end
-    local function redirect(origin, direction)
-        if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3"
-            or direction.Magnitude < 50 then return nil end
-        local camera = workspace.CurrentCamera
-        if not camera or (origin - camera.CFrame.Position).Magnitude > 20
-            or direction.Unit:Dot(camera.CFrame.LookVector) < 0.75 then return nil end
-        local part = cachedTarget
-        if not part then return nil end
-        local toward = part.Position - origin
-        if toward.Magnitude < 0.001 or toward.Magnitude > direction.Magnitude then return nil end
-        return toward.Unit * direction.Magnitude
+    local function redirectData(data, part)
+        if type(data) ~= "table" or not part or not part:IsDescendantOf(workspace) then return end
+        local originKey, viewKey, hitKey, offsetKey = utf8.char(0), utf8.char(1), utf8.char(2), utf8.char(3)
+        local origin, view = data[originKey], data[viewKey]
+        if typeof(origin) ~= "CFrame" or typeof(view) ~= "CFrame" then return end
+        local position = part.Position
+        if (position - origin.Position).Magnitude < 0.001
+            or (position - view.Position).Magnitude < 0.001 then return end
+        local corrected = table.clone(data)
+        -- Gun reads these exact four keys for the network shot and each local tracer.
+        -- Keep both native origins and all unrelated fields in the packet.
+        corrected[originKey] = CFrame.lookAt(origin.Position, position)
+        corrected[viewKey] = CFrame.lookAt(view.Position, position)
+        corrected[hitKey] = part
+        corrected[offsetKey] = part.CFrame:ToObjectSpace(CFrame.new(position))
+        return corrected
     end
-
-    -- Neutralize older wrappers when reinjecting; their original-method chain remains intact.
-    local state = ENV.SunsetRivalsAimHook
-    if type(state) ~= "table" or state.Version ~= 2 then
-        if type(state) == "table" then
-            state.Active, state.Resolve, state.Select = false, nil, nil
+    local function patchCamera(fighter)
+        local installed = cameraPatches[fighter]
+        if installed and fighter.GetCameraData == installed.Wrapper then return true end
+        local previous = fighter.GetCameraData
+        if type(previous) ~= "function" then return false end
+        local ownMethod = rawget(fighter, "GetCameraData")
+        local wrapper = function(self, ...)
+            local results = table.pack(previous(self, ...))
+            local context = contexts[coroutine.running()]
+            if state.Active and not anyMenuVisible() and context and context.Fighter == self then
+                local ok, corrected = pcall(redirectData, results[1], context.Target)
+                if ok and corrected then results[1] = corrected end
+            end
+            return table.unpack(results, 1, results.n)
         end
-        state = { Version = 2 }
-        ENV.SunsetRivalsAimHook = state
+        local ok = pcall(function() fighter.GetCameraData = wrapper end)
+        if not ok then return false end
+        cameraPatches[fighter] = { Wrapper = wrapper, OwnMethod = ownMethod }
+        return true
     end
-    state.Active = false
-    state.Resolve = redirect
-    state.Select = function() return cachedTarget end
-    local supported = typeof(hookmetamethod) == "function"
-        and typeof(newcclosure) == "function"
-        and typeof(checkcaller) == "function"
-    local function installHooks()
-        if not supported then return false end
-        if not state.NamecallHooked and typeof(getnamecallmethod) == "function" then
-            local previous
-            local ok = pcall(function()
-                previous = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-                    if not state.Active or checkcaller() then return previous(self, ...) end
-                    local method = getnamecallmethod()
-                    if self == workspace and (method == "Raycast"
-                        or method == "FindPartOnRay"
-                        or method == "FindPartOnRayWithIgnoreList") then
-                        local args = { ... }
-                        local argCount = select("#", ...)
-                        local origin, direction
-                        if method == "Raycast" then
-                            origin, direction = args[1], args[2]
-                        elseif typeof(args[1]) == "Ray" then
-                            origin, direction = args[1].Origin, args[1].Direction
-                        end
-                        local resolved, corrected = pcall(state.Resolve, origin, direction)
-                        if resolved and typeof(corrected) == "Vector3" then
-                            if method == "Raycast" then args[2] = corrected
-                            else args[1] = Ray.new(origin, corrected) end
-                            return previous(self, unpack(args, 1, argCount))
-                        end
-                    elseif self == workspace.CurrentCamera
-                        and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
-                        local ray = previous(self, ...)
-                        if typeof(ray) == "Ray" then
-                            local okTarget, corrected = pcall(function()
-                                local part = state.Select()
-                                local toward = part and (part.Position - ray.Origin)
-                                if toward and toward.Magnitude > 0.001 then
-                                    return Ray.new(ray.Origin, toward.Unit)
-                                end
-                            end)
-                            if okTarget and corrected then return corrected end
-                        end
-                        return ray
-                    end
-                    return previous(self, ...)
-                end))
+    local function installShot()
+        if not loadApi() then return false end
+        if shotWrapper and gun.StartShooting == shotWrapper then return true end
+        local previousShot = gun.StartShooting
+        originalShot = previousShot
+        shotWrapper = function(item, ...)
+            if not state.Active or anyMenuVisible() then return previousShot(item, ...) end
+            local ok, fighter, target = pcall(function()
+                local localFighter = controller.LocalFighter
+                if item.ClientFighter ~= localFighter or not localFighter
+                    or not localFighter.IsLocalPlayer or not item.Info.IsRaycast then return end
+                local part = closestTarget(localFighter)
+                if part and patchCamera(localFighter) then return localFighter, part end
             end)
-            state.NamecallHooked = ok and typeof(previous) == "function"
+            if not ok or not target then return previousShot(item, ...) end
+            local thread = coroutine.running()
+            local previous = contexts[thread]
+            contexts[thread] = { Fighter = fighter, Target = target }
+            -- Always call the native shot exactly once. Ammo, held fire, burst queues,
+            -- cooldowns, recoil, callbacks and nil return slots remain owned by Gun.
+            local results = table.pack(pcall(previousShot, item, ...))
+            contexts[thread] = previous
+            if not results[1] then error(results[2], 0) end
+            return table.unpack(results, 2, results.n)
         end
-        if not state.MouseHooked then
-            local mouse = LocalPlayer:GetMouse()
-            local previous
-            local ok = pcall(function()
-                previous = hookmetamethod(game, "__index", newcclosure(function(self, key)
-                    if state.Active and self == mouse and not checkcaller()
-                        and (key == "Hit" or key == "Target") then
-                        local okTarget, value = pcall(function()
-                            local part = state.Select()
-                            if part then
-                                return key == "Target" and part or CFrame.new(part.Position)
-                            end
-                        end)
-                        if okTarget and value then return value end
-                    end
-                    return previous(self, key)
-                end))
-            end)
-            state.MouseHooked = ok and typeof(previous) == "function"
-        end
-        return state.NamecallHooked == true or state.MouseHooked == true
+        local ok = pcall(function() gun.StartShooting = shotWrapper end)
+        return ok and gun.StartShooting == shotWrapper
     end
-    RivalsAim.Available = supported
+    function state.Restore()
+        state.Active = false
+        if gun and gun.StartShooting == shotWrapper then gun.StartShooting = originalShot end
+        for fighter, patch in pairs(cameraPatches) do
+            pcall(function()
+                if fighter.GetCameraData == patch.Wrapper then
+                    fighter.GetCameraData = patch.OwnMethod
+                end
+            end)
+        end
+        table.clear(cameraPatches)
+        table.clear(contexts)
+    end
+    RivalsAim.Available = loadApi()
     function RivalsAim.SetEnabled(on)
         state.Active = false
-        cachedTarget = nil
-        RivalsAim.Enabled = on == true and installHooks() or false
-    end
-    -- Target searches run outside game method hooks so they cannot disrupt a weapon call.
-    track(RunService.RenderStepped:Connect(function()
-        state.Active = false
-        cachedTarget = nil
-        if not firing() then return end
-        local ok, target = pcall(closestTarget)
-        if ok then
-            cachedTarget = target
-            state.Active = target ~= nil
+        RivalsAim.Enabled = on == true and installShot() or false
+        state.Active = RivalsAim.Enabled
+        if RivalsAim.StatusLabel then
+            RivalsAim.StatusLabel.Text = on == true and not RivalsAim.Enabled
+                and "Weapon hook unavailable" or "Aim support ready"
         end
-    end))
-    track({ Disconnect = function()
-        state.Active, state.Resolve, state.Select = false, nil, nil
-        cachedTarget = nil
-    end })
+    end
+    track({ Disconnect = state.Restore })
 
     local overlay = new("ScreenGui", {
         Name = "SunsetRivalsFOV", ResetOnSpawn = false,
@@ -9536,14 +9553,14 @@ function RivalsAim.BuildUI()
     Elements.Toggle(aim, "Silent Aim", false, function(on)
         RivalsAim.SetEnabled(on)
     end)
-    Elements.Slider(aim, "FOV Radius", 50, 400, 150, " px", function(value)
-        RivalsAim.Radius = value
-    end)
-    Elements.Label(aim, RivalsAim.Available and "Aim support ready"
-        or "Aim hooks unavailable in this executor")
+    RivalsAim.StatusLabel = Elements.Label(aim, RivalsAim.Available and "Aim support ready"
+        or "Rivals weapon modules unavailable")
     local fov = gameSection("Rivals", VisualsTab.Left, "FOV Circle")
     Elements.Toggle(fov, "FOV Circle", false, function(on)
         RivalsAim.FOVVisible = on
+    end)
+    Elements.Slider(fov, "Radius", 50, 400, 150, " px", function(value)
+        RivalsAim.Radius = value
     end)
     local list = gameSection("Rivals", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on)
