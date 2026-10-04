@@ -56,6 +56,19 @@ def main():
         for path in [ROOT / 'alua', inner_path]:
             subprocess.run([str(compiler), '--null', str(path)], check=True)
         subprocess.run([str(runtime), str(spec_path)], check=True)
+        rivals_chunks = [
+            between(inner, 'local savedCamType, savedCamMode, camOffset',
+                    '\ntrack(Window:GetPropertyChangedSignal("Visible")'),
+            between(inner, 'function BedWars.BuildUI(boardGame)',
+                    '\nif game.PlaceId == 6872265039'),
+            between(inner, 'function RivalsAim.Setup()',
+                    '\nif game.PlaceId == 17625359962'),
+        ]
+        rivals_spec = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8')
+        rivals_spec = rivals_spec.replace('-- INSERT_RIVALS_PRODUCTION', '\n'.join(rivals_chunks))
+        rivals_path = temp / 'rivals-spec.luau'
+        rivals_path.write_text(rivals_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(rivals_path)], check=True)
     # Notifications must not move or hide the module list on narrow screens.
     listing = between(inner, '    local moduleList = new(', '\n    local dragHandle')
     assert 'notificationsVisible' not in listing and 'ModuleListShifted' not in listing

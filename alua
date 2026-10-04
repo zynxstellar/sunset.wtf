@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-module-backgrounds-k254"
+local SUNSET_BUILD = "20261004-rift-rivals-input-k255"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -302,28 +302,47 @@ local canHook = typeof(hookmetamethod) == "function" and typeof(newcclosure) == 
 local useScriptable = not canHook
 
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
+local savedMenuInput
+
+local function rememberGameInput(key, value)
+    if savedMenuInput and (key == "MouseBehavior" or key == "MouseIconEnabled") then
+        savedMenuInput[key] = value
+    end
+end
+
+local function restoreMenuInput()
+    if not savedMenuInput then return end
+    local saved = savedMenuInput
+    savedMenuInput = nil
+    if savedCamType and saved.Camera then saved.Camera.CameraType = savedCamType end
+    if savedCamMode then LocalPlayer.CameraMode = savedCamMode end
+    savedCamType, savedCamMode, camOffset = nil, nil, nil
+    UIS.MouseBehavior = saved.MouseBehavior
+    UIS.MouseIconEnabled = saved.MouseIconEnabled
+end
 
 local function onMenuVisibility()
     local visible = anyMenuVisible()
     Settings.SetMenuBlur(ENV.SunsetLoading and 20
         or (visible and Settings.MenuBlurOn and 16 or 0))
     if Settings.ActiveSearchBox then
-        if visible then
-            task.defer(function()
-                if anyMenuVisible() and Settings.ActiveSearchBox and Settings.ActiveSearchBox.Parent then
-                    Settings.ActiveSearchBox:CaptureFocus()
-                end
-            end)
-        else
+        if not visible then
             Settings.ActiveSearchBox.Text = ""
             Settings.ActiveSearchBox:ReleaseFocus()
         end
     end
     if visible then
-        if savedCamMode ~= nil then return end
-        savedCamMode = LocalPlayer.CameraMode
-        LocalPlayer.CameraMode = Enum.CameraMode.Classic
-        if useScriptable then
+        if savedMenuInput then return end
+        savedMenuInput = {
+            Camera = workspace.CurrentCamera,
+            MouseBehavior = UIS.MouseBehavior,
+            MouseIconEnabled = UIS.MouseIconEnabled,
+        }
+        if Settings.SelectedGame ~= "Rivals" then
+            savedCamMode = LocalPlayer.CameraMode
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+        if useScriptable and Settings.SelectedGame ~= "Rivals" then
             savedCamType = Camera.CameraType
             local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             camOffset = root and root.CFrame:ToObjectSpace(Camera.CFrame) or nil
@@ -332,16 +351,14 @@ local function onMenuVisibility()
         UIS.MouseBehavior = Enum.MouseBehavior.Default
         UIS.MouseIconEnabled = true
     else
-        if savedCamType then Camera.CameraType = savedCamType end
-        if savedCamMode then LocalPlayer.CameraMode = savedCamMode end
-        savedCamType, savedCamMode, camOffset = nil, nil, nil
+        restoreMenuInput()
     end
 end
 track(Window:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
 
 local function forceUnlock()
     if not anyMenuVisible() then return end
-    if useScriptable then
+    if useScriptable and Settings.SelectedGame ~= "Rivals" then
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Scriptable
         end
@@ -369,8 +386,10 @@ if canHook then
     local oldNewIndex
     oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
         if not checkcaller() and Window and Window.Parent and anyMenuVisible() then
-            if self == UIS and key == "MouseBehavior" then
-                value = Enum.MouseBehavior.Default
+            if self == UIS then
+                rememberGameInput(key, value)
+                if key == "MouseBehavior" then value = Enum.MouseBehavior.Default end
+                if key == "MouseIconEnabled" then value = true end
             end
         end
         return oldNewIndex(self, key, value)
@@ -379,8 +398,7 @@ end
 
 track({ Disconnect = function()
     pcall(RunService.UnbindFromRenderStep, RunService, UNLOCK_NAME)
-    if savedCamType then Camera.CameraType = savedCamType end
-    if savedCamMode then LocalPlayer.CameraMode = savedCamMode end
+    restoreMenuInput()
 end })
 
 
@@ -547,8 +565,8 @@ do
         for _, control in ipairs(ConfigControls) do
             if control.Key
                 and (gameName ~= "Rivals"
-                    or control.Key == "Sunset/All/Watermark/Enabled"
-                    or control.Key == "Sunset/All/Menu Blur/Enabled")
+                    or control.Key:find("/Rivals/", 1, true)
+                    or control.Key:match("^Sunset/All/"))
                 and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = control.Get()
@@ -595,9 +613,15 @@ do
         if type(data) ~= "table" or data.Game ~= gameName
             or type(data.Controls) ~= "table" then return false end
         if gameName == "Rivals" and type(data.RivalsAim) == "table" then
-            RivalsAim.Enabled = data.RivalsAim.Enabled == true and RivalsAim.Available
-            RivalsAim.FOVVisible = data.RivalsAim.FOVVisible == true
-            RivalsAim.Radius = math.clamp(tonumber(data.RivalsAim.Radius) or 150, 50, 400)
+            for _, control in ipairs(ConfigControls) do
+                if control.Key == "Combat/Rivals/Silent Aim/Silent Aim" then
+                    control.Set(data.RivalsAim.Enabled == true)
+                elseif control.Key == "Visuals/Rivals/FOV Circle/FOV Circle" then
+                    control.Set(data.RivalsAim.FOVVisible == true)
+                elseif control.Key == "Combat/Rivals/Silent Aim/FOV Radius" then
+                    control.Set(math.clamp(tonumber(data.RivalsAim.Radius) or 150, 50, 400))
+                end
+            end
         end
         if gameName == "BedWars" and BedWars and BedWars.Session
             and type(data.Session) == "table" then
@@ -637,8 +661,8 @@ do
             end
             if control and control.Kind == item.Kind
                 and (gameName ~= "Rivals"
-                    or control.Key == "Sunset/All/Watermark/Enabled"
-                    or control.Key == "Sunset/All/Menu Blur/Enabled")
+                    or control.Key:find("/Rivals/", 1, true)
+                    or control.Key:match("^Sunset/All/"))
                 and (not control.Box or control.Box.Visible)
                 and (not control.Row or control.Row.Visible) then
                 local value = item.Value
@@ -8314,28 +8338,35 @@ function BedWars.KitCatalog()
     table.sort(names)
     return names, ids
 end
-function BedWars.BuildUI()
+function BedWars.BuildUI(boardGame)
+    boardGame = boardGame or "BedWars"
+    local isRivals = boardGame == "Rivals"
+    local categoryOrder = isRivals
+        and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
+        or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
+    local boardWidth = 20 + #categoryOrder * 215
     local accent = Color3.fromRGB(139, 92, 246)
     local gold = Color3.fromRGB(77, 224, 208)
     local dark = Color3.fromRGB(16, 18, 29)
     local columnColor = Color3.fromRGB(26, 32, 48)
     local cardColor = Color3.fromRGB(34, 40, 59)
     local muted = Color3.fromRGB(154, 167, 195)
-    BedWarsUI = new("Frame", {
-        Name = "RiftBedWarsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(1955, 770),
+    local board = new("Frame", {
+        Name = "Rift" .. boardGame .. "Board", Visible = false, Active = true,
+        Size = UDim2.fromOffset(boardWidth, 770),
         Position = UDim2.new(0.5, 0, 0, 12),
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
-    Persistence.HUDFrames.BedWarsMenu = BedWarsUI
-    local boardScale = new("UIScale", { Scale = 1 }, BedWarsUI)
-    local openingScale = new("NumberValue", { Value = 1 }, BedWarsUI)
+    if isRivals then RivalsUI = board else BedWarsUI = board end
+    Persistence.HUDFrames[boardGame .. "Menu"] = board
+    local boardScale = new("UIScale", { Scale = 1 }, board)
+    local openingScale = new("NumberValue", { Value = 1 }, board)
     local function fitBoard()
         local camera = workspace.CurrentCamera
         if not camera then return end
         boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
-            (camera.ViewportSize.X - 32) / 1955,
+            (camera.ViewportSize.X - 32) / boardWidth,
             (camera.ViewportSize.Y - 32) / 770))
     end
     fitBoard()
@@ -8344,7 +8375,7 @@ function BedWars.BuildUI()
 
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
-    }, BedWarsUI)
+    }, board)
     local logoId = riftAsset("rift-logo-transparent.png")
     if logoId then
         new("ImageLabel", {
@@ -8363,12 +8394,12 @@ function BedWars.BuildUI()
     title.Font = Enum.Font.GothamBold
     title.Position = UDim2.fromOffset(58, 10)
     title.Size = UDim2.fromOffset(230, 27)
-    local subtitle = label(header, "BEDWARS  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
+    local subtitle = label(header, string.upper(boardGame) .. "  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
     subtitle.Font = Enum.Font.Gotham
     subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(808, 17),
+        Position = UDim2.fromOffset(math.floor((boardWidth - 340) / 2 + 0.5), 17),
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
@@ -8442,8 +8473,7 @@ function BedWars.BuildUI()
     }, header)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
     border(closeButton, accent)
-    closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
-    local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
+    closeButton.MouseButton1Click:Connect(function() board.Visible = false end)
     local columns = {}
     for index, name in ipairs(categoryOrder) do
         local x = 20 + (index - 1) * 215
@@ -8452,7 +8482,7 @@ function BedWars.BuildUI()
             Name = name, Position = UDim2.fromOffset(x, y),
             Size = UDim2.fromOffset(200, 250), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
-        }, BedWarsUI)
+        }, board)
         new("UICorner", { CornerRadius = UDim.new(0, 10) }, col)
         border(col, Color3.fromRGB(74, 64, 128))
         new("UIGradient", { Color = ColorSequence.new({
@@ -8526,9 +8556,10 @@ function BedWars.BuildUI()
         end)
     end
 
-    local kitNames, kitIds = BedWars.KitCatalog()
+    local kitNames, kitIds = {}, {}
+    if not isRivals then kitNames, kitIds = BedWars.KitCatalog() end
     local kitSelected = table.find(kitNames, "Miner") and "Miner" or kitNames[1]
-    do
+    if columns.KIT then
         local column = columns.KIT
         column.List.Position = UDim2.fromOffset(9, 132)
         column.List.Size = UDim2.new(1, -18, 1, -141)
@@ -8758,11 +8789,11 @@ function BedWars.BuildUI()
     local openingTween
     local panelTweens = {}
     local panelDestinations = {}
-    track(BedWarsUI:GetPropertyChangedSignal("Visible"):Connect(function()
+    track(board:GetPropertyChangedSignal("Visible"):Connect(function()
         if openingTween then openingTween:Cancel() end
         for _, tween in pairs(panelTweens) do tween:Cancel() end
         table.clear(panelTweens)
-        if BedWarsUI.Visible then
+        if board.Visible then
             openingScale.Value = 0.88
             openingTween = TweenService:Create(openingScale,
                 TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -8905,13 +8936,26 @@ function BedWars.BuildUI()
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
 
+    if isRivals then
+        specs = {
+            { "Combat", "Silent Aim", "Combat", "Rivals", "Silent Aim", "Silent Aim" },
+            { "Visuals", "FOV Circle", "Visuals", "Rivals", "FOV Circle", "FOV Circle" },
+            { "Sunset", "Module List", "Sunset", "Rivals", "Module List", "Module List" },
+            { "Sunset", "Configs", "Sunset", "All", "Configs" },
+            { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+            { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
+            { "Sunset", "Colors", "Sunset", "All", "Colors" },
+            { "Sunset", "Menu Key", "Sunset", "All", "Main" },
+        }
+    end
+
 
     local listedSections = {}
     for _, spec in ipairs(specs) do
         listedSections[spec[3] .. "/" .. spec[4] .. "/" .. spec[5]] = true
     end
     for _, section in ipairs(gameSections) do
-        if section.Game == "BedWars" then
+        if section.Game == boardGame then
             local heading = section.Box:FindFirstChildOfClass("TextLabel")
             local title = heading and heading.Text
             if title then
@@ -8920,10 +8964,10 @@ function BedWars.BuildUI()
                         local tabName = control.Key:match("^([^/]+)/")
                         local toggleName = control.Key:match("([^/]+)$")
                         local category = tabName == "Sunset" and "Sunset" or tabName
-                        local key = tabName .. "/BedWars/" .. title
+                        local key = tabName .. "/" .. boardGame .. "/" .. title
                         if columns[category] and not listedSections[key] then
                             table.insert(specs, { category, title, tabName,
-                                "BedWars", title, toggleName })
+                                boardGame, title, toggleName })
                             listedSections[key] = true
                         end
                         break
@@ -9033,7 +9077,7 @@ function BedWars.BuildUI()
     tooltipText.ZIndex = 501
     track(RunService.RenderStepped:Connect(function()
         if not tooltip.Visible then return end
-        if not BedWarsUI.Visible then tooltip.Visible = false return end
+        if not board.Visible then tooltip.Visible = false return end
         local mouse = UIS:GetMouseLocation()
         local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
             or Vector2.new(1920, 1080)
@@ -9162,7 +9206,7 @@ function BedWars.BuildUI()
     local function refreshSearch()
         closeSettings()
         local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
-        if query ~= "" and columns.KIT.KitShowOptions then
+        if query ~= "" and columns.KIT and columns.KIT.KitShowOptions then
             columns.KIT.KitShowOptions(false)
         end
         local counts = {}
@@ -9188,10 +9232,10 @@ function BedWars.BuildUI()
         end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
-    columns.KIT.KitSelect(refreshSearch)
+    if columns.KIT then columns.KIT.KitSelect(refreshSearch) end
     refreshSearch()
     local moduleList = new("Frame", {
-        Name = "BedWarsModuleList", Visible = false,
+        Name = boardGame .. "ModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, -14, 0, 38),
         Size = UDim2.fromOffset(224, 24),
@@ -9241,9 +9285,9 @@ function BedWars.BuildUI()
         end
     end
     task.spawn(function()
-        while BedWarsUI.Parent do
+        while board.Parent do
             local anyActive = false
-            if BedWarsUI.Visible then
+            if board.Visible then
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
                     entry.Gradient.Enabled = active
@@ -9293,8 +9337,8 @@ function BedWars.BuildUI()
                     26 + (index - 1) * rowStep)
                 entry.ModuleAccent.Position = entry.ModuleRow.Position
             end
-            moduleList.Visible = Settings.SelectedGame == "BedWars"
-                and Settings.ModuleListOn and not BedWarsUI.Visible and anyActive
+            moduleList.Visible = Settings.SelectedGame == boardGame
+                and Settings.ModuleListOn and not board.Visible and anyActive
             task.wait(0.15)
         end
     end)
@@ -9303,7 +9347,7 @@ function BedWars.BuildUI()
         Size = UDim2.fromOffset(285, 69),
         BackgroundTransparency = 1, Active = true,
     }, header)
-    makeDraggable(BedWarsUI, dragHandle)
+    makeDraggable(board, dragHandle)
 end
 if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
     BedWars.BuildUI()
@@ -9312,6 +9356,7 @@ end
 
 
 function RivalsAim.Setup()
+    local cachedTarget
     local function firing()
         return RivalsAim.Enabled and not anyMenuVisible()
             and (UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
@@ -9350,59 +9395,67 @@ function RivalsAim.Setup()
         local camera = workspace.CurrentCamera
         if not camera or (origin - camera.CFrame.Position).Magnitude > 20
             or direction.Unit:Dot(camera.CFrame.LookVector) < 0.75 then return nil end
-        local part = closestTarget()
+        local part = cachedTarget
         if not part then return nil end
         local toward = part.Position - origin
-        if toward.Magnitude > direction.Magnitude then return nil end
+        if toward.Magnitude < 0.001 or toward.Magnitude > direction.Magnitude then return nil end
         return toward.Unit * direction.Magnitude
     end
 
+    -- Neutralize older wrappers when reinjecting; their original-method chain remains intact.
     local state = ENV.SunsetRivalsAimHook
-    if type(state) ~= "table" then
-        state = {}
+    if type(state) ~= "table" or state.Version ~= 2 then
+        if type(state) == "table" then
+            state.Active, state.Resolve, state.Select = false, nil, nil
+        end
+        state = { Version = 2 }
         ENV.SunsetRivalsAimHook = state
     end
+    state.Active = false
     state.Resolve = redirect
-    state.Select = closestTarget
-    if typeof(hookmetamethod) == "function"
+    state.Select = function() return cachedTarget end
+    local supported = typeof(hookmetamethod) == "function"
         and typeof(newcclosure) == "function"
-        and typeof(checkcaller) == "function" then
+        and typeof(checkcaller) == "function"
+    local function installHooks()
+        if not supported then return false end
         if not state.NamecallHooked and typeof(getnamecallmethod) == "function" then
             local previous
             local ok = pcall(function()
                 previous = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-                    if not checkcaller() then
-                        local method = getnamecallmethod()
-                        if self == workspace and (method == "Raycast"
-                            or method == "FindPartOnRay"
-                            or method == "FindPartOnRayWithIgnoreList") then
-                            local args = { ... }
-                            local argCount = select("#", ...)
-                            local origin, direction
-                            if method == "Raycast" then
-                                origin, direction = args[1], args[2]
-                            elseif typeof(args[1]) == "Ray" then
-                                origin, direction = args[1].Origin, args[1].Direction
-                            end
-                            local corrected = state.Resolve and state.Resolve(origin, direction)
-                            if corrected then
-                                if method == "Raycast" then args[2] = corrected
-                                else args[1] = Ray.new(origin, corrected) end
-                                return previous(self, unpack(args, 1, argCount))
-                            end
-                        elseif self == workspace.CurrentCamera
-                            and (method == "ViewportPointToRay"
-                                or method == "ScreenPointToRay") and state.Select then
-                            local ray = previous(self, ...)
-                            if typeof(ray) == "Ray" then
-                                local part = state.Select()
-                                if part then
-                                    return Ray.new(ray.Origin,
-                                        (part.Position - ray.Origin).Unit)
-                                end
-                            end
-                            return ray
+                    if not state.Active or checkcaller() then return previous(self, ...) end
+                    local method = getnamecallmethod()
+                    if self == workspace and (method == "Raycast"
+                        or method == "FindPartOnRay"
+                        or method == "FindPartOnRayWithIgnoreList") then
+                        local args = { ... }
+                        local argCount = select("#", ...)
+                        local origin, direction
+                        if method == "Raycast" then
+                            origin, direction = args[1], args[2]
+                        elseif typeof(args[1]) == "Ray" then
+                            origin, direction = args[1].Origin, args[1].Direction
                         end
+                        local resolved, corrected = pcall(state.Resolve, origin, direction)
+                        if resolved and typeof(corrected) == "Vector3" then
+                            if method == "Raycast" then args[2] = corrected
+                            else args[1] = Ray.new(origin, corrected) end
+                            return previous(self, unpack(args, 1, argCount))
+                        end
+                    elseif self == workspace.CurrentCamera
+                        and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
+                        local ray = previous(self, ...)
+                        if typeof(ray) == "Ray" then
+                            local okTarget, corrected = pcall(function()
+                                local part = state.Select()
+                                local toward = part and (part.Position - ray.Origin)
+                                if toward and toward.Magnitude > 0.001 then
+                                    return Ray.new(ray.Origin, toward.Unit)
+                                end
+                            end)
+                            if okTarget and corrected then return corrected end
+                        end
+                        return ray
                     end
                     return previous(self, ...)
                 end))
@@ -9414,20 +9467,44 @@ function RivalsAim.Setup()
             local previous
             local ok = pcall(function()
                 previous = hookmetamethod(game, "__index", newcclosure(function(self, key)
-                    if self == mouse and not checkcaller() and state.Select
+                    if state.Active and self == mouse and not checkcaller()
                         and (key == "Hit" or key == "Target") then
-                        local part = state.Select()
-                        if part then
-                            return key == "Target" and part or CFrame.new(part.Position)
-                        end
+                        local okTarget, value = pcall(function()
+                            local part = state.Select()
+                            if part then
+                                return key == "Target" and part or CFrame.new(part.Position)
+                            end
+                        end)
+                        if okTarget and value then return value end
                     end
                     return previous(self, key)
                 end))
             end)
             state.MouseHooked = ok and typeof(previous) == "function"
         end
+        return state.NamecallHooked == true or state.MouseHooked == true
     end
-    RivalsAim.Available = state.NamecallHooked == true or state.MouseHooked == true
+    RivalsAim.Available = supported
+    function RivalsAim.SetEnabled(on)
+        state.Active = false
+        cachedTarget = nil
+        RivalsAim.Enabled = on == true and installHooks() or false
+    end
+    -- Target searches run outside game method hooks so they cannot disrupt a weapon call.
+    track(RunService.RenderStepped:Connect(function()
+        state.Active = false
+        cachedTarget = nil
+        if not firing() then return end
+        local ok, target = pcall(closestTarget)
+        if ok then
+            cachedTarget = target
+            state.Active = target ~= nil
+        end
+    end))
+    track({ Disconnect = function()
+        state.Active, state.Resolve, state.Select = false, nil, nil
+        cachedTarget = nil
+    end })
 
     local overlay = new("ScreenGui", {
         Name = "SunsetRivalsFOV", ResetOnSpawn = false,
@@ -9455,264 +9532,26 @@ end
 
 
 function RivalsAim.BuildUI()
-    local accent = Color3.fromRGB(139, 92, 246)
-    local gold = Color3.fromRGB(77, 224, 208)
-    local columnColor = Color3.fromRGB(26, 32, 48)
-    local cardColor = Color3.fromRGB(34, 40, 59)
-    local muted = Color3.fromRGB(154, 167, 195)
-    RivalsUI = new("Frame", {
-        Name = "RiftRivalsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(485, 310),
-        Position = UDim2.new(0.5, 0, 0, 12),
-        AnchorPoint = Vector2.new(0.5, 0),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, Gui)
-    Persistence.HUDFrames.RivalsMenu = RivalsUI
-    local boardScale = new("UIScale", { Scale = 1 }, RivalsUI)
-    local openingScale = new("NumberValue", { Value = 1 }, RivalsUI)
-    local function fitBoard()
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        boardScale.Scale = openingScale.Value * math.max(0.4, math.min(1,
-            (camera.ViewportSize.X - 24) / 485,
-            (camera.ViewportSize.Y - 24) / 310))
-    end
-    fitBoard()
-    track(RunService.Heartbeat:Connect(fitBoard))
-    track(openingScale:GetPropertyChangedSignal("Value"):Connect(fitBoard))
-    track(RivalsUI:GetPropertyChangedSignal("Visible"):Connect(function()
-        onMenuVisibility()
-        if RivalsUI.Visible then
-            openingScale.Value = 0.92
-            TweenService:Create(openingScale, TweenInfo.new(0.2,
-                Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                { Value = 1 }):Play()
-        end
-    end))
-
-    local header = new("Frame", {
-        Size = UDim2.new(1, 0, 0, 108), BackgroundTransparency = 1,
-    }, RivalsUI)
-    local logoId = riftAsset("rift-logo-transparent.png")
-    if logoId then
-        new("ImageLabel", {
-            Position = UDim2.fromOffset(19, 8), Size = UDim2.fromOffset(32, 32),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = logoId, ScaleType = Enum.ScaleType.Fit,
-        }, header)
-    else
-        local logoFallback = label(header, "R", 21, gold,
-            Enum.TextXAlignment.Center)
-        logoFallback.Font = Enum.Font.GothamBold
-        logoFallback.Position = UDim2.fromOffset(20, 8)
-        logoFallback.Size = UDim2.fromOffset(30, 30)
-    end
-    local title = label(header, BRAND, 22, Color3.fromRGB(242, 244, 255))
-    title.Font = Enum.Font.GothamBold
-    title.Position = UDim2.fromOffset(58, 10)
-    title.Size = UDim2.fromOffset(230, 27)
-    local subtitle = label(header, "RIVALS  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
-    subtitle.Font = Enum.Font.Gotham
-    subtitle.Position = UDim2.fromOffset(24, 38)
-    subtitle.Size = UDim2.fromOffset(235, 17)
-    local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(20, 67), Size = UDim2.fromOffset(445, 36),
-        BackgroundColor3 = columnColor, BorderSizePixel = 0,
-    }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchFrame)
-    border(searchFrame, Color3.fromRGB(74, 64, 128))
-    local searchRing = new("Frame", {
-        Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchRing)
-    border(searchRing, gold, 2)
-    local searchHandle = new("Frame", {
-        Position = UDim2.fromOffset(23, 22), Size = UDim2.fromOffset(9, 2),
-        Rotation = 45, BackgroundColor3 = gold, BorderSizePixel = 0,
-    }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchHandle)
-    local searchId = riftAsset("search.png")
-    if searchId then
-        searchRing.Visible = false
-        searchHandle.Visible = false
-        new("ImageLabel", {
-            Position = UDim2.fromOffset(9, 7), Size = UDim2.fromOffset(22, 22),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = searchId, ImageColor3 = gold, ScaleType = Enum.ScaleType.Fit,
-        }, searchFrame)
-    end
-    local searchBox = new("TextBox", {
-        Position = UDim2.fromOffset(36, 3), Size = UDim2.new(1, -75, 1, -6),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-        Font = Enum.Font.GothamMedium, TextSize = 15,
-        TextColor3 = Color3.fromRGB(242, 244, 255),
-        PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
-        ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
-    }, searchFrame)
-    Settings.ActiveSearchBox = searchBox
-    local clearSearch = new("TextButton", {
-        Position = UDim2.new(1, -30, 0, 3), Size = UDim2.fromOffset(26, 30),
-        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
-        Font = Enum.Font.GothamBold, TextSize = 19, TextColor3 = muted,
-        AutoButtonColor = false, Visible = true,
-    }, searchFrame)
-    local trashId = riftAsset("trash.png")
-    local trashIcon
-    if trashId then
-        trashIcon = new("ImageLabel", {
-            Position = UDim2.fromOffset(2, 3), Size = UDim2.fromOffset(23, 23),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = trashId, ImageColor3 = gold,
-            ImageTransparency = 0, ScaleType = Enum.ScaleType.Fit,
-        }, clearSearch)
-    else
-        riftTrashFallback(clearSearch, gold)
-    end
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        if trashIcon then
-            trashIcon.ImageTransparency = 0
-        end
+    local aim = gameSection("Rivals", AimTab.Left, "Silent Aim")
+    Elements.Toggle(aim, "Silent Aim", false, function(on)
+        RivalsAim.SetEnabled(on)
     end)
-    clearSearch.MouseButton1Click:Connect(function()
-        searchBox.Text = ""
-        searchBox:CaptureFocus()
+    Elements.Slider(aim, "FOV Radius", 50, 400, 150, " px", function(value)
+        RivalsAim.Radius = value
     end)
-    local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -41, 0, 29), Size = UDim2.fromOffset(26, 26),
-        BackgroundColor3 = Color3.fromRGB(47, 39, 79), BorderSizePixel = 0,
-        Font = Enum.Font.GothamBold, TextSize = 13,
-        Text = "X", TextColor3 = Color3.fromRGB(242, 244, 255),
-        AutoButtonColor = false,
-    }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
-    border(closeButton, accent)
-    closeButton.MouseButton1Click:Connect(function() RivalsUI.Visible = false end)
-
-    local function column(name, x, width)
-        local frame = new("Frame", {
-            Name = name, Position = UDim2.fromOffset(x, 111),
-            Size = UDim2.fromOffset(width, 185), Active = true,
-            BackgroundColor3 = columnColor, BorderSizePixel = 0,
-        }, RivalsUI)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, frame)
-        border(frame, Color3.fromRGB(74, 64, 128))
-        new("UIGradient", { Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 36, 56)),
-            ColorSequenceKeypoint.new(1, columnColor),
-        }), Rotation = 90 }, frame)
-        local heading = label(frame, string.upper(name == "Sunset" and BRAND or name), 14,
-            Color3.fromRGB(242, 244, 255))
-        heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(13, 12)
-        heading.Size = UDim2.fromOffset(width - 55, 20)
-        local count = label(frame, "0", 17, gold, Enum.TextXAlignment.Right)
-        count.Font = Enum.Font.GothamBold
-        count.Position = UDim2.new(1, -48, 0, 8)
-        count.Size = UDim2.fromOffset(34, 25)
-        new("Frame", {
-            Position = UDim2.fromOffset(13, 39),
-            Size = UDim2.new(1, -26, 0, 2),
-            BackgroundColor3 = accent, BorderSizePixel = 0,
-        }, frame)
-        return frame, count
-    end
-    local combatColumn, combatCount = column("Combat", 20, 200)
-    local sunsetColumn, sunsetCount = column("Sunset", 235, 230)
-
-    local watermarkControl, menuBlurControl
-    for _, control in ipairs(ConfigControls) do
-        if control.Key == "Sunset/All/Watermark/Enabled" then
-            watermarkControl = control
-        elseif control.Key == "Sunset/All/Menu Blur/Enabled" then
-            menuBlurControl = control
-        end
-    end
-    local cards = {}
-    local function addCard(category, parent, name, index, click, value)
-        local card = new("TextButton", {
-            Name = name, Position = UDim2.fromOffset(9, 51 + (index - 1) * 39),
-            Size = UDim2.new(1, -18, 0, 35),
-            BackgroundColor3 = cardColor, BorderSizePixel = 0,
-            Text = "", AutoButtonColor = false,
-        }, parent)
-        new("UICorner", { CornerRadius = UDim.new(0, 2) }, card)
-        local caption = label(card, name, 14, Color3.fromRGB(242, 244, 255))
-        caption.Font = Enum.Font.GothamMedium
-        caption.Position = UDim2.fromOffset(10, 7)
-        caption.Size = UDim2.new(1, -88, 0, 21)
-        local state = label(card, "", 12, gold, Enum.TextXAlignment.Right)
-        state.Font = Enum.Font.GothamMedium
-        state.Position = UDim2.new(1, -92, 0, 7)
-        state.Size = UDim2.fromOffset(82, 21)
-        card.MouseButton1Click:Connect(click)
-        card.MouseEnter:Connect(function() card.BackgroundColor3 = Color3.fromRGB(47, 54, 78) end)
-        card.MouseLeave:Connect(function() card.BackgroundColor3 = cardColor end)
-        table.insert(cards, { Category = category, Name = string.lower(name), Card = card,
-            State = state, Value = value })
-    end
-    addCard("Combat", combatColumn, "Silent Aim", 1, function()
-        if RivalsAim.Available then RivalsAim.Enabled = not RivalsAim.Enabled end
-    end, function()
-        if not RivalsAim.Available then return "N/A" end
-        return RivalsAim.Enabled and "ON" or "OFF"
+    Elements.Label(aim, RivalsAim.Available and "Aim support ready"
+        or "Aim hooks unavailable in this executor")
+    local fov = gameSection("Rivals", VisualsTab.Left, "FOV Circle")
+    Elements.Toggle(fov, "FOV Circle", false, function(on)
+        RivalsAim.FOVVisible = on
     end)
-    addCard("Combat", combatColumn, "FOV Circle", 2, function()
-        RivalsAim.FOVVisible = not RivalsAim.FOVVisible
-    end, function() return RivalsAim.FOVVisible and "ON" or "OFF" end)
-    local radiusCard
-    addCard("Combat", combatColumn, "FOV Radius", 3, function()
-        RivalsAim.Radius = math.min(400, RivalsAim.Radius + 25)
-    end, function() return tostring(RivalsAim.Radius) .. " PX" end)
-    radiusCard = cards[#cards].Card
-    radiusCard.MouseButton2Click:Connect(function()
-        RivalsAim.Radius = math.max(50, RivalsAim.Radius - 25)
-    end)
-    local radiusHint = label(combatColumn, "Left +25  ·  Right -25", 11, muted)
-    radiusHint.Position = UDim2.fromOffset(10, 168)
-    radiusHint.Size = UDim2.new(1, -20, 0, 14)
-    addCard("Sunset", sunsetColumn, "Watermark", 1, function()
-        if watermarkControl then watermarkControl.Set(not watermarkControl.Get()) end
-    end, function() return watermarkControl and watermarkControl.Get() and "ON" or "OFF" end)
-    addCard("Sunset", sunsetColumn, "Menu Blur", 2, function()
-        if menuBlurControl then menuBlurControl.Set(not menuBlurControl.Get()) end
-    end, function() return Settings.MenuBlurOn and "ON" or "OFF" end)
-    addCard("Sunset", sunsetColumn, "Menu Key", 3, function()
-        if listeningFor then return end
-        listeningFor = {
-            GetBind = menuKeyControl.GetBind,
-            SetBind = function(key) return menuKeyControl.SetBind(key) end,
-        }
-    end, function() return listeningFor and "PRESS KEY" or keyName(Settings.MenuKey) end)
-    local function refresh()
-        local query = string.lower(searchBox.Text):match("^%s*(.-)%s*$")
-        local counts = { Combat = 0, Sunset = 0 }
-        for _, entry in ipairs(cards) do
-            entry.Card.Visible = query == ""
-                or string.find(entry.Name, query, 1, true) ~= nil
-                or (entry.Category == "Sunset" and string.find("rift", query, 1, true) ~= nil)
-            if entry.Card.Visible then
-                entry.Card.Position = UDim2.fromOffset(9,
-                    51 + counts[entry.Category] * 39)
-                counts[entry.Category] += 1
-            end
-            entry.State.Text = entry.Value()
-        end
-        combatCount.Text = tostring(counts.Combat)
-        sunsetCount.Text = tostring(counts.Sunset)
-        radiusHint.Visible = radiusCard.Visible
-    end
-    searchBox:GetPropertyChangedSignal("Text"):Connect(refresh)
-    track(RunService.Heartbeat:Connect(function()
-        if RivalsUI.Visible then refresh() end
-    end))
-    refresh()
-    local dragHandle = new("Frame", {
-        Position = UDim2.fromOffset(0, 0), Size = UDim2.fromOffset(285, 61),
-        BackgroundTransparency = 1, Active = true,
-    }, header)
-    makeDraggable(RivalsUI, dragHandle)
+    local list = gameSection("Rivals", SettingsTab.Left, "Module List")
+    Elements.Toggle(list, "Module List", true, function(on)
+        Settings.ModuleListOn = on
+    end, nil, true)
+    BedWars.BuildUI("Rivals")
 end
+
 if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
     RivalsAim.Setup()
     RivalsAim.BuildUI()
@@ -9725,6 +9564,7 @@ ENV.SunsetUnload = function()
     Persistence.Save()
     RivalsAim.Enabled = false
     if type(ENV.SunsetRivalsAimHook) == "table" then
+        ENV.SunsetRivalsAimHook.Active = false
         ENV.SunsetRivalsAimHook.Resolve = nil
         ENV.SunsetRivalsAimHook.Select = nil
     end
