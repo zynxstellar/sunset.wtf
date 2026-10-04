@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-ui-k236"
+local SUNSET_BUILD = "20261003-rift-classic-k237"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -203,7 +203,7 @@ local function fitMenu()
 end
 fitMenu()
 track(RunService.Heartbeat:Connect(fitMenu))
-new("UICorner", { CornerRadius = UDim.new(0, 6) }, Window)
+new("UICorner", { CornerRadius = UDim.new(0, 2) }, Window)
 
 -- title bar
 local TitleBar = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundColor3 = T.bg, BorderSizePixel = 0 }, Window)
@@ -498,7 +498,7 @@ do
                     Value = value, Bind = bind and bind.Name or nil }
             end
         end
-        local data = { Version = 3, Game = gameName, Controls = saved,
+        local data = { Version = 4, Game = gameName, Controls = saved,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions() }
         if gameName == "Rivals" then
             data.RivalsAim = { Enabled = RivalsAim.Enabled,
@@ -595,7 +595,7 @@ do
         if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
             menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
         end
-        Persistence.RestoreHUDPositions(data.HUDPositions, (data.Version or 1) < 3)
+        Persistence.RestoreHUDPositions(data.HUDPositions, (data.Version or 1) < 4)
         return true
     end
     function Persistence.Start()
@@ -2448,7 +2448,7 @@ do
         end
         local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
-            Version = 3, Game = Settings.SelectedGame, Controls = saved,
+            Version = 4, Game = Settings.SelectedGame, Controls = saved,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions(),
         }))
         status.Text = ok and "Saved " .. name or "Could not save config"
@@ -2460,11 +2460,11 @@ do
         local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
         local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath(name))) end)
         if not ok or type(data) ~= "table" or data.Game ~= Settings.SelectedGame
-            or (data.Version ~= 1 and data.Version ~= 2 and data.Version ~= 3) then
+            or (data.Version ~= 1 and data.Version ~= 2 and data.Version ~= 3 and data.Version ~= 4) then
             status.Text = "Config missing or incompatible"
             return
         end
-        Persistence.RestoreHUDPositions(data.HUDPositions, data.Version < 3)
+        Persistence.RestoreHUDPositions(data.HUDPositions, data.Version < 4)
         local byKey = {}
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
@@ -8002,75 +8002,59 @@ function BedWars.BuildUI()
     local muted = Color3.fromRGB(154, 167, 195)
     BedWarsUI = new("Frame", {
         Name = "RiftBedWarsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(1120, 700),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = dark, BackgroundTransparency = 0.06,
-        BorderSizePixel = 0,
+        Size = UDim2.fromOffset(1955, 770),
+        Position = UDim2.new(0.5, 0, 0, 12),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
     Persistence.HUDFrames.BedWarsMenu = BedWarsUI
-    new("UICorner", { CornerRadius = UDim.new(0, 20) }, BedWarsUI)
-    border(BedWarsUI, Color3.fromRGB(95, 71, 165), 1.5)
-    new("UIGradient", { Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 28, 49)),
-        ColorSequenceKeypoint.new(1, dark),
-    }), Rotation = 35 }, BedWarsUI)
     local boardScale = new("UIScale", { Scale = 1 }, BedWarsUI)
     local openingScale = new("NumberValue", { Value = 1 }, BedWarsUI)
     local function fitBoard()
         local camera = workspace.CurrentCamera
         if not camera then return end
-        boardScale.Scale = openingScale.Value * math.max(0.25, math.min(1,
-            (camera.ViewportSize.X - 32) / 1120,
-            (camera.ViewportSize.Y - 32) / 700))
+        boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
+            (camera.ViewportSize.X - 32) / 1955,
+            (camera.ViewportSize.Y - 32) / 770))
     end
     fitBoard()
     track(RunService.Heartbeat:Connect(fitBoard))
     track(openingScale:GetPropertyChangedSignal("Value"):Connect(fitBoard))
 
     local header = new("Frame", {
-        Size = UDim2.new(1, 0, 0, 90), BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
     }, BedWarsUI)
     local sun = new("Frame", {
-        Position = UDim2.fromOffset(30, 23), Size = UDim2.fromOffset(35, 35),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Position = UDim2.fromOffset(22, 15), Size = UDim2.fromOffset(17, 17),
+        BackgroundColor3 = gold, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, sun)
-    local logoStroke = border(sun, accent, 5)
-    new("UIGradient", { Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, accent),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(195, 116, 255)),
-        ColorSequenceKeypoint.new(1, gold),
-    }), Rotation = 45 }, logoStroke)
-    local title = label(header, BRAND, 25, Color3.fromRGB(242, 244, 255))
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, sun)
+    local title = label(header, BRAND, 22, Color3.fromRGB(242, 244, 255))
     title.Font = Enum.Font.GothamBold
-    title.Position = UDim2.fromOffset(80, 15)
-    title.Size = UDim2.fromOffset(220, 31)
-    local subtitle = label(header, "BEDWARS  /  " .. SUNSET_BUILD:sub(-4), 11, muted)
+    title.Position = UDim2.fromOffset(48, 10)
+    title.Size = UDim2.fromOffset(230, 27)
+    local subtitle = label(header, "BEDWARS  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
     subtitle.Font = Enum.Font.Gotham
-    subtitle.Position = UDim2.fromOffset(81, 48)
+    subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
-    new("Frame", { Position = UDim2.fromOffset(20, 78),
-        Size = UDim2.fromOffset(1080, 1),
-        BackgroundColor3 = Color3.fromRGB(52, 60, 89), BorderSizePixel = 0 }, header)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(718, 23),
-        Size = UDim2.fromOffset(338, 36),
+        Position = UDim2.fromOffset(808, 17),
+        Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 11) }, searchFrame)
-    border(searchFrame, Color3.fromRGB(67, 76, 112))
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchFrame)
+    border(searchFrame, Color3.fromRGB(74, 64, 128))
     local searchRing = new("Frame", {
         Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchRing)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchRing)
     border(searchRing, gold, 2)
     local searchHandle = new("Frame", {
         Position = UDim2.fromOffset(23, 22), Size = UDim2.fromOffset(9, 2),
         Rotation = 45, BackgroundColor3 = gold, BorderSizePixel = 0,
     }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchHandle)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchHandle)
     local searchBox = new("TextBox", {
         Position = UDim2.fromOffset(36, 3),
         Size = UDim2.new(1, -75, 1, -6),
@@ -8095,124 +8079,83 @@ function BedWars.BuildUI()
         searchBox:CaptureFocus()
     end)
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -50, 0, 23),
+        Position = UDim2.new(1, -48, 0, 17),
         Size = UDim2.fromOffset(32, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
         Font = Enum.Font.GothamBold, TextSize = 18,
         Text = "×", TextColor3 = muted, AutoButtonColor = false,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, closeButton)
     closeButton.MouseButton1Click:Connect(function() BedWarsUI.Visible = false end)
     local categoryOrder = { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset", "LOBBY" }
     local columns = {}
-    local navButtons = {}
-    local selectedCategory = "Combat"
-    local selectCategory
-    local rail = new("Frame", {
-        Position = UDim2.fromOffset(20, 96), Size = UDim2.fromOffset(198, 540),
-        BackgroundColor3 = columnColor, BackgroundTransparency = 0.16,
-        BorderSizePixel = 0,
-    }, BedWarsUI)
-    new("UICorner", { CornerRadius = UDim.new(0, 14) }, rail)
-    border(rail, Color3.fromRGB(52, 60, 89))
-    local railTitle = label(rail, "MODULES", 11, muted)
-    railTitle.Font = Enum.Font.GothamBold
-    railTitle.Position = UDim2.fromOffset(15, 14)
-    railTitle.Size = UDim2.fromOffset(160, 17)
-    local navList = new("Frame", {
-        Position = UDim2.fromOffset(8, 40), Size = UDim2.new(1, -16, 1, -50),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, rail)
-    new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 3) }, navList)
     for index, name in ipairs(categoryOrder) do
-        local display = name == "Sunset" and BRAND or name
-        local nav = new("TextButton", {
-            Name = name .. "Nav", LayoutOrder = index,
-            Size = UDim2.new(1, 0, 0, 43), BackgroundColor3 = columnColor,
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Text = "", AutoButtonColor = false,
-        }, navList)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, nav)
-        local navMark = label(nav, string.sub(display, 1, 1), 14, gold,
-            Enum.TextXAlignment.Center)
-        navMark.Font = Enum.Font.GothamBold
-        navMark.Position = UDim2.fromOffset(9, 9)
-        navMark.Size = UDim2.fromOffset(25, 25)
-        navMark.BackgroundColor3 = Color3.fromRGB(38, 44, 67)
-        navMark.BackgroundTransparency = 0
-        new("UICorner", { CornerRadius = UDim.new(0, 7) }, navMark)
-        local navText = label(nav, string.upper(display), 12,
-            Color3.fromRGB(208, 216, 240))
-        navText.Font = Enum.Font.GothamMedium
-        navText.Position = UDim2.fromOffset(43, 12)
-        navText.Size = UDim2.new(1, -77, 0, 20)
-        local navCount = label(nav, "0", 11, muted, Enum.TextXAlignment.Right)
-        navCount.Position = UDim2.new(1, -32, 0, 12)
-        navCount.Size = UDim2.fromOffset(22, 20)
-        navButtons[name] = { Button = nav, Label = navText, Count = navCount }
-        nav.MouseButton1Click:Connect(function()
-            if selectCategory then selectCategory(name) end
-        end)
+        local x = name == "LOBBY" and 20 or 20 + (index - 1) * 215
+        local y = name == "LOBBY" and 620 or 74
         local col = new("Frame", {
-            Name = name, Position = UDim2.fromOffset(235, 96),
-            Size = UDim2.fromOffset(865, 540), Active = true,
-            Visible = name == selectedCategory,
+            Name = name, Position = UDim2.fromOffset(x, y),
+            Size = UDim2.fromOffset(200, 250), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
         }, BedWarsUI)
-        new("UICorner", { CornerRadius = UDim.new(0, 14) }, col)
-        border(col, Color3.fromRGB(52, 60, 89))
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, col)
+        border(col, Color3.fromRGB(74, 64, 128))
         new("UIGradient", { Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 36, 56)),
             ColorSequenceKeypoint.new(1, columnColor),
         }), Rotation = 90 }, col)
-        local heading = label(col, string.upper(display), 19,
+        local heading = label(col, string.upper(name == "Sunset" and BRAND or name), 14,
             Color3.fromRGB(242, 244, 255))
         heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(17, 13)
-        heading.Size = UDim2.fromOffset(560, 26)
+        heading.Position = UDim2.fromOffset(13, 12)
+        heading.Size = UDim2.fromOffset(128, 20)
         local count = new("TextButton", {
-            Text = "0 MODULES", Font = Enum.Font.GothamMedium,
-            TextSize = 12, TextColor3 = muted,
+            Text = "0", Font = Enum.Font.GothamBold,
+            TextSize = 17, TextColor3 = gold,
             TextXAlignment = Enum.TextXAlignment.Right,
-            Position = UDim2.new(1, -135, 0, 13),
-            Size = UDim2.fromOffset(115, 25),
+            Position = UDim2.new(1, -48, 0, 8),
+            Size = UDim2.fromOffset(34, 25),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             AutoButtonColor = false,
         }, col)
         new("Frame", {
-            Position = UDim2.fromOffset(17, 44),
-            Size = UDim2.new(1, -34, 0, 1),
+            Position = UDim2.fromOffset(13, 39),
+            Size = UDim2.new(1, -26, 0, 2),
             BackgroundColor3 = accent, BorderSizePixel = 0,
         }, col)
-        local lists = {}
-        for lane = 1, 2 do
-            local list = new("ScrollingFrame", {
-                Position = UDim2.fromOffset(lane == 1 and 13 or 434, 54),
-                Size = UDim2.fromOffset(412, 474),
-                BackgroundTransparency = 1, BorderSizePixel = 0,
-                ScrollBarThickness = 3, ScrollBarImageColor3 = accent,
-                CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
-                ScrollingDirection = Enum.ScrollingDirection.Y,
-            }, col)
-            new("UIListLayout", { Padding = UDim.new(0, 9),
-                SortOrder = Enum.SortOrder.LayoutOrder }, list)
-            new("UIPadding", { PaddingBottom = UDim.new(0, 12),
-                PaddingRight = UDim.new(0, 4) }, list)
-            lists[lane] = list
-        end
-        columns[name] = { Frame = col, List = lists[1], AltList = lists[2],
-            Count = count, Collapsed = false, VisibleCount = 0,
-            OpenHolder = nil, NextLane = 1 }
+        local list = new("ScrollingFrame", {
+            Position = UDim2.fromOffset(9, 51),
+            Size = UDim2.new(1, -18, 1, -60),
+            BackgroundTransparency = 1, BorderSizePixel = 0,
+            ScrollBarThickness = 2, ScrollBarImageColor3 = accent,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+        }, col)
+        new("UIListLayout", { Padding = UDim.new(0, 1),
+            SortOrder = Enum.SortOrder.LayoutOrder }, list)
+        new("UIPadding", { PaddingBottom = UDim.new(0, 4) }, list)
+        local dragHandle = new("Frame", {
+            Position = UDim2.fromOffset(0, 0),
+            Size = UDim2.fromOffset(148, 43),
+            BackgroundTransparency = 1, Active = true,
+        }, col)
+        makeDraggable(col, dragHandle)
+        columns[name] = { Frame = col, List = list, Count = count,
+            Collapsed = false, VisibleCount = 0, OpenHolder = nil }
         local function reflow()
             local column = columns[name]
-            column.List.Visible = not column.Collapsed
-            column.AltList.Visible = not column.Collapsed
+            local extra = column.OpenHolder and column.OpenHolder.Visible
+                and column.OpenHolder.AbsoluteSize.Y + 7 or 0
+            column.Frame.Size = UDim2.fromOffset(200,
+                column.Collapsed and 44
+                    or name == "KIT" and math.min(540,
+                        math.max(176, 140 + column.VisibleCount * 36 + extra))
+                    or math.min(540, 65 + column.VisibleCount * 36 + extra))
         end
         columns[name].Reflow = reflow
         count.MouseButton1Click:Connect(function()
             local column = columns[name]
             column.Collapsed = not column.Collapsed
+            column.List.Visible = not column.Collapsed
             if name == "KIT" and column.KitControls then
                 for _, control in ipairs(column.KitControls) do
                     control.Visible = not column.Collapsed
@@ -8226,35 +8169,22 @@ function BedWars.BuildUI()
             reflow()
         end)
     end
-    new("Frame", { Position = UDim2.fromOffset(20, 647),
-        Size = UDim2.fromOffset(1080, 1),
-        BackgroundColor3 = Color3.fromRGB(52, 60, 89), BorderSizePixel = 0 }, BedWarsUI)
-    local footer = label(BedWarsUI, "●  READY     •     RIGHT SHIFT TO CLOSE", 12,
-        gold)
-    footer.Position = UDim2.fromOffset(28, 660)
-    footer.Size = UDim2.fromOffset(500, 20)
-    local buildLabel = label(BedWarsUI, "RIFT  /  " .. SUNSET_BUILD:sub(-4), 11,
-        muted, Enum.TextXAlignment.Right)
-    buildLabel.Position = UDim2.new(1, -245, 0, 660)
-    buildLabel.Size = UDim2.fromOffset(218, 20)
 
     local kitNames, kitIds = BedWars.KitCatalog()
     local kitSelected = table.find(kitNames, "Miner") and "Miner" or kitNames[1]
     do
         local column = columns.KIT
-        column.List.Position = UDim2.fromOffset(13, 132)
-        column.List.Size = UDim2.fromOffset(412, 395)
-        column.AltList.Position = UDim2.fromOffset(434, 132)
-        column.AltList.Size = UDim2.fromOffset(412, 395)
+        column.List.Position = UDim2.fromOffset(9, 132)
+        column.List.Size = UDim2.new(1, -18, 1, -141)
         local kitSearch = new("TextBox", {
             Position = UDim2.fromOffset(9, 51), Size = UDim2.new(1, -18, 0, 31),
             BackgroundColor3 = cardColor, BorderSizePixel = 0,
             Font = Enum.Font.GothamMedium, TextSize = 13,
-            TextColor3 = Color3.fromRGB(255, 237, 230),
+            TextColor3 = Color3.fromRGB(242, 244, 255),
             PlaceholderColor3 = muted, PlaceholderText = "Search kits",
             ClearTextOnFocus = false, Text = "", ZIndex = 30,
         }, column.Frame)
-        new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitSearch)
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, kitSearch)
         local kitButton = new("TextButton", {
             Position = UDim2.fromOffset(9, 88), Size = UDim2.new(1, -18, 0, 32),
             BackgroundColor3 = cardColor, BorderSizePixel = 0,
@@ -8265,15 +8195,15 @@ function BedWars.BuildUI()
             TextTruncate = Enum.TextTruncate.AtEnd,
             AutoButtonColor = false, ZIndex = 110,
         }, column.Frame)
-        new("UICorner", { CornerRadius = UDim.new(0, 9) }, kitButton)
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, kitButton)
         local kitOptions = new("ScrollingFrame", {
-            Position = UDim2.fromOffset(9, 125), Size = UDim2.fromOffset(840, 390),
+            Position = UDim2.fromOffset(-101, 125), Size = UDim2.fromOffset(400, 310),
             BackgroundColor3 = dark, BorderSizePixel = 0,
             ScrollBarThickness = 3, ScrollBarImageColor3 = accent,
             CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
             Visible = false, ZIndex = 120,
         }, column.Frame)
-        new("UICorner", { CornerRadius = UDim.new(0, 13) }, kitOptions)
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, kitOptions)
         border(kitOptions, accent)
         new("UIPadding", { PaddingTop = UDim.new(0, 8),
             PaddingLeft = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8) }, kitOptions)
@@ -8286,10 +8216,10 @@ function BedWars.BuildUI()
                 Name = kitName, Size = UDim2.fromOffset(186, 40),
                 BackgroundColor3 = cardColor, BorderSizePixel = 0,
                 Font = Enum.Font.GothamMedium, TextSize = 13,
-                TextColor3 = Color3.fromRGB(255, 237, 230),
+                TextColor3 = Color3.fromRGB(242, 244, 255),
                 Text = kitName, AutoButtonColor = false, ZIndex = 121,
             }, kitOptions)
-            new("UICorner", { CornerRadius = UDim.new(0, 9) }, option)
+            new("UICorner", { CornerRadius = UDim.new(0, 2) }, option)
             optionButtons[kitName] = option
         end
         kitSearch:GetPropertyChangedSignal("Text"):Connect(function()
@@ -8361,25 +8291,6 @@ function BedWars.BuildUI()
         activeHolder, activeColumn = nil, nil
         if previousColumn then previousColumn.Reflow() end
     end
-    selectCategory = function(name)
-        if not columns[name] then return end
-        closeSettings()
-        selectedCategory = name
-        for category, column in pairs(columns) do
-            column.Frame.Visible = category == name
-            local nav = navButtons[category]
-            nav.Button.BackgroundTransparency = category == name and 0 or 1
-            nav.Button.BackgroundColor3 = Color3.fromRGB(63, 44, 119)
-            nav.Label.TextColor3 = category == name
-                and Color3.fromRGB(242, 244, 255)
-                or Color3.fromRGB(208, 216, 240)
-            nav.Count.TextColor3 = category == name and gold or muted
-        end
-        if name ~= "KIT" and columns.KIT.KitControls then
-            columns.KIT.KitControls[3].Visible = false
-        end
-    end
-    selectCategory(selectedCategory)
     local function openSettings(box, holder, column)
         if not box or not holder then return end
         if activeHolder == holder then closeSettings() return end
@@ -8437,7 +8348,7 @@ function BedWars.BuildUI()
                     number.Position = UDim2.new(1, -76, 0, 1)
                     number.Size = UDim2.fromOffset(44, 20)
                     if not number:FindFirstChildOfClass("UICorner") then
-                        new("UICorner", { CornerRadius = UDim.new(0, 8) }, number)
+                        new("UICorner", { CornerRadius = UDim.new(0, 2) }, number)
                     end
                     for _, button in ipairs(top:GetChildren()) do
                         if button:IsA("TextButton") then
@@ -8452,6 +8363,9 @@ function BedWars.BuildUI()
             end
         end
         for _, descendant in ipairs(activeContent:GetDescendants()) do
+            if descendant:IsA("UICorner") then
+                descendant.CornerRadius = UDim.new(0, 2)
+            end
             if descendant:IsA("TextLabel") or descendant:IsA("TextButton")
                 or descendant:IsA("TextBox") then
                 descendant.Font = Enum.Font.GothamMedium
@@ -8464,7 +8378,7 @@ function BedWars.BuildUI()
                 if (descendant:IsA("TextBox") or descendant:IsA("TextButton"))
                     and descendant.BackgroundTransparency < 1
                     and not descendant:FindFirstChildOfClass("UICorner") then
-                    new("UICorner", { CornerRadius = UDim.new(0, 6) }, descendant)
+                    new("UICorner", { CornerRadius = UDim.new(0, 2) }, descendant)
                 end
             end
         end
@@ -8687,13 +8601,13 @@ function BedWars.BuildUI()
         Name = "ModuleTooltip", Visible = false,
         AnchorPoint = Vector2.new(0.5, 0),
         Size = UDim2.fromOffset(270, 54),
-        BackgroundColor3 = T.inner,
+        BackgroundColor3 = Color3.fromRGB(22, 27, 41),
         BorderSizePixel = 0, ZIndex = 500,
     }, Gui)
-    new("UICorner", { CornerRadius = UDim.new(0, 9) }, tooltip)
-    border(tooltip, T.accent)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, tooltip)
+    border(tooltip, Color3.fromRGB(139, 92, 246))
     local tooltipText = label(tooltip, "", 13,
-        T.text)
+        Color3.fromRGB(242, 244, 255))
     tooltipText.Position = UDim2.fromOffset(10, 7)
     tooltipText.Size = UDim2.new(1, -20, 1, -14)
     tooltipText.TextWrapped = true
@@ -8737,28 +8651,23 @@ function BedWars.BuildUI()
                     end
                 end
             end
-            local categoryColumn = columns[category]
-            local lane = categoryColumn.NextLane % 2 == 1
-                and categoryColumn.List or categoryColumn.AltList
-            categoryColumn.NextLane += 1
             local card = new("TextButton", {
-                Name = name, Size = UDim2.new(1, -5, 0, 71),
-                BackgroundColor3 = cardColor, BorderSizePixel = 0,
+                Name = name, Size = UDim2.new(1, -3, 0, 35),
+                BackgroundColor3 = columnColor, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
-            }, lane)
-            new("UICorner", { CornerRadius = UDim.new(0, 12) }, card)
-            local cardStroke = border(card, Color3.fromRGB(53, 61, 88))
+            }, columns[category].List)
+            new("UICorner", { CornerRadius = UDim.new(0, 2) }, card)
             local holder
             if hasSettings then
                 holder = new("Frame", {
                     Name = name .. "Settings", Visible = false,
-                    Size = UDim2.new(1, -5, 0, 0),
+                    Size = UDim2.new(1, -3, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundColor3 = Color3.fromRGB(22, 27, 43),
+                    BackgroundColor3 = Color3.fromRGB(22, 27, 41),
                     BorderSizePixel = 0, LayoutOrder = index * 2 + 1,
-                }, lane)
-                new("UICorner", { CornerRadius = UDim.new(0, 12) }, holder)
-                border(holder, Color3.fromRGB(76, 67, 117))
+                }, columns[category].List)
+                new("UICorner", { CornerRadius = UDim.new(0, 2) }, holder)
+                border(holder, Color3.fromRGB(47, 54, 78))
                 new("UIPadding", { PaddingBottom = UDim.new(0, 11) }, holder)
                 track(holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
                     if holder.Visible then columns[category].Reflow() end
@@ -8767,50 +8676,20 @@ function BedWars.BuildUI()
             local activeGradient = new("UIGradient", {
                 Enabled = false, Rotation = 0,
                 Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(54, 45, 94)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 46, 77)),
+                    ColorSequenceKeypoint.new(0, accent),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(77, 224, 208)),
                 }),
             }, card)
-            local tile = new("Frame", {
-                Position = UDim2.fromOffset(11, 14), Size = UDim2.fromOffset(43, 43),
-                BackgroundColor3 = Color3.fromRGB(43, 42, 77), BorderSizePixel = 0,
-            }, card)
-            new("UICorner", { CornerRadius = UDim.new(0, 10) }, tile)
-            local tileText = label(tile, string.sub(name, 1, 1):upper(), 20,
-                Color3.fromRGB(200, 183, 255), Enum.TextXAlignment.Center)
-            tileText.Font = Enum.Font.GothamBold
-            tileText.Size = UDim2.fromScale(1, 1)
-            local nameLabel = label(card, name, 15, Color3.fromRGB(242, 244, 255))
-            nameLabel.Font = Enum.Font.GothamSemibold
-            nameLabel.Position = UDim2.fromOffset(65, 14)
-            nameLabel.Size = UDim2.new(1, -160, 0, 21)
+            local nameLabel = label(card, name, 14, Color3.fromRGB(242, 244, 255))
+            nameLabel.Font = Enum.Font.GothamMedium
+            nameLabel.Position = UDim2.fromOffset(10, 7)
+            nameLabel.Size = UDim2.new(1, hasSettings and -45 or -20, 0, 21)
             nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
-            local summary = label(card, descriptions[name] or "Rift module", 11, muted)
-            summary.Position = UDim2.fromOffset(65, 37)
-            summary.Size = UDim2.new(1, -153, 0, 18)
-            summary.TextTruncate = Enum.TextTruncate.AtEnd
-            local toggleTrack, toggleKnob
-            if control then
-                toggleTrack = new("Frame", {
-                    Position = UDim2.new(1, -62, 0, 16),
-                    Size = UDim2.fromOffset(46, 24),
-                    BackgroundColor3 = Color3.fromRGB(66, 72, 101),
-                    BorderSizePixel = 0,
-                }, card)
-                new("UICorner", { CornerRadius = UDim.new(1, 0) }, toggleTrack)
-                toggleKnob = new("Frame", {
-                    Position = UDim2.fromOffset(3, 3),
-                    Size = UDim2.fromOffset(18, 18),
-                    BackgroundColor3 = Color3.fromRGB(215, 222, 245),
-                    BorderSizePixel = 0,
-                }, toggleTrack)
-                new("UICorner", { CornerRadius = UDim.new(1, 0) }, toggleKnob)
-            end
             local options = new("TextButton", {
-                Position = UDim2.new(1, -33, 0, 43),
-                Size = UDim2.fromOffset(27, 23),
+                Position = UDim2.new(1, -31, 0, 4),
+                Size = UDim2.fromOffset(27, 27),
                 BackgroundTransparency = 1,
-                BorderSizePixel = 0, Text = "⚙",
+                BorderSizePixel = 0, Text = "···",
                 Font = Enum.Font.GothamBold, TextSize = 15,
                 TextColor3 = muted, AutoButtonColor = false,
                 Visible = hasSettings,
@@ -8855,8 +8734,7 @@ function BedWars.BuildUI()
             table.insert(cards, { Category = category, Card = card, Control = control,
                 Name = nameLabel, Options = options, Holder = holder, Search = searchText,
                 Kit = category == "KIT" and (kitIds[spec[7]] or spec[8]) or nil,
-                Hovered = function() return hovered end, Gradient = activeGradient,
-                Stroke = cardStroke, Switch = toggleTrack, Knob = toggleKnob })
+                Hovered = function() return hovered end, Gradient = activeGradient })
         end
     end
     local function refreshSearch()
@@ -8870,8 +8748,7 @@ function BedWars.BuildUI()
             if show then counts[entry.Category] = (counts[entry.Category] or 0) + 1 end
         end
         for name, column in pairs(columns) do
-            column.Count.Text = tostring(counts[name] or 0) .. " MODULES"
-            navButtons[name].Count.Text = tostring(counts[name] or 0)
+            column.Count.Text = tostring(counts[name] or 0)
             column.VisibleCount = counts[name] or 0
             if name == "KIT" then
                 column.KitEmpty.Visible = not column.Collapsed
@@ -8880,14 +8757,6 @@ function BedWars.BuildUI()
                     or "No kit modules for " .. tostring(kitSelected) .. " yet"
             end
             column.Reflow()
-        end
-        if query ~= "" and (counts[selectedCategory] or 0) == 0 then
-            for _, name in ipairs(categoryOrder) do
-                if (counts[name] or 0) > 0 then
-                    selectCategory(name)
-                    break
-                end
-            end
         end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
@@ -8921,7 +8790,7 @@ function BedWars.BuildUI()
                 BackgroundTransparency = 0.25,
                 BorderSizePixel = 0,
             }, moduleList)
-            new("UICorner", { CornerRadius = UDim.new(0, 3) }, row)
+            new("UICorner", { CornerRadius = UDim.new(0, 2) }, row)
             local strip = new("Frame", {
                 Position = UDim2.new(1, -2, 0, 0),
                 Size = UDim2.fromOffset(2, 18),
@@ -8947,26 +8816,17 @@ function BedWars.BuildUI()
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
                     entry.Gradient.Enabled = active
-                    local targetColor = active and Color3.fromRGB(48, 43, 82)
-                        or (entry.Hovered() and Color3.fromRGB(43, 49, 72) or cardColor)
+                    local targetColor = active and Color3.new(1, 1, 1)
+                        or (entry.Hovered() and cardColor or columnColor)
                     if entry.LastColor ~= targetColor then
                         entry.LastColor = targetColor
                         TweenService:Create(entry.Card, TweenInfo.new(0.18,
                             Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                             { BackgroundColor3 = targetColor }):Play()
                     end
-                    entry.Name.TextColor3 = Color3.fromRGB(242, 244, 255)
-                    entry.Options.TextColor3 = active and gold or muted
-                    entry.Stroke.Color = active and accent
-                        or Color3.fromRGB(53, 61, 88)
-                    if entry.Switch then
-                        entry.Switch.BackgroundColor3 = active and accent
-                            or Color3.fromRGB(66, 72, 101)
-                        entry.Knob.Position = UDim2.fromOffset(active and 25 or 3, 3)
-                        entry.Knob.BackgroundColor3 = active
-                            and Color3.fromRGB(242, 244, 255)
-                            or Color3.fromRGB(215, 222, 245)
-                    end
+                    entry.Name.TextColor3 = active and dark
+                        or Color3.fromRGB(242, 244, 255)
+                    entry.Options.TextColor3 = active and dark or muted
                 end
             end
             local activeRows = {}
@@ -8998,13 +8858,9 @@ function BedWars.BuildUI()
             moduleBrand.Text = visibleCount < #activeRows
                 and (BRAND .. "  +" .. tostring(#activeRows - visibleCount))
                 or BRAND
-            if BedWarsUI.Visible then
-                footer.Text = "●  READY     •     " .. tostring(#activeRows)
-                    .. " MODULES ACTIVE     •     RIGHT SHIFT TO CLOSE"
-            end
             for index, entry in ipairs(activeRows) do
                 local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
-                local color = gold:Lerp(accent, progress)
+                local color = gold:Lerp(Color3.fromRGB(139, 92, 246), progress)
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
                 entry.ModuleRow.Visible = index <= visibleCount
@@ -9186,27 +9042,20 @@ function RivalsAim.BuildUI()
     local muted = Color3.fromRGB(154, 167, 195)
     RivalsUI = new("Frame", {
         Name = "RiftRivalsBoard", Visible = false, Active = true,
-        Size = UDim2.fromOffset(820, 520),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.fromRGB(16, 18, 29),
-        BackgroundTransparency = 0.06, BorderSizePixel = 0,
+        Size = UDim2.fromOffset(485, 310),
+        Position = UDim2.new(0.5, 0, 0, 12),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
     Persistence.HUDFrames.RivalsMenu = RivalsUI
-    new("UICorner", { CornerRadius = UDim.new(0, 20) }, RivalsUI)
-    border(RivalsUI, Color3.fromRGB(95, 71, 165), 1.5)
-    new("UIGradient", { Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 28, 49)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 18, 29)),
-    }), Rotation = 35 }, RivalsUI)
     local boardScale = new("UIScale", { Scale = 1 }, RivalsUI)
     local openingScale = new("NumberValue", { Value = 1 }, RivalsUI)
     local function fitBoard()
         local camera = workspace.CurrentCamera
         if not camera then return end
-        boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
-            (camera.ViewportSize.X - 24) / 820,
-            (camera.ViewportSize.Y - 24) / 520))
+        boardScale.Scale = openingScale.Value * math.max(0.4, math.min(1,
+            (camera.ViewportSize.X - 24) / 485,
+            (camera.ViewportSize.Y - 24) / 310))
     end
     fitBoard()
     track(RunService.Heartbeat:Connect(fitBoard))
@@ -9222,47 +9071,38 @@ function RivalsAim.BuildUI()
     end))
 
     local header = new("Frame", {
-        Size = UDim2.new(1, 0, 0, 86), BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 108), BackgroundTransparency = 1,
     }, RivalsUI)
     local sun = new("Frame", {
-        Position = UDim2.fromOffset(29, 22), Size = UDim2.fromOffset(35, 35),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Position = UDim2.fromOffset(22, 15), Size = UDim2.fromOffset(17, 17),
+        BackgroundColor3 = gold, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, sun)
-    local logoStroke = border(sun, accent, 5)
-    new("UIGradient", { Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, accent),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(195, 116, 255)),
-        ColorSequenceKeypoint.new(1, gold),
-    }), Rotation = 45 }, logoStroke)
-    local title = label(header, BRAND, 25, Color3.fromRGB(242, 244, 255))
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, sun)
+    local title = label(header, BRAND, 22, Color3.fromRGB(242, 244, 255))
     title.Font = Enum.Font.GothamBold
-    title.Position = UDim2.fromOffset(79, 15)
+    title.Position = UDim2.fromOffset(48, 10)
     title.Size = UDim2.fromOffset(230, 27)
-    local subtitle = label(header, "RIVALS  /  " .. SUNSET_BUILD:sub(-4), 11, muted)
+    local subtitle = label(header, "RIVALS  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
     subtitle.Font = Enum.Font.Gotham
-    subtitle.Position = UDim2.fromOffset(80, 47)
+    subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
-    new("Frame", { Position = UDim2.fromOffset(20, 77),
-        Size = UDim2.fromOffset(780, 1),
-        BackgroundColor3 = Color3.fromRGB(52, 60, 89), BorderSizePixel = 0 }, header)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(420, 22), Size = UDim2.fromOffset(335, 36),
+        Position = UDim2.fromOffset(20, 67), Size = UDim2.fromOffset(445, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 11) }, searchFrame)
-    border(searchFrame, Color3.fromRGB(67, 76, 112))
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchFrame)
+    border(searchFrame, Color3.fromRGB(74, 64, 128))
     local searchRing = new("Frame", {
         Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchRing)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchRing)
     border(searchRing, gold, 2)
     local searchHandle = new("Frame", {
         Position = UDim2.fromOffset(23, 22), Size = UDim2.fromOffset(9, 2),
         Rotation = 45, BackgroundColor3 = gold, BorderSizePixel = 0,
     }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchHandle)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchHandle)
     local searchBox = new("TextBox", {
         Position = UDim2.fromOffset(36, 3), Size = UDim2.new(1, -75, 1, -6),
         BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -9286,99 +9126,44 @@ function RivalsAim.BuildUI()
         searchBox:CaptureFocus()
     end)
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -50, 0, 22), Size = UDim2.fromOffset(32, 36),
+        Position = UDim2.new(1, -48, 0, 17), Size = UDim2.fromOffset(32, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
         Font = Enum.Font.GothamBold, TextSize = 18,
         Text = "×", TextColor3 = muted, AutoButtonColor = false,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(0, 10) }, closeButton)
+    new("UICorner", { CornerRadius = UDim.new(0, 2) }, closeButton)
     closeButton.MouseButton1Click:Connect(function() RivalsUI.Visible = false end)
 
-    local rail = new("Frame", {
-        Position = UDim2.fromOffset(20, 96), Size = UDim2.fromOffset(178, 386),
-        BackgroundColor3 = columnColor, BackgroundTransparency = 0.16,
-        BorderSizePixel = 0,
-    }, RivalsUI)
-    new("UICorner", { CornerRadius = UDim.new(0, 14) }, rail)
-    border(rail, Color3.fromRGB(52, 60, 89))
-    local railHeading = label(rail, "MODULES", 11, muted)
-    railHeading.Font = Enum.Font.GothamBold
-    railHeading.Position = UDim2.fromOffset(15, 14)
-    railHeading.Size = UDim2.fromOffset(140, 16)
     local function column(name, x, width)
         local frame = new("Frame", {
-            Name = name, Position = UDim2.fromOffset(215, 96),
-            Size = UDim2.fromOffset(585, 386), Active = true,
-            Visible = name == "Combat",
+            Name = name, Position = UDim2.fromOffset(x, 111),
+            Size = UDim2.fromOffset(width, 185), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
         }, RivalsUI)
-        new("UICorner", { CornerRadius = UDim.new(0, 12) }, frame)
-        border(frame, Color3.fromRGB(52, 60, 89))
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, frame)
+        border(frame, Color3.fromRGB(74, 64, 128))
         new("UIGradient", { Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 36, 56)),
             ColorSequenceKeypoint.new(1, columnColor),
         }), Rotation = 90 }, frame)
-        local heading = label(frame, name == "Sunset" and BRAND or string.upper(name), 19,
+        local heading = label(frame, string.upper(name == "Sunset" and BRAND or name), 14,
             Color3.fromRGB(242, 244, 255))
         heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(17, 13)
-        heading.Size = UDim2.fromOffset(400, 26)
-        local count = label(frame, "0 MODULES", 12, muted,
-            Enum.TextXAlignment.Right)
-        count.Font = Enum.Font.GothamMedium
-        count.Position = UDim2.new(1, -135, 0, 13)
-        count.Size = UDim2.fromOffset(115, 25)
+        heading.Position = UDim2.fromOffset(13, 12)
+        heading.Size = UDim2.fromOffset(width - 55, 20)
+        local count = label(frame, "0", 17, gold, Enum.TextXAlignment.Right)
+        count.Font = Enum.Font.GothamBold
+        count.Position = UDim2.new(1, -48, 0, 8)
+        count.Size = UDim2.fromOffset(34, 25)
         new("Frame", {
-            Position = UDim2.fromOffset(17, 44),
-            Size = UDim2.new(1, -34, 0, 1),
+            Position = UDim2.fromOffset(13, 39),
+            Size = UDim2.new(1, -26, 0, 2),
             BackgroundColor3 = accent, BorderSizePixel = 0,
         }, frame)
         return frame, count
     end
-    local combatColumn, combatCount = column("Combat", 215, 585)
-    local sunsetColumn, sunsetCount = column("Sunset", 215, 585)
-    local selectedCategory = "Combat"
-    local navButtons = {}
-    local function selectCategory(name)
-        selectedCategory = name
-        combatColumn.Visible = name == "Combat"
-        sunsetColumn.Visible = name == "Sunset"
-        for category, button in pairs(navButtons) do
-            button.BackgroundTransparency = category == name and 0 or 1
-            button.BackgroundColor3 = Color3.fromRGB(63, 44, 119)
-        end
-    end
-    for index, category in ipairs({ "Combat", "Sunset" }) do
-        local button = new("TextButton", {
-            Position = UDim2.fromOffset(8, 41 + (index - 1) * 47),
-            Size = UDim2.new(1, -16, 0, 43),
-            BackgroundColor3 = columnColor, BackgroundTransparency = 1,
-            BorderSizePixel = 0, Text = "", AutoButtonColor = false,
-        }, rail)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, button)
-        local icon = label(button, category == "Combat" and "C" or "R", 14,
-            gold, Enum.TextXAlignment.Center)
-        icon.Font = Enum.Font.GothamBold
-        icon.Position = UDim2.fromOffset(9, 9)
-        icon.Size = UDim2.fromOffset(25, 25)
-        icon.BackgroundColor3 = Color3.fromRGB(38, 44, 67)
-        icon.BackgroundTransparency = 0
-        new("UICorner", { CornerRadius = UDim.new(0, 7) }, icon)
-        local navText = label(button, category == "Combat" and "COMBAT" or BRAND,
-            12, Color3.fromRGB(208, 216, 240))
-        navText.Font = Enum.Font.GothamMedium
-        navText.Position = UDim2.fromOffset(44, 12)
-        navText.Size = UDim2.fromOffset(110, 20)
-        navButtons[category] = button
-        button.MouseButton1Click:Connect(function() selectCategory(category) end)
-    end
-    selectCategory(selectedCategory)
-    new("Frame", { Position = UDim2.fromOffset(20, 492),
-        Size = UDim2.fromOffset(780, 1),
-        BackgroundColor3 = Color3.fromRGB(52, 60, 89), BorderSizePixel = 0 }, RivalsUI)
-    local footer = label(RivalsUI, "●  READY     •     RIGHT SHIFT TO CLOSE", 11, gold)
-    footer.Position = UDim2.fromOffset(28, 499)
-    footer.Size = UDim2.fromOffset(480, 17)
+    local combatColumn, combatCount = column("Combat", 20, 200)
+    local sunsetColumn, sunsetCount = column("Sunset", 235, 230)
 
     local watermarkControl, menuBlurControl
     for _, control in ipairs(ConfigControls) do
@@ -9391,43 +9176,22 @@ function RivalsAim.BuildUI()
     local cards = {}
     local function addCard(category, parent, name, index, click, value)
         local card = new("TextButton", {
-            Name = name, Position = UDim2.fromOffset(12, 55 + (index - 1) * 81),
-            Size = UDim2.new(1, -24, 0, 70),
+            Name = name, Position = UDim2.fromOffset(9, 51 + (index - 1) * 39),
+            Size = UDim2.new(1, -18, 0, 35),
             BackgroundColor3 = cardColor, BorderSizePixel = 0,
             Text = "", AutoButtonColor = false,
         }, parent)
-        new("UICorner", { CornerRadius = UDim.new(0, 12) }, card)
-        border(card, Color3.fromRGB(53, 61, 88))
-        local tile = new("Frame", {
-            Position = UDim2.fromOffset(11, 13), Size = UDim2.fromOffset(43, 43),
-            BackgroundColor3 = Color3.fromRGB(43, 42, 77), BorderSizePixel = 0,
-        }, card)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, tile)
-        local icon = label(tile, string.sub(name, 1, 1):upper(), 20,
-            Color3.fromRGB(200, 183, 255), Enum.TextXAlignment.Center)
-        icon.Font = Enum.Font.GothamBold
-        icon.Size = UDim2.fromScale(1, 1)
-        local caption = label(card, name, 16, Color3.fromRGB(242, 244, 255))
-        caption.Font = Enum.Font.GothamSemibold
-        caption.Position = UDim2.fromOffset(65, 14)
-        caption.Size = UDim2.new(1, -165, 0, 21)
-        local summaries = {
-            ["Silent Aim"] = "Targets within the FOV circle while firing.",
-            ["FOV Circle"] = "Shows the targeting boundary.",
-            ["FOV Radius"] = "Left-click +25 px  •  right-click -25 px.",
-            ["Watermark"] = "Shows the Rift status overlay.",
-            ["Menu Blur"] = "Blurs the world behind this menu.",
-            ["Menu Key"] = "Choose the key that opens Rift.",
-        }
-        local summary = label(card, summaries[name] or "Rift setting", 11, muted)
-        summary.Position = UDim2.fromOffset(65, 38)
-        summary.Size = UDim2.new(1, -155, 0, 17)
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, card)
+        local caption = label(card, name, 14, Color3.fromRGB(242, 244, 255))
+        caption.Font = Enum.Font.GothamMedium
+        caption.Position = UDim2.fromOffset(10, 7)
+        caption.Size = UDim2.new(1, -88, 0, 21)
         local state = label(card, "", 12, gold, Enum.TextXAlignment.Right)
         state.Font = Enum.Font.GothamMedium
-        state.Position = UDim2.new(1, -101, 0, 24)
-        state.Size = UDim2.fromOffset(87, 21)
+        state.Position = UDim2.new(1, -92, 0, 7)
+        state.Size = UDim2.fromOffset(82, 21)
         card.MouseButton1Click:Connect(click)
-        card.MouseEnter:Connect(function() card.BackgroundColor3 = Color3.fromRGB(46, 49, 77) end)
+        card.MouseEnter:Connect(function() card.BackgroundColor3 = Color3.fromRGB(47, 54, 78) end)
         card.MouseLeave:Connect(function() card.BackgroundColor3 = cardColor end)
         table.insert(cards, { Category = category, Name = string.lower(name), Card = card,
             State = state, Value = value })
@@ -9450,7 +9214,7 @@ function RivalsAim.BuildUI()
         RivalsAim.Radius = math.max(50, RivalsAim.Radius - 25)
     end)
     local radiusHint = label(combatColumn, "Left +25  ·  Right -25", 11, muted)
-    radiusHint.Position = UDim2.fromOffset(16, 307)
+    radiusHint.Position = UDim2.fromOffset(10, 168)
     radiusHint.Size = UDim2.new(1, -20, 0, 14)
     addCard("Sunset", sunsetColumn, "Watermark", 1, function()
         if watermarkControl then watermarkControl.Set(not watermarkControl.Get()) end
@@ -9473,19 +9237,15 @@ function RivalsAim.BuildUI()
                 or string.find(entry.Name, query, 1, true) ~= nil
                 or string.find(string.lower(entry.Category), query, 1, true) ~= nil
             if entry.Card.Visible then
-                entry.Card.Position = UDim2.fromOffset(12,
-                    55 + counts[entry.Category] * 81)
+                entry.Card.Position = UDim2.fromOffset(9,
+                    51 + counts[entry.Category] * 39)
                 counts[entry.Category] += 1
             end
             entry.State.Text = entry.Value()
         end
-        combatCount.Text = tostring(counts.Combat) .. " MODULES"
-        sunsetCount.Text = tostring(counts.Sunset) .. " MODULES"
+        combatCount.Text = tostring(counts.Combat)
+        sunsetCount.Text = tostring(counts.Sunset)
         radiusHint.Visible = radiusCard.Visible
-        if query ~= "" and counts[selectedCategory] == 0 then
-            if counts.Combat > 0 then selectCategory("Combat")
-            elseif counts.Sunset > 0 then selectCategory("Sunset") end
-        end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refresh)
     track(RunService.Heartbeat:Connect(function()
