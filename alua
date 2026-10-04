@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-polish-k240"
+local SUNSET_BUILD = "20261003-rift-polish-k242"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -143,7 +143,7 @@ local function riftAsset(filename)
     end
     if not exists and typeof(writefile) == "function" then
         local ok, bytes = pcall(function()
-            return game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/assets/"
+            return game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/main/assets/"
                 .. filename .. "?v=" .. SUNSET_BUILD)
         end)
         if ok and type(bytes) == "string" and #bytes > 100 then
@@ -3716,7 +3716,7 @@ local function bedWarsAuraStep()
         BedWars.AuraSwordItem = nil
     end
     if BedWars.ScaffoldOn and BedWars.BridgingNeeded
-        and os.clock() - BedWars.BridgingNeeded < 0.55 then return end
+        and os.clock() - BedWars.BridgingNeeded < 1.1 then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -4058,6 +4058,9 @@ local function bedWarsReleaseScaffoldItem()
     end
 end
 local scaffoldPauseUntil = 0
+local function scaffoldGridKey(grid)
+    return tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
+end
 local function bedWarsScaffoldStep()
     if BedWars.ItemBusy then return end
     if BedWars.HoldingAbility()
@@ -4100,6 +4103,8 @@ local function bedWarsScaffoldStep()
         end
         return grid
     end
+    BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
+    BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
     local function hasNeighbor(candidate)
         local center = candidate * 3
         for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
@@ -4107,20 +4112,33 @@ local function bedWarsScaffoldStep()
             Vector3.new(0, 0, 3), Vector3.new(0, 0, -3),
             Vector3.new(3, 0, 3), Vector3.new(3, 0, -3),
             Vector3.new(-3, 0, 3), Vector3.new(-3, 0, -3) }) do
-            if workspace:Raycast(center, offset, ray) then return true end
+            if BedWars.ScaffoldInFlight[scaffoldGridKey(candidate + offset / 3)]
+                or workspace:Raycast(center, offset, ray) then return true end
         end
         return false
     end
-    local grid = emptyCell(root.Position)
-    if grid and not hasNeighbor(grid) then grid = nil end
+    local grid
+    local now = os.clock()
+    local checked = {}
+    local function consider(position)
+        local candidate = emptyCell(position)
+        if not candidate then return false end
+        local key = scaffoldGridKey(candidate)
+        if checked[key] then return false end
+        checked[key] = true
+        if BedWars.ScaffoldInFlight[key]
+            or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
+            or not hasNeighbor(candidate) then return false end
+        grid = candidate
+        return true
+    end
+    consider(root.Position)
     if not grid and not towerRequested
         and humanoid.MoveDirection.Magnitude >= 0.05 then
-        local velocity = root.AssemblyLinearVelocity
-        local horizontal = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-        local lead = math.clamp(horizontal * 0.12 + 1.5, 2.5, 4.5)
-        local candidate = emptyCell(root.Position
-            + humanoid.MoveDirection.Unit * lead)
-        if candidate and hasNeighbor(candidate) then grid = candidate end
+        local direction = humanoid.MoveDirection.Unit
+        for _, lead in ipairs({ 3, 6, 9 }) do
+            if consider(root.Position + direction * lead) then break end
+        end
     end
     if not grid and BedWars.ScaffoldVoidRescue
         and root.AssemblyLinearVelocity.Y < -8 then
@@ -4128,12 +4146,9 @@ local function bedWarsScaffoldStep()
         -- height instead of waiting to land on a block that is not there.
         for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
             Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-            local candidate = emptyCell(root.Position + offset)
-            if candidate and hasNeighbor(candidate)
-                and (candidate * 3 - root.Position).Magnitude <= 18 then
-                grid = candidate
-                break
-            end
+            if consider(root.Position + offset)
+                and (grid * 3 - root.Position).Magnitude <= 18 then break end
+            grid = nil
         end
     end
     if not grid then return end
@@ -4153,13 +4168,10 @@ local function bedWarsScaffoldStep()
         return
     end
     BedWars.BridgingNeeded = os.clock()
-    local key = tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
-    BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
-    local now = os.clock()
-    BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
+    local key = scaffoldGridKey(grid)
     if BedWars.ScaffoldInFlight[key]
-        or (BedWars.ScaffoldAttempts[key] or 0) + 0.22 > now
-        or (BedWars.ScaffoldPending or 0) >= 3 then return end
+        or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
+        or (BedWars.ScaffoldPending or 0) >= 5 then return end
     BedWars.ScaffoldAttempts[key] = now
     BedWars.ScaffoldInFlight[key] = true
     BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
@@ -4170,7 +4182,7 @@ local function bedWarsScaffoldStep()
         BedWars.ScaffoldInFlight[key] = nil
         BedWars.ScaffoldPending = math.max(0, (BedWars.ScaffoldPending or 1) - 1)
     end
-    task.delay(1, finishPlacement)
+    task.delay(0.65, finishPlacement)
     BedWars.ItemBusy = true
     task.spawn(function()
         local dispatched = false
@@ -7085,7 +7097,7 @@ task.spawn(function()
         end
         if BedWars.ScaffoldPreviousItem and (not BedWars.ScaffoldOn
             or not BedWars.BridgingNeeded
-            or os.clock() - BedWars.BridgingNeeded > (BedWars.SpeedOn and 0.9 or 0.55)) then
+            or os.clock() - BedWars.BridgingNeeded > (BedWars.SpeedOn and 1.5 or 1.1)) then
             bedWarsReleaseScaffoldItem()
         end
         task.wait(0.02)
@@ -8942,7 +8954,7 @@ function BedWars.BuildUI()
         Name = "BedWarsModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, -14, 0, 38),
-        Size = UDim2.fromOffset(190, 24),
+        Size = UDim2.fromOffset(224, 24),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
     local moduleListScale = new("UIScale", { Scale = 1 }, moduleList)
@@ -8962,7 +8974,7 @@ function BedWars.BuildUI()
                 Vector2.new(1000, 25)).X)
             local textColor = gold
             local row = new("Frame", {
-                Visible = false, Size = UDim2.fromOffset(math.min(textWidth + 13, 184), 18),
+                Visible = false, Size = UDim2.fromOffset(math.min(textWidth + 22, 220), 18),
                 LayoutOrder = -textWidth * 1000 + index,
                 BackgroundColor3 = Color3.fromRGB(22, 27, 41),
                 BackgroundTransparency = 0.02,
@@ -8980,7 +8992,7 @@ function BedWars.BuildUI()
             textLabel.Position = UDim2.fromOffset(2, 0)
             textLabel.Size = UDim2.new(1, -8, 0, 18)
             textLabel.TextStrokeTransparency = 1
-            textLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            textLabel.TextTruncate = Enum.TextTruncate.None
             entry.ModuleRow = row
             entry.ModuleText = textLabel
             entry.ModuleAccent = strip
@@ -9036,7 +9048,7 @@ function BedWars.BuildUI()
             BedWars.ModuleListShifted = canShift
             local rowStep = 19
             local contentHeight = 26 + #activeRows * rowStep
-            moduleList.Size = UDim2.fromOffset(190, contentHeight)
+            moduleList.Size = UDim2.fromOffset(224, contentHeight)
             moduleListScale.Scale = math.min(1,
                 math.max(1, viewport.Y - 52) / math.max(1, contentHeight))
             moduleBrand.Text = BRAND
@@ -9537,7 +9549,7 @@ if detectedGame then
             return
         end
         local loaderUrl = ENV.SunsetLoaderUrl
-            or ("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/refs/heads/main/alua?build=" .. SUNSET_BUILD)
+            or ("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/main/alua?build=" .. SUNSET_BUILD)
         local localReady = false
         if typeof(readfile) == "function" then
             local readOk, saved = pcall(readfile, SUNSET_LOCAL_SOURCE)
