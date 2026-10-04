@@ -15,6 +15,7 @@ local detectedGame="Rivals"
 local SUNSET_BUILD="test-reinject-k260"
 local SUNSET_LOCAL_SOURCE="SunsetConfigs/SunsetCurrent.lua"
 local AutoReinject={enabled=true,Status={}}
+local SUNSET_REINJECT_TICKET="SunsetConfigs/SunsetReinjectTicket.txt"
 local files,encodedData={},{}
 local HttpService={JSONEncode=function(_,data)
     local id=tostring(#encodedData+1)
@@ -23,6 +24,12 @@ local HttpService={JSONEncode=function(_,data)
 end,JSONDecode=function(_,id) return encodedData[tonumber(id)] end}
 local writefile=function(path,data) files[path]=data end
 local readfile=function(path) assert(files[path],"missing mock file") return files[path] end
+local nextTicket=0
+function HttpService:GenerateGUID()
+    nextTicket+=1
+    return "ticket-"..nextTicket
+end
+-- INSERT_CANCEL_PRODUCTION
 
 -- INSERT_PERSISTENCE_PRODUCTION
 
@@ -90,7 +97,7 @@ assert(compiled,err)
 local function runQueue(place,universe,disabled)
     local fresh={}
     if disabled then fresh.SunsetAutoReinject=false end
-    local sandbox=setmetatable({getgenv=function() return fresh end,typeof=type,task=task,
+    local sandbox=setmetatable({getgenv=function() return fresh end,typeof=type,task=task,readfile=readfile,
         game={PlaceId=place,GameId=universe,IsLoaded=function() return true end,
             HttpGet=function() error("embedded loader unexpectedly used HTTP") end}}, {__index=getfenv()})
     sandbox.loadstring=function(source)
@@ -107,6 +114,16 @@ assert(runQueue(999,6035872082).Reloads==1,"Rivals subplace was not reinjected")
 assert(runQueue(6872265039,2619619496).Reloads==1,"BedWars was not reinjected")
 assert(runQueue(1,2).Reloads==nil,"unsupported game loaded Rift")
 assert(runQueue(17625359962,6035872082,true).Reloads==nil,"disabled destination loaded Rift")
+AutoReinject.Cancel()
+assert(ENV.SunsetAutoReinject==false and not AutoReinject.enabled and not AutoReinject.queued)
+assert(runQueue(17625359962,6035872082).Reloads==nil,
+    "Unload did not cancel the already-queued loader in a fresh destination environment")
+AutoReinject.enabled=true
+AutoReinject.Queue()
+assert(#queued==2,"explicit re-enable did not queue a fresh ticket")
+assert(runQueue(17625359962,6035872082).Reloads==nil,"old loader revived after re-enable")
+compiled=assert(loadstring(queued[2]))
+assert(runQueue(17625359962,6035872082).Reloads==1,"fresh loader failed after explicit re-enable")
 AutoReinject.queued=false
 installQueue(nil)
 AutoReinject.Queue()
@@ -120,4 +137,4 @@ AutoReinject.Queue()
 assert(not AutoReinject.queued)
 AutoReinject.Queue()
 assert(AutoReinject.queued and attempts==2,"failed queue could not be retried")
-print("PASS auto reinject: legacy Rivals setting repaired, opt-out retained, queued loader runs, supported games, retry")
+print("PASS auto reinject: migration, queued loader, fresh-environment unload cancellation, stale tickets, re-enable, retry")

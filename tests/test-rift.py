@@ -62,6 +62,12 @@ def main():
         slider_path = temp / 'slider-spec.luau'
         slider_path.write_text(slider_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(slider_path)], check=True)
+        startup_spec = (ROOT / 'tests' / 'startup-spec.luau').read_text(encoding='utf-8')
+        startup_spec = startup_spec.replace('-- INSERT_STARTUP_PRODUCTION',
+            between(inner, 'local function waitForRivalsStartup()', '\nif (game.PlaceId'))
+        startup_path = temp / 'startup-spec.luau'
+        startup_path.write_text(startup_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(startup_path)], check=True)
         rivals_chunks = [
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),
             between(inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
@@ -83,12 +89,16 @@ def main():
             between(inner, 'function Persistence.ControlApplies(', '\nlocal function configKey'))
         reinject_spec = reinject_spec.replace('-- INSERT_QUEUE_PRODUCTION',
             between(inner, 'if detectedGame then\n    local queueTeleport', '\ndo\n    if detectedGame then'))
+        reinject_spec = reinject_spec.replace('-- INSERT_CANCEL_PRODUCTION',
+            between(inner, 'function AutoReinject.Cancel()', '\nlocal RefreshConfigList'))
         reinject_path = temp / 'reinject-spec.luau'
         reinject_path.write_text(reinject_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(reinject_path)], check=True)
         startup = between(inner, 'if detectedGame then\n    Persistence.Restore',
                           '\nENV.SunsetLoading.Status.Text')
         assert 'AutoReinject.Toggle.Set(false)' not in startup
+        unload = between(inner, 'ENV.SunsetUnload = function()', '\nprint(BRAND')
+        assert 'AutoReinject.Cancel()' in unload
     # Notifications must not move or hide the module list on narrow screens.
     listing = between(inner, '    local moduleList = new(', '\n    local dragHandle')
     assert 'notificationsVisible' not in listing and 'ModuleListShifted' not in listing

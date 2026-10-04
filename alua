@@ -11,6 +11,35 @@ if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
     return
 end
 
+local ENV = (typeof(getgenv) == "function" and getgenv()) or _G
+local function waitForRivalsStartup()
+    local token = {}
+    ENV.SunsetStartupToken = token
+    local deadline = os.clock() + 120
+    local players = game:GetService("Players")
+    while ENV.SunsetStartupToken == token do
+        local player = players.LocalPlayer
+        local scripts = player and player:FindFirstChild("PlayerScripts")
+        local controllers = scripts and scripts:FindFirstChild("Controllers")
+        local fighter = controllers and controllers:FindFirstChild("FighterController")
+        if game:IsLoaded() and workspace.CurrentCamera and fighter and type(getloadedmodules) == "function" then
+            local ok, modules = pcall(getloadedmodules)
+            if ok and type(modules) == "table" and table.find(modules, fighter) then
+                ENV.SunsetStartupToken = nil
+                return true
+            end
+        end
+        if os.clock() >= deadline then
+            ENV.SunsetStartupToken = nil
+            warn("[Rift] Rivals has not finished initializing. Rift did not start; rejoin and wait for the lobby.")
+            return false
+        end
+        task.wait(0.25)
+    end
+    return false
+end
+if (game.PlaceId == 17625359962 or game.GameId == 6035872082) and not waitForRivalsStartup() then return end
+
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -24,14 +53,13 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-safe-startup-k265"
+local SUNSET_BUILD = "20261004-rift-rivals-loading-unload-k266"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 
 
 
-local ENV = (typeof(getgenv) == "function" and getgenv()) or _G
 if typeof(ENV.SunsetUnload) == "function" then
     pcall(ENV.SunsetUnload)
 end
@@ -69,6 +97,13 @@ local flyToggle
 local zoomUnlockToggle
 local spinToggle
 local AutoReinject = { enabled = true }
+local SUNSET_REINJECT_TICKET = "SunsetConfigs/SunsetReinjectTicket.txt"
+function AutoReinject.Cancel()
+    AutoReinject.enabled, AutoReinject.queued = false, false
+    ENV.SunsetAutoReinject = false
+    ENV.SunsetStartupToken = nil
+    if typeof(writefile) == "function" then pcall(writefile, SUNSET_REINJECT_TICKET, "cancelled") end
+end
 local RefreshConfigList
 
 
@@ -2711,6 +2746,7 @@ do
             AutoReinject.enabled = on == true
         end
         ENV.SunsetAutoReinject = AutoReinject.enabled
+        if not AutoReinject.enabled then AutoReinject.Cancel() end
         if AutoReinject.enabled and AutoReinject.ready and AutoReinject.Queue then
             AutoReinject.Queue()
         end
@@ -10034,6 +10070,8 @@ end
 
 ENV.SunsetUnload = function()
     Persistence.Save()
+    AutoReinject.Cancel()
+    AutoReinject.ready = false
     RivalsAim.Enabled = false
     if type(ENV.SunsetRivalsAimHook) == "table" then
         ENV.SunsetRivalsAimHook.Active = false
@@ -10094,6 +10132,20 @@ if detectedGame then
             AutoReinject.Status.Text = "Executor has no teleport queue"
             return
         end
+        if typeof(readfile) ~= "function" or typeof(writefile) ~= "function" then
+            AutoReinject.Status.Text = "Auto Reinject needs workspace file access"
+            return
+        end
+        local ticket = HttpService:GenerateGUID(false)
+        local ticketReady = pcall(function()
+            if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
+            writefile(SUNSET_REINJECT_TICKET, ticket)
+            assert(readfile(SUNSET_REINJECT_TICKET) == ticket, "Reinject ticket could not be saved")
+        end)
+        if not ticketReady then
+            AutoReinject.Status.Text = "Auto Reinject ticket could not be saved"
+            return
+        end
         local loaderUrl = ENV.SunsetLoaderUrl
             or ("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/main/alua?build=" .. SUNSET_BUILD)
         local localReady = false
@@ -10106,7 +10158,15 @@ if detectedGame then
             and string.find(ENV.SunsetEmbeddedSource, SUNSET_BUILD, 1, true)
             and ENV.SunsetEmbeddedSource or ""
         local code = string.format([[
+            local ticketPath, ticket = %q, %q
+            local function ticketValid()
+                if typeof(readfile) ~= "function" then return false end
+                local ok, current = pcall(readfile, ticketPath)
+                return ok and current == ticket
+            end
+            if not ticketValid() then return end
             repeat task.wait(0.1) until game:IsLoaded()
+            if not ticketValid() then return end
             local env = (typeof(getgenv) == "function" and getgenv()) or _G
             if env.SunsetAutoReinject ~= false then
                 local allowed = {
@@ -10132,12 +10192,12 @@ if detectedGame then
                             error("Rift loader has an outdated build")
                         end
                         env.SunsetEmbeddedSource = source
-                        loadstring(source)()
+                        if ticketValid() then loadstring(source)() end
                     end)
                     if not ok then warn("[Rift] Auto Reinject failed: " .. tostring(err)) end
                 end
             end
-        ]], SUNSET_LOCAL_SOURCE, SUNSET_BUILD, embedded, loaderUrl, SUNSET_BUILD)
+        ]], SUNSET_REINJECT_TICKET, ticket, SUNSET_LOCAL_SOURCE, SUNSET_BUILD, embedded, loaderUrl, SUNSET_BUILD)
         local ok, err = pcall(queueTeleport, code)
         AutoReinject.queued = ok
         AutoReinject.Status.Text = ok
