@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-player-priority-k250"
+local SUNSET_BUILD = "20261004-rift-player-priority-k251"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -2712,8 +2712,7 @@ BedWars = {
     AutoClickOn = false, AutoClickCPS = 10, AntiAFKOn = false,
     FastBreakOn = false, FastBreakCooldown = 0.25,
     NoClickDelayOn = false, ReachOn = false, ReachDistance = 18,
-    NoSlowdownOn = false, FastDropOn = false, NoFallOn = false,
-    NoFallMinDrop = 18,
+    NoSlowdownOn = false, FastDropOn = false,
     AimAssistOn = false, AimAssistSpeed = 6, AimAssistRange = 30,
     TriggerBotOn = false, TriggerCPS = 4,
     VelocityOn = false, VelocityHorizontal = 0, VelocityVertical = 0,
@@ -3419,19 +3418,17 @@ end
 function BedWars.VoidWater.Mode()
     return voidWaterMode
 end
-function BedWars.VoidWater.Place(position, surfaceY, mode, cushionWidth)
+function BedWars.VoidWater.Place(position, surfaceY, mode)
     mode = mode or "Void"
     local width = mode == "Fight"
         and math.ceil(math.max(40, (BedWars.WaterFightRange + 8) * 2) / 4) * 4
-        or mode == "NoFall" and math.ceil(math.clamp(cushionWidth or 32, 32, 128) / 4) * 4
         or math.floor(BedWars.VoidWaterWidth / 4) * 4
-    local depth = mode == "Fight" and 32 or mode == "NoFall" and 24
+    local depth = mode == "Fight" and 32
         or math.floor(BedWars.VoidWaterDepth / 4) * 4
     if voidWaterCenter and voidWaterTop == surfaceY and voidWaterMode == mode
         and voidWaterWidth == width
         and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
-            < (mode == "Fight" and 4 or mode == "NoFall" and width / 4
-                or math.min(24, width / 4)) then
+            < (mode == "Fight" and 4 or math.min(24, width / 4)) then
         return true
     end
     BedWars.VoidWater.Clear()
@@ -6266,9 +6263,6 @@ function BedWars.Stop()
     BedWars.SprintOn = false
     BedWars.AntiVoidOn = false
     BedWars.VoidWaterOn = false
-    BedWars.NoFallOn = false
-    BedWars.NoFallPeakY = nil
-    BedWars.NoFallWaterUntil = nil
     BedWars.WaterFightOn = false
     BedWars.AutoPlayAgainOn = false
     BedWars.SpiderOn = false
@@ -7321,7 +7315,7 @@ local function bedWarsSafeGround(position, character)
 end
 track(RunService.Heartbeat:Connect(function()
     if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end
-    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn and not BedWars.NoFallOn
+    if not BedWars.AntiVoidOn and not BedWars.VoidWaterOn
         and not BedWars.WaterFightOn then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -7331,12 +7325,8 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.SafeRoot = root
         BedWars.LastSafeCFrame = nil
         BedWars.WaterGroundY = nil
-        BedWars.NoFallPeakY = nil
-        BedWars.NoFallWaterUntil = nil
     end
     if not root or not humanoid or humanoid.Health <= 0 then
-        BedWars.NoFallPeakY = nil
-        BedWars.NoFallWaterUntil = nil
         BedWars.VoidWater.Clear()
         return
     end
@@ -7346,23 +7336,6 @@ track(RunService.Heartbeat:Connect(function()
     if grounded then
         BedWars.LastSafeCFrame = root.CFrame
         BedWars.WaterGroundY = root.Position.Y
-    end
-    local feetY = root.Position.Y - humanoid.HipHeight - root.Size.Y / 2
-    local swimming = humanoid:GetState() == Enum.HumanoidStateType.Swimming
-        or humanoid.FloorMaterial == Enum.Material.Water
-    if BedWars.NoFallOn then
-        if swimming then
-            BedWars.NoFallPeakY = nil
-            if BedWars.VoidWater.Mode() == "NoFall" then
-                BedWars.NoFallWaterUntil = os.clock() + 0.75
-            end
-        elseif grounded then
-            BedWars.NoFallPeakY = feetY
-        else
-            BedWars.NoFallPeakY = math.max(BedWars.NoFallPeakY or feetY, feetY)
-        end
-    else
-        BedWars.NoFallPeakY = nil
     end
     local fightTarget = false
     if BedWars.WaterFightOn then
@@ -7379,53 +7352,9 @@ track(RunService.Heartbeat:Connect(function()
             end
         end
     end
-    local noFallHit, noFallPosition, noFallWidth
-    if BedWars.NoFallOn and not grounded and not swimming then
-        local velocity = root.AssemblyLinearVelocity
-        if velocity.Y < -8 then
-            local ray = RaycastParams.new()
-            ray.FilterType = Enum.RaycastFilterType.Exclude
-            ray.FilterDescendantsInstances = { character }
-            ray.RespectCanCollide = true
-            ray.IgnoreWater = true
-            -- Sweep the predicted foot trajectory rather than casting below a
-            -- fixed horizontal offset. This catches fast and diagonal falls.
-            local origin = Vector3.new(root.Position.X, feetY + 0.5, root.Position.Z)
-            local previous = origin
-            for step = 1, 6 do
-                local seconds = step * 0.1
-                local predicted = origin + velocity * seconds
-                    - Vector3.new(0, math.max(0, workspace.Gravity) * seconds * seconds / 2, 0)
-                local hit = workspace:Raycast(previous, predicted - previous, ray)
-                if hit then
-                    if hit.Normal.Y > 0.25 then noFallHit = hit end
-                    break
-                end
-                previous = predicted
-            end
-            if noFallHit then
-                local drop = (BedWars.NoFallPeakY or feetY)
-                    - noFallHit.Position.Y
-                if drop < BedWars.NoFallMinDrop then
-                    noFallHit = nil
-                else
-                    noFallPosition = (root.Position + noFallHit.Position) / 2
-                    local travel = Vector2.new(root.Position.X - noFallHit.Position.X,
-                        root.Position.Z - noFallHit.Position.Z).Magnitude
-                    noFallWidth = math.max(32, travel + 24)
-                end
-            end
-        end
-    end
     if fightTarget then
         BedWars.VoidWater.Place(root.Position,
             math.ceil((root.Position.Y + 16) / 4) * 4, "Fight")
-    elseif noFallHit then
-        local surfaceY = math.ceil((noFallHit.Position.Y
-            + math.clamp(-root.AssemblyLinearVelocity.Y * 0.12, 12, 24)) / 4) * 4
-        if BedWars.VoidWater.Place(noFallPosition, surfaceY, "NoFall", noFallWidth) then
-            BedWars.NoFallWaterUntil = os.clock() + 1.5
-        end
     else
         local voidBelow = false
         if BedWars.VoidWaterOn and BedWars.WaterGroundY
@@ -7442,10 +7371,7 @@ track(RunService.Heartbeat:Connect(function()
             BedWars.VoidWater.Place(root.Position,
                 math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4,
                 "Void")
-        elseif BedWars.VoidWater.Mode()
-            and not (BedWars.VoidWater.Mode() == "NoFall"
-                and BedWars.NoFallOn
-                and os.clock() < (BedWars.NoFallWaterUntil or 0)) then
+        elseif BedWars.VoidWater.Mode() then
             BedWars.VoidWater.Clear()
         end
     end
@@ -7602,17 +7528,6 @@ do
     end)
     Elements.Slider(spiderSection, "Climb Speed", 5, 30, 16, "studs",
         function(value) BedWars.SpiderSpeed = value end)
-    local noFallSection = gameSection(gameName, MainTab.Right, "No Fall")
-    Elements.Toggle(noFallSection, "No Fall", false, function(on)
-        BedWars.NoFallOn = on
-        BedWars.NoFallPeakY = nil
-        BedWars.NoFallWaterUntil = nil
-        if not on and BedWars.VoidWater.Mode() == "NoFall" then
-            BedWars.VoidWater.Clear()
-        end
-    end)
-    Elements.Slider(noFallSection, "Minimum Drop", 10, 60, 18, "studs",
-        function(value) BedWars.NoFallMinDrop = value end)
     local balloonSection = gameSection(gameName, MainTab.Right, "Auto Balloon")
     Elements.Toggle(balloonSection, "Auto Balloon", false, function(on)
         BedWars.AutoBalloonOn = on
@@ -8923,7 +8838,6 @@ function BedWars.BuildUI()
         { "Movement", "Spider", "Movement", "BedWars", "Spider", "Spider" },
         { "Movement", "Launch", "Movement", "BedWars", "Launch", "Launch" },
         { "Movement", "No Slowdown", "Movement", "BedWars", "No Slowdown", "No Slowdown" },
-        { "Movement", "No Fall", "Movement", "BedWars", "No Fall", "No Fall" },
         { "Movement", "Infinite Jump", "Movement", "BedWars", "Infinite Jump", "Infinite Jump" },
         { "Movement", "Gravity", "Movement", "BedWars", "Gravity", "Gravity" },
         { "Movement", "Auto Balloon", "Movement", "BedWars", "Auto Balloon", "Auto Balloon" },
@@ -9060,7 +8974,6 @@ function BedWars.BuildUI()
         ["Auto Clicker"] = "Repeats clicks while its activation condition is met.",
         ["Always Sprint"] = "Keeps sprint active while you move.",
         ["No Slowdown"] = "Reduces movement slowdown from supported actions.",
-        ["No Fall"] = "Places a temporary water cushion beneath damaging drops.",
         ["Auto Balloon"] = "Uses balloons automatically when a fall needs recovery.",
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",

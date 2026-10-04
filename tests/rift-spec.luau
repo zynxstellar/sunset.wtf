@@ -60,7 +60,7 @@ local Region3 = { new=function(a,b) return {Min=a,Max=b} end }
 local Region3int16 = Region3
 local Vector3int16 = Vector3
 local Settings = { SelectedGame="BedWars" }
-local BedWars = {Running=true,NoFallOn=true,NoFallMinDrop=18,ScaffoldOn=true,ScaffoldTowerOn=true,
+local BedWars = {Running=true,ScaffoldOn=true,ScaffoldTowerOn=true,
     ScaffoldVoidRescue=true,ScaffoldTowerSpeed=38,AuraOn=true,AuraCPS=10,MusicCoverFiles={},
     VoidWaterWidth=96,VoidWaterDepth=96,WaterFightRange=14}
 local Persistence = { HUDFrames={} }
@@ -237,43 +237,31 @@ end
 print("PASS scaffold: latency pipeline, duplicate suppression, diagonals, rejection retry, timeout/reset")
 
 advance(4)
-waterGround=0
+waterGround=nil
 character,root,humanoid=newCharacter(Vector3.new(0,30,0))
 LocalPlayer.Character=character
-humanoid.FloorMaterial=Enum.Material.Air
-root.AssemblyLinearVelocity=Vector3.new(40,-70,0)
-BedWars.NoFallOn=true
-BedWars.NoFallPeakY=60
+local nearby,nearbyRoot=newCharacter(Vector3.new(5,30,0))
+players={LocalPlayer,{Character=nearby}}
+BedWars.WaterFightOn=true
+local previousCopies=copies
 waterStep()
-assert(BedWars.VoidWater.Mode()=="NoFall", "damaging fall did not place water")
-assert(terrain.LastRegion.Max.Y>=12 and terrain.LastRegion.Max.Y-terrain.LastRegion.Min.Y==24, "cushion too shallow")
-local savedCopies=copies
-humanoid.state=Enum.HumanoidStateType.Swimming
-for _=1,20 do advance(0.1) waterStep() end
-assert(BedWars.VoidWater.Mode()=="NoFall", "water disappeared while swimming")
-humanoid.state="running"
-humanoid.FloorMaterial=Enum.Material.Grass
-root.Position=Vector3.new(0,3,0)
-root.AssemblyLinearVelocity=Vector3.zero
-swimmingGrounded=true
-advance(1)
+assert(BedWars.VoidWater.Mode()=="Fight", "water fight did not place water")
 waterStep()
-assert(BedWars.VoidWater.Mode()==nil and restores>0, "water did not restore after landing")
-swimmingGrounded=false
-humanoid.FloorMaterial=Enum.Material.Air
-root.Position=Vector3.new(0,8,0)
-root.AssemblyLinearVelocity=Vector3.new(0,-25,0)
-BedWars.NoFallPeakY=10
+assert(copies==previousCopies+1, "unchanged water region was recreated")
+nearbyRoot.Position=Vector3.new(100,30,0)
 waterStep()
-assert(copies==savedCopies, "short safe drop created water")
-root.Position=Vector3.new(0,30,0)
-root.AssemblyLinearVelocity=Vector3.new(0,-70,0)
-BedWars.NoFallPeakY=60
+assert(BedWars.VoidWater.Mode()==nil and restores>0, "fight water did not restore")
+BedWars.WaterFightOn=false
+BedWars.VoidWaterOn=true
+BedWars.VoidWaterGap=3
+BedWars.WaterGroundY=40
 waterStep()
+assert(BedWars.VoidWater.Mode()=="Void", "void water stopped working")
 humanoid.Health=0
 waterStep()
 assert(BedWars.VoidWater.Mode()==nil, "death left water behind")
-print("PASS NoFall: damaging/short drops, deep cushion, swimming retention, landing/death cleanup")
+BedWars.VoidWaterOn=false
+print("PASS water: fight trigger, region reuse, restoration, void trigger, death cleanup")
 
 waterGround=nil
 character,root,humanoid=newCharacter(Vector3.new(0,3,0))
