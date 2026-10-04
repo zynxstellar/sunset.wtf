@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-polish-k239"
+local SUNSET_BUILD = "20261003-rift-polish-k240"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -8945,6 +8945,7 @@ function BedWars.BuildUI()
         Size = UDim2.fromOffset(190, 24),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
+    local moduleListScale = new("UIScale", { Scale = 1 }, moduleList)
     Persistence.HUDFrames.ModuleList = moduleList
     BedWars.ModuleListRestingPosition = moduleList.Position
     local moduleBrand = label(moduleList, BRAND, 18,
@@ -9033,36 +9034,20 @@ function BedWars.BuildUI()
                 BedWars.ModuleListRestingPosition = moduleList.Position
             end
             BedWars.ModuleListShifted = canShift
-            local rightOffset = canShift and 310 or 14
-            local columnWidth, columnGap, rowStep = 190, 12, 22
-            local rowsThatFit = math.max(1, math.floor((viewport.Y - 98) / rowStep))
-            local targetRows = math.min(18, rowsThatFit)
-            local maxColumns = math.clamp(math.floor(
-                (viewport.X - rightOffset - 24) / 202), 1, 3)
-            local columnCount = math.min(maxColumns,
-                math.max(1, math.ceil(#activeRows / targetRows)))
-            local rowsPerColumn = math.min(rowsThatFit,
-                math.max(1, math.ceil(#activeRows / columnCount)))
-            local visibleCount = math.min(#activeRows, rowsPerColumn * columnCount)
-            moduleList.Size = UDim2.fromOffset(
-                columnCount * columnWidth + (columnCount - 1) * columnGap,
-                26 + rowsPerColumn * rowStep)
-            moduleBrand.Text = visibleCount < #activeRows
-                and (BRAND .. "  +" .. tostring(#activeRows - visibleCount)) or BRAND
+            local rowStep = 19
+            local contentHeight = 26 + #activeRows * rowStep
+            moduleList.Size = UDim2.fromOffset(190, contentHeight)
+            moduleListScale.Scale = math.min(1,
+                math.max(1, viewport.Y - 52) / math.max(1, contentHeight))
+            moduleBrand.Text = BRAND
             for index, entry in ipairs(activeRows) do
                 local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
                 local color = gold:Lerp(Color3.fromRGB(139, 92, 246), progress)
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
-                entry.ModuleRow.Visible = index <= visibleCount
-                if index <= visibleCount then
-                    local column = math.floor((index - 1) / rowsPerColumn)
-                    local row = (index - 1) % rowsPerColumn
-                    entry.ModuleRow.Position = UDim2.fromOffset(
-                        moduleList.Size.X.Offset - column * (columnWidth + columnGap)
-                            - entry.ModuleRow.Size.X.Offset,
-                        26 + row * rowStep)
-                end
+                entry.ModuleRow.Position = UDim2.fromOffset(
+                    moduleList.Size.X.Offset - entry.ModuleRow.Size.X.Offset,
+                    26 + (index - 1) * rowStep)
             end
             moduleList.Visible = Settings.SelectedGame == "BedWars"
                 and Settings.ModuleListOn and not BedWarsUI.Visible and anyActive
