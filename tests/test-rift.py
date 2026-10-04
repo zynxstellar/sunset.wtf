@@ -38,6 +38,10 @@ def main():
     water = between(inner, 'track(RunService.Heartbeat:Connect(function()\n    if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end\n    if not BedWars.AntiVoidOn', '\ntask.spawn(function()')
     water = water.removeprefix('track(RunService.Heartbeat:Connect(function()').removesuffix('\nend))')
     chunks.append('local function waterStep()' + water + '\nend\n')
+    spider = between(inner, 'track(RunService.PreSimulation:Connect(function()',
+                     '\ntrack(RunService.Heartbeat:Connect(function()\n    if (not BedWars.SpeedOn')
+    spider = spider.removeprefix('track(RunService.PreSimulation:Connect(function()').removesuffix('\nend))')
+    chunks.append('local function spiderStep()' + spider + '\nend\n')
     harness = (ROOT / 'tests' / 'rift-spec.luau').read_text(encoding='utf-8')
     harness = harness.replace('-- INSERT_PRODUCTION_FUNCTIONS', '\n'.join(chunks))
     suffix = '.exe' if (args.luau_dir / 'luau.exe').exists() else ''

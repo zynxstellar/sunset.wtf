@@ -141,6 +141,7 @@ function terrain:WriteVoxels(region,resolution,materials)
     self.LastRegion=region
 end
 local npcParts = {}
+local spiderRay
 local workspace = {Terrain=terrain,Gravity=196.2}
 function workspace:GetPartBoundsInBox(frame)
     local p=frame.Position/3
@@ -148,6 +149,7 @@ function workspace:GetPartBoundsInBox(frame)
 end
 function workspace:GetPartBoundsInRadius() return npcParts end
 function workspace:Raycast(origin,direction)
+    if spiderRay then return spiderRay(origin,direction) end
     if waterGround then
         if direction.Y < 0 and origin.Y >= waterGround and origin.Y+direction.Y <= waterGround then
             local t=(waterGround-origin.Y)/direction.Y
@@ -334,6 +336,48 @@ assert(attackCalls[#attackCalls].payload.entityInstance==guardian,
     "NPC fallback stopped working when no player was in range")
 npcParts={}
 print("PASS player priority: closer guardian, lower/higher-health NPCs, all priority modes, NPC fallback")
+
+BedWars.SpiderOn=true
+BedWars.SpiderSpeed=16
+BedWars.FlyOn=false
+character,root,humanoid=newCharacter(Vector3.new(0,3,0))
+LocalPlayer.Character=character
+root.CFrame.LookVector=Vector3.new(1,0,0)
+for _,movement in ipairs({Vector3.new(0,0,1),Vector3.new(0,0,-1),
+    Vector3.new(-1,0,0),Vector3.new(1,0,1).Unit}) do
+    humanoid.MoveDirection=movement
+    root.AssemblyLinearVelocity=Vector3.new(4,-10,5)
+    spiderRay=function(origin,direction)
+        assert((direction-movement*3).Magnitude<0.000001, "Spider used facing instead of movement direction")
+        return {Position=origin+direction,Normal=Vector3.new(-movement.X,0,-movement.Z)}
+    end
+    spiderStep()
+    assert(root.AssemblyLinearVelocity==Vector3.new(4,16,5), "sideways/backward climb failed")
+end
+root.AssemblyLinearVelocity=Vector3.new(4,20,5)
+spiderStep()
+assert(root.AssemblyLinearVelocity.Y==20, "Spider reduced existing upward velocity")
+spiderRay=function() return nil end
+root.AssemblyLinearVelocity=Vector3.new(4,-10,5)
+spiderStep()
+assert(root.AssemblyLinearVelocity.Y==-10, "Spider climbed without a wall")
+spiderRay=function() return {Normal=Vector3.new(0,1,0)} end
+spiderStep()
+assert(root.AssemblyLinearVelocity.Y==-10, "Spider climbed a horizontal floor")
+spiderRay=function() return {Normal=Vector3.new(1,0,0)} end
+humanoid.MoveDirection=Vector3.zero
+spiderStep()
+assert(root.AssemblyLinearVelocity.Y==-10, "idle Spider climbed")
+humanoid.MoveDirection=Vector3.new(1,0,0)
+BedWars.FlyOn=true
+spiderStep()
+assert(root.AssemblyLinearVelocity.Y==-10, "Spider interfered with Fly")
+BedWars.FlyOn=false
+humanoid.state=Enum.HumanoidStateType.Swimming
+spiderStep()
+assert(root.AssemblyLinearVelocity.Y==-10, "Spider interfered with swimming")
+spiderRay=nil
+print("PASS Spider: sideways/backward/diagonal movement, horizontal velocity, wall/floor/idle/Fly/swim filters")
 
 local listFrame={Parent=true,Position=UDim2.new(1,-14,0,38)}
 local hudFrame={Parent=true,Position=UDim2.new(0,0,0,0)}
