@@ -53,8 +53,9 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-loading-unload-k266"
+local SUNSET_BUILD = "20261004-rift-players-velocity-camera-k267"
 local BRAND = "RIFT"
+local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
 
@@ -113,10 +114,11 @@ local Settings = {
     MenuKey        = Enum.KeyCode.RightShift,
     FlyEnabled     = false,
     FlySpeed       = 50,
+    FlyCoast       = 0.5,
     NoclipEnabled  = false,
     EspEnabled     = false,
     EspNames       = true,
-    EspTeamCheck   = true,
+    EspTeamCheck   = false,
     TpTeamCheck    = true,
     AutoTp         = false,
     AutoTpDelay    = 0.5,
@@ -133,11 +135,12 @@ local Settings = {
 local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150,
     AimPart = "Head", WallCheck = true,
     Assist = { Enabled = false, AimPart = "Head", WallCheck = true, HoldMouse = true, Strength = 8 },
-    Aimbot = { Enabled = false, AimPart = "Head", WallCheck = true, HoldMouse = true },
+    Aimbot = { Enabled = false, AimPart = "Head", WallCheck = false, HoldMouse = true, MaxDistance = 1000 },
     Available = false }
 local RivalsVisuals = { BoxesOn = false, OutlinesOn = false,
+    TargetHUDOn = false, TargetHUDBarTime = 0.3, MusicOverlayOn = false,
     BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
-local RivalsKillChat = { Enabled = false, Message = "GG! - Rift", Cooldown = 2, Queue = {} }
+local RivalsKillChat = { Enabled = false, Cooldown = 2, Queue = {} }
 
 
 
@@ -576,6 +579,7 @@ function Persistence.ControlApplies(control, gameName)
     if scope == gameName then return true end
     if scope ~= "All" then return false end
     if gameName == "Rivals" then return tab == "Sunset" end
+    if control.Key:match("^Player/All/Third Person/") then return true end
     return not control.Box or not table.find(bedWarsHiddenSections, control.Box)
 end
 function Persistence.SavedHUDPositions()
@@ -626,6 +630,7 @@ do
         end
         local data = { Version = 5, Game = gameName, Controls = saved,
             AutoReinjectVersion = 1,
+            RiftThemeVersion = 1,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions() }
         if gameName == "Rivals" then
             data.RivalsAim = { Enabled = RivalsAim.Enabled,
@@ -635,6 +640,8 @@ do
             data.Session = BedWars.Session
         end
         ENV.SunsetSettingsSnapshot = data
+        if type(ENV.SunsetSettingsSnapshots) ~= "table" then ENV.SunsetSettingsSnapshots = {} end
+        ENV.SunsetSettingsSnapshots[gameName] = data
         if typeof(writefile) ~= "function" then return true end
         local ok, encoded = pcall(HttpService.JSONEncode, HttpService, data)
         if not ok then return false end
@@ -647,7 +654,11 @@ do
         return written
     end
     function Persistence.Restore(gameName, menuKeyControl)
+        local snapshots = ENV.SunsetSettingsSnapshots
         local data = ENV.SunsetSettingsSnapshot
+        if (type(data) ~= "table" or data.Game ~= gameName) and type(snapshots) == "table" then
+            data = snapshots[gameName]
+        end
         if (type(data) ~= "table" or data.Game ~= gameName)
             and typeof(readfile) == "function" then
             local ok, decoded = pcall(function()
@@ -698,8 +709,11 @@ do
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
         end
+        local pendingToggles = {}
         for _, item in ipairs(data.Controls) do
-            local control = item.Key and byKey[item.Key]
+            local key = item.Key and item.Key:gsub("Visuals/Rivals/Enemy Outlines/", "Visuals/Rivals/Player Outlines/")
+            if key == "Visuals/Rivals/Player Outlines/Enemy Outlines" then key = "Visuals/Rivals/Player Outlines/Player Outlines" end
+            local control = key and byKey[key]
             if gameName == "BedWars" and item.Kind == "number"
                 and item.Key == "Movement/BedWars/Speed/Speed" then
                 control = byKey["Movement/BedWars/Speed/Move Speed"]
@@ -719,21 +733,27 @@ do
                 if control.Key == "Fun/BedWars/Auto Reply/Message"
                     and value == "Sunset.wtf <3" then value = "Rift <3" end
                 if control.Key == "Sunset/All/Colors/Preset"
-                    and (data.Version or 1) < 5 then value = "Rift" end
+                    and data.RiftThemeVersion ~= 1 then value = "Rift" end
                 if control.Key == "Sunset/All/Colors/Accent Color"
-                    and (data.Version or 1) < 5 then
+                    and data.RiftThemeVersion ~= 1 then
                     value = { 139, 92, 246 }
                 end
                 if control.Kind == "color" and type(value) == "table" then
                     value = Color3.fromRGB(tonumber(value[1]) or 255,
                         tonumber(value[2]) or 255, tonumber(value[3]) or 255)
                 end
-                control.Set(value)
+                if control.Kind == "toggle" then
+                    pendingToggles[#pendingToggles + 1] = { Control = control, Value = value }
+                else
+                    control.Set(value)
+                end
                 if control.SetBind then
                     control.SetBind(item.Bind and Enum.KeyCode[item.Bind] or nil)
                 end
             end
         end
+        -- Apply saved parameters and bindings before starting the modules that use them.
+        for _, pending in ipairs(pendingToggles) do pending.Control.Set(pending.Value) end
         if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
             menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
         end
@@ -1031,7 +1051,7 @@ local function sliderNumber(raw, low, high, previous, step)
     local rounded = low + math.floor((number - low) / step + 0.5) * step
     return math.clamp(tonumber(string.format("%.4f", rounded)), low, high)
 end
-function Elements.Slider(parent, text, min, max, default, suffix, callback, step)
+function Elements.Slider(parent, text, min, max, default, suffix, callback, step, unlimitedInput)
     local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 52), BackgroundTransparency = 1 }, parent)
     local value = sliderNumber(default or min, min, max, min, step)
     local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
@@ -1067,11 +1087,11 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     }, bar)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, knob)
     local function set(raw, initial)
-        local updated = sliderNumber(raw, min, max, value, step)
+        local updated = sliderNumber(raw, min, unlimitedInput and math.huge or max, value, step)
         local changed = updated ~= value
         value = updated
         number.Text = tostring(value)
-        local fraction = max > min and (value - min) / (max - min) or 0
+        local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         fill.Size = UDim2.fromScale(fraction, 1)
         knob.Position = UDim2.fromScale(fraction, 0.5)
         if callback and (changed or initial) then task.spawn(callback, value) end
@@ -1093,7 +1113,7 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
             and input.UserInputType ~= Enum.UserInputType.Touch) then return end
         if bar.AbsoluteSize.X <= 0 then return end
         dragInput = input
-        local fraction = max > min and (value - min) / (max - min) or 0
+        local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         local offset = input.Position.X - (bar.AbsolutePosition.X + fraction * bar.AbsoluteSize.X)
         -- Keep the value steady when grabbing the handle; clicks elsewhere jump to that spot.
         grabOffset = math.abs(offset) <= 12 and offset or 0
@@ -1307,9 +1327,8 @@ end
 
 local Fly = {}
 do
-    local bv, bg, conn, physicsConn, postPhysicsConn, flightRoot
+    local bv, bg, conn, flightRoot, flightHumanoid, originalPlatformStand
     local desiredVelocity = Vector3.zero
-    local idlePosition = nil
 
     local function getRoot()
         local char = LocalPlayer.Character
@@ -1324,69 +1343,50 @@ do
             return
         end
         local root, hum = getRoot()
-        if not root then return end
-        Fly.Stop()
+        if not root or not hum or hum.Health <= 0 or root.Anchored then return end
+        Fly.Stop(false)
         flightRoot = root
-        idlePosition = root.Position
+        flightHumanoid, originalPlatformStand = hum, hum.PlatformStand
         hum.PlatformStand = true
-        root.AssemblyLinearVelocity = Vector3.zero
         root.AssemblyAngularVelocity = Vector3.zero
         bv = new("BodyVelocity", { MaxForce = Vector3.new(1e9, 1e9, 1e9), Velocity = Vector3.zero }, root)
         bg = new("BodyGyro", { MaxTorque = Vector3.new(1e9, 1e9, 1e9), P = 1e4, CFrame = root.CFrame }, root)
 
-        local function enforceFlight()
-            if not flightRoot or not flightRoot.Parent then return end
-            if desiredVelocity.Magnitude < 0.01 and idlePosition then
-
-
-                flightRoot.CFrame = CFrame.new(idlePosition) * flightRoot.CFrame.Rotation
-                flightRoot.AssemblyLinearVelocity = Vector3.zero
-            else
-                idlePosition = flightRoot.Position
-                flightRoot.AssemblyLinearVelocity = desiredVelocity
-            end
-            flightRoot.AssemblyAngularVelocity = Vector3.zero
-        end
-        physicsConn = RunService.Stepped:Connect(enforceFlight)
-        postPhysicsConn = RunService.Heartbeat:Connect(enforceFlight)
-
         conn = RunService.RenderStepped:Connect(function()
-            if not root.Parent then Fly.Stop() return end
+            if not root.Parent or hum.Health <= 0 then Fly.Stop(false) return end
             local dir = Vector3.zero
-            local cf = Camera.CFrame
-            if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cf.LookVector end
-            if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cf.LookVector end
-            if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cf.RightVector end
-            if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cf.RightVector end
-            if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
-            if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis end
-            if dir.Magnitude > 0 then dir = dir.Unit end
-            if desiredVelocity.Magnitude < 0.01 and dir.Magnitude > 0 then
-                idlePosition = root.Position
-            elseif desiredVelocity.Magnitude > 0 and dir.Magnitude == 0 then
-                idlePosition = root.Position
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+            local cf = camera.CFrame
+            if not anyMenuVisible() and not UIS:GetFocusedTextBox() then
+                if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cf.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cf.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cf.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cf.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.yAxis end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.yAxis end
             end
+            if dir.Magnitude > 0 then dir = dir.Unit end
             desiredVelocity = dir * Settings.FlySpeed
             bv.Velocity = desiredVelocity
-            bg.CFrame = CFrame.lookAt(root.Position, root.Position + Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z))
+            local facing = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
+            if facing.Magnitude > 0.001 then bg.CFrame = CFrame.lookAt(root.Position, root.Position + facing) end
         end)
     end
 
-    function Fly.Stop()
+    function Fly.Stop(coast)
         if conn then conn:Disconnect() conn = nil end
-        if physicsConn then physicsConn:Disconnect() physicsConn = nil end
-        if postPhysicsConn then postPhysicsConn:Disconnect() postPhysicsConn = nil end
         if bv then bv:Destroy() bv = nil end
         if bg then bg:Destroy() bg = nil end
         if flightRoot and flightRoot.Parent then
-            flightRoot.AssemblyLinearVelocity = Vector3.zero
+            flightRoot.AssemblyLinearVelocity = coast == false and Vector3.zero
+                or desiredVelocity * Settings.FlyCoast
             flightRoot.AssemblyAngularVelocity = Vector3.zero
         end
         flightRoot = nil
-        idlePosition = nil
         desiredVelocity = Vector3.zero
-        local _, hum = getRoot()
-        if hum then hum.PlatformStand = false end
+        if flightHumanoid and flightHumanoid.Parent then flightHumanoid.PlatformStand = originalPlatformStand end
+        flightHumanoid, originalPlatformStand = nil, nil
     end
 
 
@@ -1571,7 +1571,7 @@ do
     local function update()
         local camera = workspace.CurrentCamera
         for model in pairs(TargetModels) do
-            if not eligibleModel(model, Settings.EspTeamCheck) then
+            if not owningPlayer(model) or not eligibleModel(model, false) then
                 remove(model)
             elseif camera then
                 local ok, cf, size = pcall(function() return model:GetBoundingBox() end)
@@ -2177,9 +2177,6 @@ do
     end)
     Elements.ColorPicker(s, "Color", Settings.EspBoxColor, function(c) Settings.EspBoxColor = c end)
     Elements.Line(s)
-    Elements.Toggle(s, "Team Check", true, function(on)
-        Settings.EspTeamCheck = on
-    end)
     bedWarsNamesToggle = Elements.Toggle(s, "Show Names", true, function(on) Settings.EspNames = on end)
     local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
     atmosphere.Parent.LayoutOrder = 2
@@ -2496,7 +2493,8 @@ do
                     if originalColors[property] == nil then
                         originalColors[property] = object[property]
                     end
-                    object[property] = tintColor(originalColors[property], hue)
+                    object[property] = name == "Rift" and originalColors[property]
+                        or tintColor(originalColors[property], hue)
                 end
                 if object:IsA("GuiObject") then update("BackgroundColor3") end
                 if object:IsA("TextLabel") or object:IsA("TextButton")
@@ -2511,7 +2509,7 @@ do
                     local points = {}
                     for _, point in ipairs(originalColors.Gradient.Keypoints) do
                         points[#points + 1] = ColorSequenceKeypoint.new(point.Time,
-                            tintColor(point.Value, hue))
+                            name == "Rift" and point.Value or tintColor(point.Value, hue))
                     end
                     object.Color = ColorSequence.new(points)
                 end
@@ -2646,7 +2644,7 @@ do
         end
         local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
-            Version = 5, Game = Settings.SelectedGame, Controls = saved,
+            Version = 5, Game = Settings.SelectedGame, Controls = saved, RiftThemeVersion = 1,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions(),
         }))
         status.Text = ok and "Saved " .. name or "Could not save config"
@@ -2681,6 +2679,8 @@ do
             ["Visuals/BedWars/World Outlines/Iron Ore"] = "Visuals/BedWars/Iron Ore Outline/Iron Ore Outline",
             ["Visuals/BedWars/World Outlines/Enchant Tables"] = "Visuals/BedWars/Enchant Tables/Enchant Tables",
             ["Fun/All/Rainbow Footsteps/Rainbow Footsteps"] = "Fun/All/Colored Footsteps/Colored Footsteps",
+            ["Visuals/Rivals/Enemy Outlines/Enemy Outlines"] = "Visuals/Rivals/Player Outlines/Player Outlines",
+            ["Visuals/Rivals/Enemy Outlines/Color"] = "Visuals/Rivals/Player Outlines/Color",
         }
         for i, item in ipairs(data.Controls or {}) do
             local key = item.Key and (legacyKeys[item.Key] or item.Key)
@@ -2696,9 +2696,9 @@ do
                 if control.Key == "Fun/BedWars/Auto Reply/Message"
                     and value == "Sunset.wtf <3" then value = "Rift <3" end
                 if control.Key == "Sunset/All/Colors/Preset"
-                    and data.Version < 5 then value = "Rift" end
+                    and data.RiftThemeVersion ~= 1 then value = "Rift" end
                 if control.Key == "Sunset/All/Colors/Accent Color"
-                    and data.Version < 5 then
+                    and data.RiftThemeVersion ~= 1 then
                     value = { 139, 92, 246 }
                 end
                 if control.Kind == "color" and type(value) == "table" then
@@ -2933,6 +2933,10 @@ do
         BackgroundTransparency = 0.22, BorderSizePixel = 0,
         Active = true, Visible = false,
     }, Gui)
+    function BedWars.MusicOverlayVisible()
+        return Gui.Parent ~= nil and ((Settings.SelectedGame == "BedWars" and BedWars.SpotifyHUDOn)
+            or (Settings.SelectedGame == "Rivals" and RivalsVisuals.MusicOverlayOn)) == true
+    end
     Persistence.HUDFrames.MusicOverlay = BedWars.SpotifyPanel
     new("UICorner", { CornerRadius = UDim.new(0, 12) }, BedWars.SpotifyPanel)
     border(BedWars.SpotifyPanel, T.accent)
@@ -3064,7 +3068,7 @@ do
                         local wrote = pcall(save, path,
                             imageResponse.Body or imageResponse.body)
                         if wrote then
-                            if not BedWars.Running or not cover.Parent then
+                            if not Gui.Parent or not cover.Parent then
                                 local delete = type(ENV.delfile) == "function" and ENV.delfile
                                     or type(delfile) == "function" and delfile or nil
                                 if delete then pcall(delete, path) end
@@ -3091,9 +3095,8 @@ do
         end
     end
     task.spawn(function()
-        while BedWars.Running do
-            BedWars.SpotifyPanel.Visible = BedWars.SpotifyHUDOn
-                and Settings.SelectedGame == "BedWars"
+        while Gui.Parent do
+            BedWars.SpotifyPanel.Visible = BedWars.MusicOverlayVisible()
             if BedWars.SpotifyPanel.Visible then
                 pcall(BedWars.SpotifyStep)
                 task.wait(1)
@@ -4978,9 +4981,7 @@ local function refreshBedWarsPlayers()
             if player ~= LocalPlayer and model and humanoid and humanoid.Health > 0
                 and model:IsDescendantOf(workspace) then
                 seen[model] = true
-                local teammate = BedWars.TeamCheck and teamRelation(model) == "friendly"
-                setBedWarsMark("Players", model, teammate
-                    and Color3.fromRGB(75, 225, 120) or BedWars.PlayerOutlineColor)
+                setBedWarsMark("Players", model, BedWars.PlayerOutlineColor)
             end
         end
     end
@@ -6951,14 +6952,6 @@ local function currentBedWarsKills()
     local value = kills[tostring(LocalPlayer.UserId)] or kills[LocalPlayer.UserId]
     return type(value) == "number" and math.max(0, value) or 0
 end
-local riftKillMessages = {
-    "Nice fight from Rift!", "Rift says GG!",
-    "Good duel! - Rift", "Well played! Rift wins this round.",
-}
-local riftBedMessages = {
-    "Bed down! Rift is here.", "Rift got the bed!",
-    "Good defense! Rift got through.",
-}
 do
     function BedWars.KillChatSend(message)
         local chat = game:GetService("TextChatService")
@@ -6975,27 +6968,6 @@ do
         end
         return false
     end
-    function BedWars.KillChatBind(character)
-        if BedWars.KillChatDeathConnection then
-            BedWars.KillChatDeathConnection:Disconnect()
-            BedWars.KillChatDeathConnection = nil
-        end
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-            or character:WaitForChild("Humanoid", 10)
-        if not humanoid or not BedWars.Running
-            or character ~= LocalPlayer.Character then return end
-        BedWars.KillChatDeathConnection = humanoid.Died:Connect(function()
-            if Settings.SelectedGame == "BedWars" and BedWars.KillChatOn then
-                table.insert(BedWars.KillChatQueue,
-                    math.random(1, 2) == 1 and "Only Died To A Game Bug!"
-                        or "Reinjecting ♻️")
-            end
-        end)
-    end
-    track(LocalPlayer.CharacterAdded:Connect(function(character)
-        task.spawn(BedWars.KillChatBind, character)
-    end))
-    if LocalPlayer.Character then task.spawn(BedWars.KillChatBind, LocalPlayer.Character) end
     task.spawn(function()
         while BedWars.Running do
             if Settings.SelectedGame == "BedWars" and BedWars.KillChatOn
@@ -7071,7 +7043,7 @@ local function updateSession()
             and kills > BedWars.KillChatLastCount then
             for _ = 1, kills - BedWars.KillChatLastCount do
                 table.insert(BedWars.KillChatQueue,
-                    riftKillMessages[math.random(#riftKillMessages)])
+                    RIFT_KILL_MESSAGE)
             end
         end
         BedWars.KillChatLastCount = kills
@@ -7088,14 +7060,7 @@ local function updateSession()
             local previous = session.SourceValues[title]
             if previous and value > previous then
                 session[title] = session[title] + value - previous
-                if title == "Beds" and BedWars.KillChatOn then
-                    table.insert(BedWars.KillChatQueue,
-                        riftBedMessages[math.random(#riftBedMessages)])
-                end
                 if title == "Wins" then
-                    if BedWars.KillChatOn then
-                        table.insert(BedWars.KillChatQueue, "GG! Rift had fun.")
-                    end
                     BedWars.WebhookSend("Match won")
                 end
             end
@@ -8028,9 +7993,6 @@ do
     Elements.ColorPicker(outlineSection, "Color", BedWars.PlayerOutlineColor, function(color)
         BedWars.PlayerOutlineColor = color
     end)
-    Elements.Toggle(outlineSection, "Team Check", true, function(on)
-        BedWars.TeamCheck = on
-    end, nil, true)
     do
     local crosshairSection = gameSection(gameName, VisualsTab.Left, "Crosshair")
     Elements.Toggle(crosshairSection, "Crosshair", false, function(on)
@@ -8159,7 +8121,6 @@ do
         Elements.Toggle(spotify, "Music Overlay", false, function(on)
             BedWars.SpotifyHUDOn = on
         end)
-        Elements.Label(spotify, "Shows desktop music via the local bridge")
     end
     do
         local waterSpeed = gameSection(gameName, Tabs["Dev Tools"].Left, "Water Speed")
@@ -9008,6 +8969,7 @@ function BedWars.BuildUI(boardGame)
         { "Player", "Fast Consume", "Player", "BedWars", "Fast Consume", "Fast Consume" },
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
         { "Player", "Zoom Unlocker", "Player", "BedWars", "Zoom Unlocker", "Zoom Unlocker" },
+        { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
         { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
         { "Visuals", "Name Tags", "Visuals", "BedWars", "Name Tags", "Name Tags" },
@@ -9059,8 +9021,10 @@ function BedWars.BuildUI(boardGame)
             { "Misc", "Spinbot", "Misc", "Rivals", "Spinbot", "Spinbot" },
             { "Visuals", "FOV", "Visuals", "Rivals", "FOV", "FOV" },
             { "Visuals", "FOV Circle", "Visuals", "Rivals", "FOV Circle", "FOV Circle" },
-            { "Visuals", "Enemy Outlines", "Visuals", "Rivals", "Enemy Outlines", "Enemy Outlines" },
+            { "Visuals", "Player Outlines", "Visuals", "Rivals", "Player Outlines", "Player Outlines" },
             { "Visuals", "ESP Boxes", "Visuals", "Rivals", "ESP Boxes", "ESP Boxes" },
+            { "Visuals", "Target HUD", "Visuals", "Rivals", "Target HUD", "Target HUD" },
+            { "Visuals", "Music Overlay", "Visuals", "Rivals", "Music Overlay", "Music Overlay" },
             { "Fun", "Kill Chat", "Fun", "Rivals", "Kill Chat", "Kill Chat" },
             { "Sunset", "Module List", "Sunset", "Rivals", "Module List", "Module List" },
             { "Sunset", "Configs", "Sunset", "All", "Configs" },
@@ -9108,10 +9072,11 @@ function BedWars.BuildUI(boardGame)
         ["Bed Alarm"] = "Alerts when an enemy approaches your team bed.",
         ["Notifications"] = "Shows Rift alerts for friends, staff, and enabled features.",
         ["Music Overlay"] = "Shows your desktop media with artwork and playback time.",
-        ["Fly"] = isRivals and "Toggle flight from the menu; adjust speed in settings."
+        ["Fly"] = isRivals and "Velocity flight with adjustable coast when disabled."
             or "Balloon lift with a timed flight fallback.",
         ["Launch"] = "Launch yourself from a nearby cannon using its game action.",
-        ["Speed"] = "Moves faster with wall checking and optional auto jump.",
+        ["Speed"] = isRivals and "Sets movement speed; type a value above the slider range."
+            or "Moves faster with wall checking and optional auto jump.",
         ["Auto Buy"] = "Buys armor, swords, and listed items near a shop.",
         ["Auto Team Upgrade"] = "Buys affordable team upgrades at a nearby team shop.",
         ["Health Display"] = "Shows your health below the crosshair.",
@@ -9156,7 +9121,8 @@ function BedWars.BuildUI(boardGame)
         ["Fast Consume"] = "Uses consumables with a shorter wait.",
         ["Pickup Range"] = "Expands the range for supported item pickup.",
         ["ESP Boxes"] = "Draws boxes around visible players.",
-        ["Player Outlines"] = "Highlights player characters through the scene.",
+        ["Player Outlines"] = "Outlines every other living player, including teammates.",
+        ["Third Person"] = "Moves the camera behind your character; adjust the distance in settings.",
         ["Bed Outline"] = "Highlights beds so they are easier to locate.",
         ["World ESP"] = "Highlights selected world objects such as ore and tables.",
         ["Target HUD"] = "Shows the current target and animated health bar.",
@@ -9175,7 +9141,7 @@ function BedWars.BuildUI(boardGame)
         ["Anti AFK"] = "Keeps you active while idle.",
         ["Spinbot"] = "Rotates your character continuously.",
         ["Ghost Pulse"] = "Adds a cosmetic pulse around your character.",
-        ["Kill Chat"] = "Sends a selected message after match events.",
+        ["Kill Chat"] = "Sends the Rift message after each detected kill.",
         ["Fake Projectiles"] = "Shows cosmetic projectile effects.",
         ["Colored Footsteps"] = "Leaves colored footsteps as you move.",
         ["Configs"] = "Save and load your module and HUD settings.",
@@ -9580,11 +9546,7 @@ function RivalsAim.Setup()
                 if RivalsKillChat.Enabled and not state.Restored and Settings.SelectedGame == "Rivals"
                     and self.ClientFighter and self.ClientFighter.IsLocalPlayer and not self._destroyed
                     and #RivalsKillChat.Queue < 8 then
-                    local message = RivalsKillChat.Message:gsub("[%c]", " "):match("^%s*(.-)%s*$")
-                    local valid, cut = pcall(utf8.offset, message, 201)
-                    if valid and message ~= "" then
-                        table.insert(RivalsKillChat.Queue, cut and message:sub(1, cut - 1) or message)
-                    end
+                    table.insert(RivalsKillChat.Queue, RIFT_KILL_MESSAGE)
                 end
                 return table.unpack(results, 1, results.n)
             end
@@ -9636,16 +9598,18 @@ function RivalsAim.Setup()
         local hit = castToward(fighter, origin, part.Position)
         return not hit or hit.Instance:IsDescendantOf(part.Parent)
     end
-    local function enemyEntity(player, localFighter)
+    local function enemyEntity(player, localFighter, showEveryone)
         if player == LocalPlayer then return end
         local team = LocalPlayer:GetAttribute("TeamID")
-        if team ~= nil and player:GetAttribute("TeamID") == team then return end
-        if team == nil and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
+        if not showEveryone then
+            if team ~= nil and player:GetAttribute("TeamID") == team then return end
+            if team == nil and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
+        end
         local fighter = controller:GetFighter(player)
-        local entity = fighter and fighter.Entity
+        local entity = fighter and fighter.Entity or (showEveryone and { Model = player.Character })
         local model = entity and entity.Model
         if not model or not model:IsDescendantOf(workspace)
-            or fighter:Get("EnvironmentID") ~= localFighter:Get("EnvironmentID") then return end
+            or (not showEveryone and fighter:Get("EnvironmentID") ~= localFighter:Get("EnvironmentID")) then return end
         local humanoid = model:FindFirstChildOfClass("Humanoid")
         if humanoid and humanoid.Health <= 0 then return end
         return entity
@@ -9655,7 +9619,7 @@ function RivalsAim.Setup()
         local camera = workspace.CurrentCamera
         if not camera then return end
         local center = camera.ViewportSize * 0.5
-        local closest, score = nil, RivalsAim.Radius
+        local closest, closestPlayer, score = nil, nil, RivalsAim.Radius
         for _, player in ipairs(Players:GetPlayers()) do
             local entity = enemyEntity(player, localFighter)
             local part = entity and targetPart(entity, options.AimPart)
@@ -9663,14 +9627,16 @@ function RivalsAim.Setup()
                 local point, onScreen = camera:WorldToViewportPoint(part.Position)
                 if onScreen and point.Z > 0 then
                     local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
-                    if distance < score and (not options.WallCheck
+                    if distance < score and (not options.MaxDistance
+                        or (part.Position - camera.CFrame.Position).Magnitude <= options.MaxDistance)
+                        and (not options.WallCheck
                         or unobstructed(localFighter, part, camera.CFrame.Position)) then
-                        closest, score = part, distance
+                        closest, closestPlayer, score = part, player, distance
                     end
                 end
             end
         end
-        return closest
+        return closest, closestPlayer
     end
     -- GetCameraData returns CFrames for local tracers, but six-component tables
     -- for firing: XYZ position followed by YXZ orientation (ToOrientation).
@@ -9774,8 +9740,11 @@ function RivalsAim.Setup()
                 local localFighter = controller.LocalFighter
                 if item.ClientFighter ~= localFighter or not localFighter
                     or not localFighter.IsLocalPlayer or not item.Info.IsRaycast then return end
-                local part = closestTarget(localFighter)
-                if part and patchCamera(localFighter) then return localFighter, part end
+                local part, player = closestTarget(localFighter)
+                if part and patchCamera(localFighter) then
+                    state.ShotTargetPlayer, state.ShotTargetAt = player, os.clock()
+                    return localFighter, part
+                end
             end)
             if not ok or not target then return previousShot(item, ...) end
             local thread = coroutine.running()
@@ -9794,6 +9763,8 @@ function RivalsAim.Setup()
     function state.Restore()
         state.Active = false
         state.Restored = true
+        state.LockedPlayer, state.LockedFighter, state.CameraTargetPlayer, state.ShotTargetPlayer = nil, nil, nil, nil
+        if RivalsAim.TargetHUD then RivalsAim.TargetHUD.Visible = false end
         RivalsKillChat.SetEnabled(false)
         RivalsAim.Assist.Enabled, RivalsAim.Aimbot.Enabled = false, false
         pcall(function() RunService:UnbindFromRenderStep(cameraBinding) end)
@@ -9829,26 +9800,56 @@ function RivalsAim.Setup()
 
     function RivalsAim.SetCameraEnabled(name, on)
         local options = RivalsAim[name]
+        if name == "Aimbot" then state.LockedPlayer, state.LockedFighter = nil, nil end
         options.Enabled = on == true and not state.Restored and loadApi() or false
         if on and not options.Enabled then
             warn("[Rift] " .. name .. " could not start: " .. tostring(RivalsAim.LoadError))
             if options.Toggle then options.Toggle.Set(false) end
         end
     end
-    RunService:BindToRenderStep(cameraBinding, Enum.RenderPriority.Camera.Value + 1, function(delta)
-        if state.Restored or Settings.SelectedGame ~= "Rivals" or anyMenuVisible() then return end
+    RunService:BindToRenderStep(cameraBinding, Enum.RenderPriority.Last.Value + 3, function(delta)
+        if state.Restored or Settings.SelectedGame ~= "Rivals" or anyMenuVisible()
+            or UIS:GetFocusedTextBox() then
+            state.LockedPlayer, state.LockedFighter = nil, nil
+            state.CameraTargetPlayer = nil
+            return
+        end
         local function active(options)
             return options.Enabled and (not options.HoldMouse
                 or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
         end
         local options = active(RivalsAim.Aimbot) and RivalsAim.Aimbot
             or active(RivalsAim.Assist) and RivalsAim.Assist
-        if not options then return end
-        pcall(function()
+        if options ~= RivalsAim.Aimbot then state.LockedPlayer, state.LockedFighter = nil, nil end
+        if not options then state.CameraTargetPlayer = nil return end
+        local ok = pcall(function()
             local fighter = controller and controller.LocalFighter
             local camera = workspace.CurrentCamera
-            if not fighter or not camera then return end
-            local part = closestTarget(fighter, options)
+            if not fighter or not camera then
+                state.LockedPlayer, state.LockedFighter = nil, nil
+                return
+            end
+            local part
+            if options == RivalsAim.Aimbot then
+                -- Keep the same player throughout activation; FOV only limits acquisition.
+                if state.LockedFighter == fighter and state.LockedPlayer
+                    and table.find(Players:GetPlayers(), state.LockedPlayer) then
+                    local entity = enemyEntity(state.LockedPlayer, fighter)
+                    part = entity and targetPart(entity, options.AimPart)
+                    if not part or not part:IsA("BasePart") or not part:IsDescendantOf(entity.Model)
+                        or (part.Position - camera.CFrame.Position).Magnitude > options.MaxDistance
+                        or (options.WallCheck and not unobstructed(fighter, part, camera.CFrame.Position)) then
+                        part = nil
+                    end
+                end
+                if not part then
+                    part, state.LockedPlayer = closestTarget(fighter, options)
+                    state.LockedFighter = part and fighter or nil
+                end
+                state.CameraTargetPlayer = state.LockedPlayer
+            else
+                part, state.CameraTargetPlayer = closestTarget(fighter, options)
+            end
             if not part or (part.Position - camera.CFrame.Position).Magnitude < 0.001 then return end
             local goal = CFrame.lookAt(camera.CFrame.Position, part.Position)
             if options == RivalsAim.Aimbot then
@@ -9858,25 +9859,107 @@ function RivalsAim.Setup()
                 camera.CFrame = camera.CFrame:Lerp(goal, alpha)
             end
         end)
+        if not ok then state.LockedPlayer, state.LockedFighter, state.CameraTargetPlayer = nil, nil, nil end
     end)
+    local targetHUD = new("Frame", {
+        Name = "RiftRivalsTargetHUD", Visible = false, Active = true,
+        AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -115),
+        Size = UDim2.fromOffset(280, 77), BackgroundColor3 = T.inner,
+        BackgroundTransparency = 0.08, BorderSizePixel = 0,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 12) }, targetHUD)
+    border(targetHUD, T.accent)
+    RivalsAim.TargetHUD = targetHUD
+    Persistence.HUDFrames.TargetHUD = targetHUD
+    makeDraggable(targetHUD, targetHUD)
+    local avatar = new("ImageLabel", {
+        Name = "Avatar", Position = UDim2.fromOffset(11, 12), Size = UDim2.fromOffset(51, 51),
+        BackgroundColor3 = T.panel, BorderSizePixel = 0, Image = "",
+    }, targetHUD)
+    new("UICorner", { CornerRadius = UDim.new(0, 9) }, avatar)
+    local targetName = label(targetHUD, "", 15, T.text)
+    targetName.Name, targetName.Font = "TargetName", Enum.Font.GothamBold
+    targetName.Position, targetName.Size = UDim2.fromOffset(72, 10), UDim2.fromOffset(196, 23)
+    targetName.TextTruncate = Enum.TextTruncate.AtEnd
+    local targetHP = label(targetHUD, "", 12, T.gold)
+    targetHP.Name = "TargetHealth"
+    targetHP.Position, targetHP.Size = UDim2.fromOffset(72, 33), UDim2.fromOffset(196, 17)
+    local healthBack = new("Frame", {
+        Position = UDim2.fromOffset(72, 55), Size = UDim2.fromOffset(196, 8),
+        BackgroundColor3 = T.panel, BorderSizePixel = 0,
+    }, targetHUD)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, healthBack)
+    local healthFill = new("Frame", {
+        Name = "HealthFill", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = T.gold, BorderSizePixel = 0,
+    }, healthBack)
+    new("UICorner", { CornerRadius = UDim.new(1, 0) }, healthFill)
+    local shownPlayer, shownModel, lastHealthRatio, healthTween
+    function RivalsAim.UpdateTargetHUD()
+        targetHUD.Visible = false
+        if state.Restored or not RivalsVisuals.TargetHUDOn or Settings.SelectedGame ~= "Rivals"
+            or anyMenuVisible() or not controller or not controller.LocalFighter then
+            shownPlayer, shownModel = nil, nil
+            return
+        end
+        local fighter = controller.LocalFighter
+        local player = state.LockedPlayer or state.CameraTargetPlayer
+            or (state.ShotTargetAt and os.clock() - state.ShotTargetAt < 3 and state.ShotTargetPlayer)
+        if not player then local _, selected = closestTarget(fighter) player = selected end
+        local entity = player and table.find(Players:GetPlayers(), player) and enemyEntity(player, fighter)
+        local model = entity and entity.Model
+        local humanoid = model and model:FindFirstChildOfClass("Humanoid")
+        if not humanoid then shownPlayer, shownModel = nil, nil return end
+        local hp = math.max(0, tonumber(entity.Health) or humanoid.Health)
+        local maxHP = math.max(1, tonumber(entity.MaxHealth) or humanoid.MaxHealth or 100)
+        if hp <= 0 then shownPlayer, shownModel = nil, nil return end
+        targetHUD.Visible = true
+        if shownPlayer ~= player or shownModel ~= model then
+            shownPlayer, shownModel, lastHealthRatio = player, model, nil
+            avatar.Image = ""
+            task.spawn(function()
+                local ok, image = pcall(Players.GetUserThumbnailAsync, Players, player.UserId,
+                    Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
+                if ok and type(image) == "string" and shownPlayer == player and shownModel == model
+                    and targetHUD.Parent then avatar.Image = image end
+            end)
+        end
+        targetName.Text = player.DisplayName or player.Name or "Player"
+        targetHP.Text = string.format("%d / %d HP", math.ceil(hp), math.ceil(maxHP))
+        local ratio = math.clamp(hp / maxHP, 0, 1)
+        if ratio ~= lastHealthRatio then
+            lastHealthRatio = ratio
+            if healthTween then healthTween:Cancel() end
+            healthTween = TweenService:Create(healthFill,
+                TweenInfo.new(RivalsVisuals.TargetHUDBarTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { Size = UDim2.fromScale(ratio, 1) })
+            healthTween:Play()
+        end
+    end
+    track({ Disconnect = function()
+        if healthTween then healthTween:Cancel() end
+        shownPlayer, shownModel = nil, nil
+        targetHUD:Destroy()
+    end })
     visualsScreen = new("ScreenGui", {
         Name = "RiftRivalsESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = -1,
     }, PlayerGui)
     local nextVisualApiRetry = 0
     visualsConnection = RunService.RenderStepped:Connect(function()
         if state.Restored then return end
-        if not controller and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn)
+        if not controller and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn or RivalsVisuals.TargetHUDOn)
             and os.clock() >= nextVisualApiRetry then
             nextVisualApiRetry = os.clock() + 1
             loadApi()
         end
+        pcall(RivalsAim.UpdateTargetHUD)
         local seen = {}
         local fighter = controller and controller.LocalFighter
         local camera = workspace.CurrentCamera
         if fighter and camera and Settings.SelectedGame == "Rivals" and not anyMenuVisible()
             and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn) then
             for _, player in ipairs(Players:GetPlayers()) do
-                local ok, entity = pcall(enemyEntity, player, fighter)
+                local ok, entity = pcall(enemyEntity, player, fighter, true)
                 if ok and entity then
                     local model = entity.Model
                     seen[model] = true
@@ -9888,7 +9971,7 @@ function RivalsAim.Setup()
                         }, visualsScreen)
                         entry = { Box = box, Stroke = border(box, RivalsVisuals.BoxColor, 1.5),
                             Highlight = new("Highlight", {
-                                Name = "RiftEnemyOutline", Adornee = model, Enabled = false,
+                                Name = "RiftPlayerOutline", Adornee = model, Enabled = false,
                                 DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
                                 FillTransparency = 1, OutlineTransparency = 0,
                             }, model) }
@@ -9947,6 +10030,127 @@ end
 
 
 local RivalsFOV = { Enabled = false, Value = 80 }
+local RivalsSpeed = { Enabled = false, Value = 16 }
+local RivalsView = { ThirdPerson = false, ZoomUnlocked = false, Distance = 10, MaxZoom = 500 }
+function RivalsView.Setup()
+    local snapshot, lastCamera, baseFrame, adjustedFrame
+    local wheelDistance = 0
+    local visibility = {}
+    local function restoreVisibility()
+        for part, original in pairs(visibility) do
+            if part.Parent then part.LocalTransparencyModifier = original end
+        end
+        table.clear(visibility)
+    end
+    local function restoreOffset()
+        if lastCamera and baseFrame and lastCamera.CFrame == adjustedFrame then lastCamera.CFrame = baseFrame end
+        lastCamera, baseFrame, adjustedFrame = nil, nil, nil
+        restoreVisibility()
+    end
+    local function restore()
+        restoreOffset()
+        if not snapshot then return end
+        LocalPlayer.CameraMaxZoomDistance = math.max(LocalPlayer.CameraMinZoomDistance, snapshot.Max)
+        LocalPlayer.CameraMinZoomDistance = snapshot.Min
+        LocalPlayer.CameraMaxZoomDistance = snapshot.Max
+        if anyMenuVisible() and savedMenuInput then savedCamMode = snapshot.Mode
+        else LocalPlayer.CameraMode = snapshot.Mode end
+        snapshot = nil
+    end
+    function RivalsView.Apply()
+        if Settings.SelectedGame ~= "Rivals" or (not RivalsView.ThirdPerson and not RivalsView.ZoomUnlocked) then
+            restore()
+            return
+        end
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        if not snapshot then
+            snapshot = { Mode = savedCamMode or LocalPlayer.CameraMode,
+                Min = LocalPlayer.CameraMinZoomDistance, Max = LocalPlayer.CameraMaxZoomDistance }
+        end
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        local distance = RivalsView.ThirdPerson and RivalsView.Distance or wheelDistance
+        local maxDistance = RivalsView.ZoomUnlocked and RivalsView.MaxZoom or 40
+        distance = math.clamp(distance, RivalsView.ThirdPerson and 5 or 0, maxDistance)
+        LocalPlayer.CameraMaxZoomDistance = math.max(maxDistance, LocalPlayer.CameraMinZoomDistance)
+        LocalPlayer.CameraMinZoomDistance = RivalsView.ThirdPerson and 5 or 0.5
+        LocalPlayer.CameraMaxZoomDistance = maxDistance
+        if anyMenuVisible() then restoreOffset() return end
+        -- The game keeps a first-person camera of its own, so apply the view offset
+        -- after it updates instead of replacing its weapon/camera controller.
+        local frame = camera.CFrame
+        if camera == lastCamera and frame == adjustedFrame then frame = baseFrame end
+        if camera ~= lastCamera then restoreOffset() end
+        local character = LocalPlayer.Character
+        local position = frame.Position - frame.LookVector * distance
+        if distance > 0.5 then
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = { character, camera }
+            params.RespectCanCollide = true
+            local ok, hit = pcall(workspace.Raycast, workspace, frame.Position, position - frame.Position, params)
+            if ok and hit then position = hit.Position + hit.Normal * 0.3 end
+        end
+        lastCamera, baseFrame = camera, frame
+        adjustedFrame = frame + (position - frame.Position)
+        camera.CFrame = adjustedFrame
+        if distance > 0.5 and character then
+            for part, original in pairs(visibility) do
+                if not part:IsDescendantOf(character) then
+                    if part.Parent then part.LocalTransparencyModifier = original end
+                    visibility[part] = nil
+                end
+            end
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    if visibility[part] == nil then visibility[part] = part.LocalTransparencyModifier end
+                    part.LocalTransparencyModifier = 0
+                end
+            end
+        else restoreVisibility() end
+    end
+    track(UIS.InputChanged:Connect(function(input, processed)
+        if processed or anyMenuVisible() or UIS:GetFocusedTextBox() or not RivalsView.ZoomUnlocked
+            or input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+        if RivalsView.ThirdPerson then
+            RivalsView.Distance = math.clamp(RivalsView.Distance - input.Position.Z * 3, 5, RivalsView.MaxZoom)
+        else
+            wheelDistance = math.clamp(wheelDistance - input.Position.Z * 3, 0, RivalsView.MaxZoom)
+        end
+    end))
+    RunService:BindToRenderStep("RiftRivalsView", Enum.RenderPriority.Last.Value + 2, RivalsView.Apply)
+    track({ Disconnect = function()
+        RivalsView.ThirdPerson, RivalsView.ZoomUnlocked = false, false
+        RunService:UnbindFromRenderStep("RiftRivalsView")
+        restore()
+    end })
+end
+function RivalsSpeed.Setup()
+    local trackedHumanoid, originalSpeed
+    local function restore()
+        if trackedHumanoid and trackedHumanoid.Parent then trackedHumanoid.WalkSpeed = originalSpeed end
+        trackedHumanoid, originalSpeed = nil, nil
+    end
+    function RivalsSpeed.Apply()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not RivalsSpeed.Enabled or Settings.SelectedGame ~= "Rivals"
+            or not humanoid or humanoid.Health <= 0 then restore() return end
+        if humanoid ~= trackedHumanoid then
+            restore()
+            trackedHumanoid, originalSpeed = humanoid, humanoid.WalkSpeed
+        end
+        local ok = pcall(function() humanoid.WalkSpeed = RivalsSpeed.Value end)
+        if not ok or humanoid.WalkSpeed == math.huge or humanoid.WalkSpeed ~= humanoid.WalkSpeed then
+            RivalsSpeed.Enabled = false
+            restore()
+            if RivalsSpeed.Toggle then RivalsSpeed.Toggle.Set(false) end
+            warn("[Rift] This speed value could not be applied")
+        end
+    end
+    track(RunService.PreSimulation:Connect(RivalsSpeed.Apply))
+    track({ Disconnect = function() RivalsSpeed.Enabled = false restore() end })
+end
 function RivalsFOV.Setup()
     local trackedCamera, originalFOV
     local function restore()
@@ -9995,16 +10199,20 @@ function RivalsAim.BuildUI()
             RivalsAim.SetCameraEnabled(key, on)
         end)
         Elements.Toggle(section, "Hold Right Mouse", true, function(on) options.HoldMouse = on end)
-        Elements.Toggle(section, "Wall Check", true, function(on) options.WallCheck = on end)
+        Elements.Toggle(section, "Wall Check", options.WallCheck, function(on) options.WallCheck = on end)
+        if key == "Aimbot" then
+            Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value)
+                options.MaxDistance = value
+            end)
+        end
         if key == "Assist" then
             Elements.Slider(section, "Strength", 1, 30, 8, "", function(value)
                 options.Strength = value
             end)
         end
-        Elements.Label(section, "Uses the radius in FOV Circle settings.")
     end
-    local outlines = gameSection("Rivals", VisualsTab.Left, "Enemy Outlines")
-    Elements.Toggle(outlines, "Enemy Outlines", false, function(on)
+    local outlines = gameSection("Rivals", VisualsTab.Left, "Player Outlines")
+    Elements.Toggle(outlines, "Player Outlines", false, function(on)
         RivalsVisuals.OutlinesOn = on
     end)
     Elements.ColorPicker(outlines, "Color", RivalsVisuals.OutlineColor, function(color)
@@ -10016,6 +10224,19 @@ function RivalsAim.BuildUI()
     end)
     Elements.ColorPicker(boxes, "Color", RivalsVisuals.BoxColor, function(color)
         RivalsVisuals.BoxColor = color
+    end)
+    local targetHUD = gameSection("Rivals", VisualsTab.Left, "Target HUD")
+    Elements.Toggle(targetHUD, "Target HUD", false, function(on)
+        RivalsVisuals.TargetHUDOn = on
+        RivalsAim.UpdateTargetHUD()
+    end)
+    Elements.Slider(targetHUD, "Health Bar Time", 0.05, 1, 0.3, "seconds", function(value)
+        RivalsVisuals.TargetHUDBarTime = value
+    end, 0.05)
+    local music = gameSection("Rivals", VisualsTab.Left, "Music Overlay")
+    Elements.Toggle(music, "Music Overlay", false, function(on)
+        RivalsVisuals.MusicOverlayOn = on
+        BedWars.SpotifyPanel.Visible = BedWars.MusicOverlayVisible()
     end)
     local fov = gameSection("Rivals", VisualsTab.Left, "FOV Circle")
     Elements.Toggle(fov, "FOV Circle", false, function(on)
@@ -10034,13 +10255,37 @@ function RivalsAim.BuildUI()
         RivalsFOV.Apply()
     end)
     buildSpinbot(gameSection("Rivals", MiscTab.Left, "Spinbot"))
+    local speed = gameSection("Rivals", MainTab.Left, "Speed")
+    RivalsSpeed.Toggle = Elements.Toggle(speed, "Speed", false, function(on)
+        RivalsSpeed.Enabled = on
+        RivalsSpeed.Apply()
+    end)
+    Elements.Slider(speed, "Walk Speed", 0, 300, 16, "studs/s", function(value)
+        RivalsSpeed.Value = value
+        RivalsSpeed.Apply()
+    end, 1, true)
+    local thirdPerson = gameSection("Rivals", PlayerTab.Left, "Third Person")
+    Elements.Toggle(thirdPerson, "Third Person", false, function(on)
+        RivalsView.ThirdPerson = on
+        RivalsView.Apply()
+    end)
+    Elements.Slider(thirdPerson, "Distance", 5, 40, 10, "studs", function(value)
+        RivalsView.Distance = value
+        RivalsView.Apply()
+    end)
+    local zoom = gameSection("Rivals", PlayerTab.Left, "Zoom Unlocker")
+    Elements.Toggle(zoom, "Zoom Unlocker", false, function(on)
+        RivalsView.ZoomUnlocked = on
+        RivalsView.Apply()
+    end)
+    Elements.Slider(zoom, "Max Zoom", 40, 1000, 500, "studs", function(value)
+        RivalsView.MaxZoom = value
+        RivalsView.Apply()
+    end)
     local killChat = gameSection("Rivals", FunTab.Left, "Kill Chat")
     RivalsKillChat.Toggle = Elements.Toggle(killChat, "Kill Chat", false, function(on)
         RivalsKillChat.SetEnabled(on)
     end)
-    Elements.TextBox(killChat, "Message", "Message after an elimination", function(value)
-        RivalsKillChat.Message = value
-    end, RivalsKillChat.Message, true)
     Elements.Slider(killChat, "Message Delay", 1, 10, 2, "seconds", function(value)
         RivalsKillChat.Cooldown = value
     end, 0.5)
@@ -10056,10 +10301,15 @@ function RivalsAim.BuildUI()
     Elements.Slider(flight, "Speed", 10, 750, 50, "studs/s", function(value)
         Settings.FlySpeed = value
     end)
+    Elements.Slider(flight, "Coast On Disable", 0, 100, 50, "%", function(value)
+        Settings.FlyCoast = value / 100
+    end)
     BedWars.BuildUI("Rivals")
 end
 
 if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
+    RivalsView.Setup()
+    RivalsSpeed.Setup()
     RivalsFOV.Setup()
     RivalsAim.Setup()
     RivalsAim.BuildUI()
@@ -10088,7 +10338,7 @@ ENV.SunsetUnload = function()
     BedWars.Stop()
     setCloudRemoval(false)
     restoreAtmosphere()
-    pcall(Fly.Stop)
+    pcall(Fly.Stop, false)
     pcall(ESP.Destroy)
     for _, c in ipairs(Connections) do
         pcall(function() c:Disconnect() end)

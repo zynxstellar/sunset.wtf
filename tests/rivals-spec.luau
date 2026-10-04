@@ -76,6 +76,12 @@ function frameMeta.__mul(a,b)
     f.Position=a.Position
     return f
 end
+function frameMeta.__add(frame,offset)
+    local result=CFrame.fromOrientation(table.unpack(frame.Angles))
+    result.Position=frame.Position+offset
+    result.LookVector=frame.LookVector
+    return result
+end
 function CFrame.lookAt(p,target)
     local direction=(target-p).Unit
     local frame=CFrame.fromOrientation(math.asin(direction.Y),math.atan2(-direction.X,-direction.Z),0)
@@ -107,6 +113,17 @@ local function new(class,props,parent)
             {"Frame","TextLabel","TextButton","TextBox","ScrollingFrame","ImageLabel"},self.ClassName)~=nil)
     end
     function obj:GetChildren() return self.children end
+    function obj:FindFirstChild(name)
+        for _,child in ipairs(self.children) do if child.Name==name then return child end end
+    end
+    function obj:IsDescendantOf(parent)
+        local current=self.Parent
+        while type(current)=="table" do
+            if current==parent then return true end
+            current=current.Parent
+        end
+        return false
+    end
     function obj:GetDescendants()
         local result={}
         local function visit(n) for _,c in ipairs(n.children) do table.insert(result,c) visit(c) end end
@@ -132,10 +149,10 @@ local function riftTrashFallback() end
 local function makeDraggable() end
 local connections={}
 local function track(c) table.insert(connections,c) return c end
-local RunService={Heartbeat=signal(),RenderStepped=signal(),Stepped=signal()}
+local RunService={Heartbeat=signal(),RenderStepped=signal(),Stepped=signal(),PreSimulation=signal()}
 RunService.Bindings={}
 function RunService:BindToRenderStep(name,priority,callback)
-    assert(priority==201 or priority==301)
+    assert(priority==201 or priority==301 or priority==302 or priority==303)
     self.Bindings[name]=callback
 end
 function RunService:UnbindFromRenderStep(name) self.Bindings[name]=nil end
@@ -158,12 +175,13 @@ function workspace:Raycast(origin,direction,params)
     return raycastResult
 end
 local mouse={}
-local LocalPlayer={CameraMode="LockFirstPerson",GetMouse=function() return mouse end,
+local LocalPlayer={CameraMode="LockFirstPerson",CameraMinZoomDistance=0.5,CameraMaxZoomDistance=12.5,
+    GetMouse=function() return mouse end,
     GetAttribute=function() return 1 end}
 local Players={GetPlayers=function() return {LocalPlayer} end}
 local aimMouseHeld=false
 local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
-    InputBegan=signal(),GetFocusedTextBox=function() return nil end,
+    InputBegan=signal(),InputChanged=signal(),GetFocusedTextBox=function() return nil end,
     IsMouseButtonPressed=function(_,button) return aimMouseHeld and button==Enum.UserInputType.MouseButton2 end,
     GetMouseLocation=function() return Vector2.new(100,100) end}
 local ENV={}
@@ -171,8 +189,9 @@ local useScriptable=true
 local function anyMenuVisible() return Window.Visible or RivalsUI and RivalsUI.Visible or false end
 local RivalsAim={Enabled=false,FOVVisible=false,Radius=150,AimPart="Head",WallCheck=true}
 RivalsAim.Assist={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true,Strength=8}
-RivalsAim.Aimbot={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true}
+RivalsAim.Aimbot={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true,MaxDistance=1000}
 local RivalsVisuals={BoxesOn=false,OutlinesOn=false,BoxColor=color(1,0,0),OutlineColor=color(0,1,0)}
+RivalsVisuals.TargetHUDBarTime=0.3
 local RivalsKillChat={Enabled=false,Message="GG! - Rift",Cooldown=2,Queue={}}
 local clockNow=0
 local os={clock=function() return clockNow end}
@@ -181,6 +200,12 @@ local warnings={}
 local function warn(message) table.insert(warnings,message) end
 local BedWars={KitCatalog=function() error("Rivals must not read BedWars kit modules") end}
 function BedWars.KillChatSend(message) table.insert(chatMessages,message) return true end
+local bedWarsMarks={Players={}}
+local function setBedWarsMark(kind,model,c)
+    local mark=bedWarsMarks[kind][model] or {Parent=model,Destroy=function(self) self.Parent=nil end}
+    mark.Color=c
+    bedWarsMarks[kind][model]=mark
+end
 local Persistence={HUDFrames={}}
 local ConfigControls,gameSections,Tabs={},{},{}
 local AimTab={Left=new("Frame",{},nil)}
@@ -189,12 +214,14 @@ local SettingsTab={Left=new("Frame",{},nil)}
 local MainTab={Left=new("Frame",{},nil)}
 local MiscTab={Left=new("Frame",{},nil)}
 local FunTab={Left=new("Frame",{},nil)}
+local PlayerTab={Left=new("Frame",{},nil)}
 local flightStarts,flightStops=0,0
 local Fly={Start=function() flightStarts+=1 end,Stop=function() flightStops+=1 end}
 Tabs.Combat={Left=AimTab.Left,Right=new("Frame",{},nil)}
 Tabs.Movement={Left=MainTab.Left,Right=new("Frame",{},nil)}
 Tabs.Misc={Left=MiscTab.Left,Right=new("Frame",{},nil)}
 Tabs.Fun={Left=FunTab.Left,Right=new("Frame",{},nil)}
+Tabs.Player={Left=PlayerTab.Left,Right=new("Frame",{},nil)}
 Tabs.Visuals={Left=VisualsTab.Left,Right=new("Frame",{},nil)}
 Tabs.Sunset={Left=SettingsTab.Left,Right=new("Frame",{},nil)}
 local function gameSection(gameName,column,title)
@@ -234,6 +261,7 @@ function Elements.ColorPicker(p,t,d,cb) return addControl(p,t,"color",d,cb) end
 function Elements.TextBox(p,t,placeholder,cb,d) return addControl(p,t,"text",d,cb) end
 Elements.Label=label
 local BRAND,SUNSET_BUILD="RIFT","test-k262"
+local RIFT_KILL_MESSAGE="RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local hooks,hookInstalls,originalCalls={},0,{}
 local currentMethod="Raycast"
 local caller=false
@@ -595,7 +623,10 @@ print("PASS Rivals shots: repeated shots, both aim frames, origin positions, rea
 
 local fovCleanupIndex=#connections+1
 RivalsFOV.Setup()
+RivalsSpeed.Setup()
+RivalsView.Setup()
 RivalsAim.Setup()
+state=ENV.SunsetRivalsAimHook
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
 assert(RivalsUI.Size.X.Offset==1740 and RivalsUI.Size.Y.Offset==770)
@@ -607,7 +638,7 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="Fly" then cards.fly=o end
     if o:IsA("TextButton") and o.Name=="Aim Assist" then cards.assist=o end
     if o:IsA("TextButton") and o.Name=="Aimbot" then cards.aimbot=o end
-    if o:IsA("TextButton") and o.Name=="Enemy Outlines" then cards.outlines=o end
+    if o:IsA("TextButton") and o.Name=="Player Outlines" then cards.outlines=o end
     if o:IsA("TextButton") and o.Name=="ESP Boxes" then cards.boxes=o end
     if o:IsA("TextButton") and o.Name=="Spinbot" then cards.spin=o end
     if o:IsA("TextButton") and o.Name=="FOV" then cards.cameraFOV=o end
@@ -624,6 +655,7 @@ local function findConfig(key)
     for _,c in ipairs(ConfigControls) do if c.Key==key then return c end end
     error("missing config "..key)
 end
+do
 local fovToggle=findConfig("Visuals/Rivals/FOV/FOV")
 local fovValue=findConfig("Visuals/Rivals/FOV/Field of View")
 assert(fovToggle.GetBind()==nil and fovValue.Min==30 and fovValue.Max==120)
@@ -650,7 +682,7 @@ local speed=findConfig("Misc/Rivals/Spinbot/Spin Speed")
 local reverse=findConfig("Misc/Rivals/Spinbot/Reverse Spin")
 local character=new("Model",{},nil)
 character.Parent=workspace
-local hum=new("Humanoid",{Health=100,AutoRotate=true},character)
+local hum=new("Humanoid",{Health=100,AutoRotate=true,WalkSpeed=16},character)
 local root=new("Part",{Name="HumanoidRootPart",Position=Vector3.new(3,4,5),CFrame=CFrame.new(Vector3.new(3,4,5))},character)
 function character:FindFirstChild(name)
     for _,child in ipairs(self.children) do if child.Name==name then return child end end
@@ -671,13 +703,54 @@ RunService.Stepped:Fire(0,0.05)
 assert(not hum.AutoRotate,"spin did not resume")
 spin.Set(false)
 assert(hum.AutoRotate and spin.GetBind()==nil,"spin toggle did not restore rotation")
+local speedToggle=findConfig("Movement/Rivals/Speed/Speed")
+local speedValue=findConfig("Movement/Rivals/Speed/Walk Speed")
+speedValue.Set(10000)
+assert(hum.WalkSpeed==16,"disabled Speed altered movement")
+speedToggle.Set(true)
+assert(hum.WalkSpeed==10000,"Speed rejected a value above the slider range")
+hum.WalkSpeed=20
+RunService.PreSimulation:Fire()
+assert(hum.WalkSpeed==10000,"Speed did not maintain selected value")
+speedToggle.Set(false)
+assert(hum.WalkSpeed==16,"Speed did not restore original movement")
+local third=findConfig("Player/Rivals/Third Person/Third Person")
+local thirdDistance=findConfig("Player/Rivals/Third Person/Distance")
+local zoom=findConfig("Player/Rivals/Zoom Unlocker/Zoom Unlocker")
+root.ClassName="BasePart"
+root.LocalTransparencyModifier=1
+local viewBase=Camera.CFrame
+raycastResult=nil
+RivalsUI.Visible=false
+third.Set(true)
+assert(LocalPlayer.CameraMode==Enum.CameraMode.Classic and root.LocalTransparencyModifier==0,
+    "third person did not reveal local avatar")
+assert(math.abs((Camera.CFrame.Position-viewBase.Position).Magnitude-10)<0.0001,"third-person distance not applied")
+RunService.Bindings.RiftRivalsView()
+assert(math.abs((Camera.CFrame.Position-viewBase.Position).Magnitude-10)<0.0001,"camera offset accumulated")
+zoom.Set(true)
+UIS.InputChanged:Fire({UserInputType=Enum.UserInputType.MouseWheel,Position=Vector3.new(0,0,-1)},false)
+RunService.Bindings.RiftRivalsView()
+assert(math.abs((Camera.CFrame.Position-viewBase.Position).Magnitude-13)<0.0001,"scroll zoom failed")
+thirdDistance.Set(20)
+assert(math.abs((Camera.CFrame.Position-viewBase.Position).Magnitude-20)<0.0001,"distance setting failed")
+raycastResult={Position=viewBase.Position+Vector3.new(0,0,2),Normal=Vector3.new(0,0,-1)}
+RunService.Bindings.RiftRivalsView()
+assert(math.abs((Camera.CFrame.Position-viewBase.Position).Magnitude-1.7)<0.0001,"camera wall collision failed")
+raycastResult=nil
+third.Set(false)
+zoom.Set(false)
+assert(Camera.CFrame==viewBase and root.LocalTransparencyModifier==1
+    and LocalPlayer.CameraMinZoomDistance==0.5 and LocalPlayer.CameraMaxZoomDistance==12.5
+    and LocalPlayer.CameraMode=="LockFirstPerson","view disable did not restore original state")
 LocalPlayer.Character=nil
+print("PASS Rivals Speed/view: typed speed above range, third person, wheel zoom, wall collision, state restoration")
 print("PASS Rivals Spinbot/FOV: speed/reverse/flight cleanup, camera swaps, disabled values, unload restoration")
+end
 local chatToggle=findConfig("Fun/Rivals/Kill Chat/Kill Chat")
-local chatText=findConfig("Fun/Rivals/Kill Chat/Message")
 local chatDelay=findConfig("Fun/Rivals/Kill Chat/Message Delay")
 assert(chatToggle.GetBind()==nil and chatDelay.Min==1 and chatDelay.Max==10)
-chatText.Set("  Nice fight!\nGG  ")
+assert(not pcall(findConfig,"Fun/Rivals/Kill Chat/Message"),"fixed kill message remained editable")
 chatDelay.Set(2)
 chatToggle.Set(true)
 assert(identity==8 and RivalsKillChat.Enabled,"Kill Chat activation/identity restore failed")
@@ -690,7 +763,7 @@ assert(localInterface.LastArgs[1]=="enemy" and localInterface.LastArgs[2]==7,"ar
 eliminationApi.EliminationEffect(remoteInterface,"enemy")
 assert(#RivalsKillChat.Queue==1,"remote player's elimination queued chat")
 RunService.Heartbeat:Fire()
-assert(#chatMessages==1 and chatMessages[1]=="Nice fight! GG","local elimination message failed")
+assert(#chatMessages==1 and chatMessages[1]==RIFT_KILL_MESSAGE,"exact local elimination message failed")
 eliminationApi.EliminationEffect(localInterface,"enemy2")
 RunService.Heartbeat:Fire()
 assert(#chatMessages==1,"message delay not respected")
@@ -701,12 +774,9 @@ localInterface.Fail=true
 assert(not pcall(eliminationApi.EliminationEffect,localInterface,"enemy3") and #RivalsKillChat.Queue==0,
     "native errors swallowed or failed effects queued")
 localInterface.Fail=false
-chatText.Set("  ")
+RivalsKillChat.Message="old saved message"
 eliminationApi.EliminationEffect(localInterface,"enemy")
-assert(#RivalsKillChat.Queue==0,"empty message queued")
-chatText.Set(string.rep("é",220))
-eliminationApi.EliminationEffect(localInterface,"enemy")
-assert(utf8.len(RivalsKillChat.Queue[1])==200,"message truncation split Unicode")
+assert(RivalsKillChat.Queue[1]==RIFT_KILL_MESSAGE,"old message changed the fixed kill message")
 chatToggle.Set(false)
 assert(eliminationApi.EliminationEffect==nativeElimination and #RivalsKillChat.Queue==0,
     "disable did not restore method/clear queue")
@@ -714,9 +784,8 @@ requireFailure=true
 chatToggle.Set(true)
 assert(not chatToggle.Get() and not RivalsKillChat.Enabled and identity==8,"require failure left enabled")
 requireFailure=false
-chatText.Set("GG! - Rift")
 chatToggle.Set(true)
-print("PASS Rivals Kill Chat: local feedback, native results/errors, editable messages, Unicode, delay, disable/failure cleanup")
+print("PASS Rivals Kill Chat: exact message, local feedback, native results/errors, delay, disable/failure cleanup")
 local cameraStep=RunService.Bindings.RiftRivalsCameraAim
 assert(cameraStep,"camera aim was not scheduled after the game camera")
 cards.aimbot.MouseButton1Click:Fire()
@@ -727,6 +796,41 @@ aimMouseHeld=true
 cameraStep(1/60)
 assert(Camera.CFrame.LookVector:Dot((target.Position-Camera.CFrame.Position).Unit)>0.9999)
 assert(Camera.CFrame.Position==cameraBefore.Position,"aimbot moved the camera position")
+do
+    local savedPlayers=Players.GetPlayers
+    local other,otherHead=combatPlayer(2,1)
+    Players.GetPlayers=function() return {LocalPlayer,enemy,other} end
+    local savedPosition=target.Position
+    target.Position=Vector3.new(300,0,100)
+    cameraStep(1/60)
+    assert(state.LockedPlayer==enemy and Camera.CFrame.LookVector:Dot(
+        (target.Position-Camera.CFrame.Position).Unit)>0.9999,"aimbot switched targets or dropped lock outside acquisition FOV")
+    aimMouseHeld=false
+    cameraStep(1/60)
+    assert(state.LockedPlayer==nil,"mouse release kept the old lock")
+    aimMouseHeld=true
+    cameraStep(1/60)
+    assert(state.LockedPlayer==other,"aimbot did not reacquire on new activation")
+    otherHead.Position=Vector3.new(2000,0,100)
+    cameraStep(1/60)
+    assert(state.LockedPlayer==nil,"aimbot retained an out-of-range target")
+    findConfig("Combat/Rivals/Aimbot/Max Distance").Set(4000)
+    RivalsAim.Radius=2500
+    cameraStep(1/60)
+    assert(state.LockedPlayer==enemy,"increased target range did not permit reacquisition")
+    raycastResult={Instance=wall,Position=Vector3.new(0,0,20)}
+    findConfig("Combat/Rivals/Aimbot/Wall Check").Set(false)
+    cameraStep(1/60)
+    assert(state.LockedPlayer==enemy,"wall check off dropped the lock behind cover")
+    findConfig("Combat/Rivals/Aimbot/Wall Check").Set(true)
+    cameraStep(1/60)
+    assert(state.LockedPlayer==nil,"wall check on kept a blocked lock")
+    raycastResult=nil
+    findConfig("Combat/Rivals/Aimbot/Max Distance").Set(1000)
+    RivalsAim.Radius=150
+    target.Position=savedPosition
+    Players.GetPlayers=savedPlayers
+end
 cameraBefore=Camera.CFrame
 Window.Visible=true
 cameraStep(1/60)
@@ -762,10 +866,49 @@ assert(Camera.CFrame.LerpAlpha==nil
 cards.aimbot.MouseButton1Click:Fire()
 cards.assist.MouseButton1Click:Fire()
 aimMouseHeld=false
-print("PASS camera aim: activation, enemy filtering, FOV, walls, body selection, smoothing, priority, menu pause")
+print("PASS camera aim: sticky player lock, release/reacquisition, range, walls, body selection, smoothing, priority, menu pause")
+do
+    local hudToggle=findConfig("Visuals/Rivals/Target HUD/Target HUD")
+    local model=enemy.Fighter.Entity.Model
+    local humanoid=model:FindFirstChildOfClass("Humanoid")
+    enemy.DisplayName,enemy.UserId="Test target",42
+    Players.GetUserThumbnailAsync=function(_,id) assert(id==42) return "rbxassetid://42" end
+    state.LockedPlayer=enemy
+    hudToggle.Set(true)
+    local hud=RivalsAim.TargetHUD
+    assert(hud.Visible and Persistence.HUDFrames.TargetHUD==hud,"target HUD did not follow lock")
+    assert(hud:FindFirstChild("TargetName").Text=="Test target"
+        and hud:FindFirstChild("Avatar").Image=="rbxassetid://42","target name/avatar were not displayed")
+    humanoid.Health,humanoid.MaxHealth=35,100
+    RivalsAim.UpdateTargetHUD()
+    assert(hud:FindFirstChild("TargetHealth").Text=="35 / 100 HP","HUD health was stale")
+    Window.Visible=true
+    RivalsAim.UpdateTargetHUD()
+    assert(not hud.Visible,"HUD covered the menu")
+    Window.Visible=false
+    humanoid.Health=0
+    RivalsAim.UpdateTargetHUD()
+    assert(not hud.Visible,"HUD showed a dead target")
+    humanoid.Health=100
+    state.LockedPlayer=nil
+    hudToggle.Set(false)
+    assert(not hud.Visible,"HUD did not hide when disabled")
+    local musicToggle=findConfig("Visuals/Rivals/Music Overlay/Music Overlay")
+    BedWars.SpotifyPanel=new("Frame",{Visible=false},Gui)
+    BedWars.Running=false
+    musicToggle.Set(true)
+    assert(BedWars.SpotifyPanel.Visible and BedWars.MusicOverlayVisible(),
+        "Rivals music overlay depended on BedWars running")
+    Settings.SelectedGame="BedWars"
+    assert(not BedWars.MusicOverlayVisible(),"Rivals music setting leaked to BedWars")
+    Settings.SelectedGame="Rivals"
+    musicToggle.Set(false)
+    assert(not BedWars.SpotifyPanel.Visible,"music overlay did not hide when disabled")
+end
+print("PASS Rivals HUDs: locked target, name/avatar, health changes, death/menu/disable, independent music setting")
 
 local outlineColor,boxColor=color(0.4,0.2,0.9),color(0.2,0.8,0.4)
-findConfig("Visuals/Rivals/Enemy Outlines/Color").Set(outlineColor)
+findConfig("Visuals/Rivals/Player Outlines/Color").Set(outlineColor)
 findConfig("Visuals/Rivals/ESP Boxes/Color").Set(boxColor)
 cards.outlines.MouseButton1Click:Fire()
 cards.boxes.MouseButton1Click:Fire()
@@ -773,14 +916,14 @@ RunService.RenderStepped:Fire(1/60)
 local function liveVisuals()
     local outlines,boxes={},{}
     for _,o in ipairs(created) do
-        if o.Name=="RiftEnemyOutline" and o.Parent then table.insert(outlines,o) end
+        if o.Name=="RiftPlayerOutline" and o.Parent then table.insert(outlines,o) end
         if o.Name=="EnemyBox" and o.Parent then table.insert(boxes,o) end
     end
     return outlines,boxes
 end
 local highlights,boxes=liveVisuals()
-assert(#highlights==1 and #boxes==1,"visuals included local, allied, dead, or foreign-arena models")
-assert(highlights[1].Adornee==enemy.Fighter.Entity.Model and highlights[1].OutlineColor==outlineColor)
+assert(#highlights==3 and #boxes==3,"visuals did not include every living non-local player")
+for _,entry in ipairs(highlights) do assert(entry.OutlineColor==outlineColor) end
 assert(boxes[1].Visible and boxes[1].Size.X.Offset==4 and boxes[1].Size.Y.Offset==6,
     "ESP box did not use projected model bounds")
 assert(boxes[1]:FindFirstChildOfClass("UIStroke").Color==boxColor,"box color did not update")
@@ -788,22 +931,23 @@ local humanoid=enemy.Fighter.Entity.Model:FindFirstChildOfClass("Humanoid")
 humanoid.Health=0
 RunService.RenderStepped:Fire(1/60)
 highlights,boxes=liveVisuals()
-assert(#highlights==0 and #boxes==0,"dead enemy visuals remained")
+assert(#highlights==2 and #boxes==2,"dead player visuals remained or teammates disappeared")
 humanoid.Health=100
 local oldEntity=enemy.Fighter.Entity
 local replacement=combatPlayer(2,40)
 enemy.Fighter.Entity=replacement.Fighter.Entity
 RunService.RenderStepped:Fire(1/60)
 highlights,boxes=liveVisuals()
-assert(#highlights==1 and highlights[1].Adornee==enemy.Fighter.Entity.Model,
-    "respawned entity did not replace the old visual")
+local respawnFound=false
+for _,entry in ipairs(highlights) do if entry.Adornee==enemy.Fighter.Entity.Model then respawnFound=true end end
+assert(#highlights==3 and respawnFound,"respawned entity did not replace the old visual")
 enemy.Fighter.Entity=oldEntity
 cards.outlines.MouseButton1Click:Fire()
 cards.boxes.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
 highlights,boxes=liveVisuals()
 assert(#highlights==0 and #boxes==0,"disabled visuals remained")
-print("PASS Rivals visuals: real enemy models, independent colors, projected boxes, death, respawn, toggle cleanup")
+print("PASS Rivals visuals: all players and teams, independent colors, projected boxes, death, respawn, cleanup")
 local flightControl
 for _,c in ipairs(ConfigControls) do
     if c.Key=="Movement/Rivals/Fly/Fly" then flightControl=c end
@@ -876,7 +1020,7 @@ assert(cards.aim.Visible and not cards.fov.Visible,"shared search filtering fail
 print("PASS Rivals board: shared BedWars layout/cards/search, game-specific controls, FOV slider")
 cards.outlines.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
-assert(#liveVisuals()==1)
+assert(#liveVisuals()==3)
 ENV.SunsetRivalsAimHook.Restore()
 assert(not RivalsKillChat.Enabled and eliminationApi.EliminationEffect==nativeElimination
     and #RivalsKillChat.Queue==0,"unload did not clean up Kill Chat")
@@ -897,3 +1041,32 @@ assert(bedwarsTitle)
 for _,o in ipairs(BedWarsUI:GetChildren()) do if o.Name=="KIT" then kitColumn=o end end
 assert(kitColumn,"shared renderer lost BedWars kit column")
 print("PASS BedWars board: original dimensions and kit column retained")
+do
+BedWars.PlayersOn=true
+BedWars.PlayerOutlineColor=outlineColor
+for _,player in ipairs(Players:GetPlayers()) do
+    if player~=LocalPlayer then player.Character=player.Fighter.Entity.Model end
+end
+refreshBedWarsPlayers()
+local count=0
+for _,mark in pairs(bedWarsMarks.Players) do count+=1 assert(mark.Color==outlineColor) end
+assert(count==3,"BedWars outlines omitted teammates or included dead players")
+BedWars.PlayersOn=false
+refreshBedWarsPlayers()
+assert(next(bedWarsMarks.Players)==nil,"BedWars outline toggle did not clean up")
+print("PASS BedWars outlines: all living players and teams, consistent color, disable cleanup")
+Settings.SelectedGame="Rivals"
+RivalsUI.Visible=false
+Window.Visible=false
+local originalView=Camera.CFrame
+local originalMode,originalMin,originalMax=LocalPlayer.CameraMode,LocalPlayer.CameraMinZoomDistance,LocalPlayer.CameraMaxZoomDistance
+RivalsView.ThirdPerson=true
+RivalsView.ZoomUnlocked=true
+RivalsView.Apply()
+assert(RunService.Bindings.RiftRivalsView)
+for _,connection in ipairs(connections) do connection:Disconnect() end
+assert(not RunService.Bindings.RiftRivalsView and Camera.CFrame==originalView
+    and LocalPlayer.CameraMode==originalMode and LocalPlayer.CameraMinZoomDistance==originalMin
+    and LocalPlayer.CameraMaxZoomDistance==originalMax,"unload did not restore camera/zoom")
+print("PASS view unload: camera offset, mode, zoom bounds, and render binding restored")
+end

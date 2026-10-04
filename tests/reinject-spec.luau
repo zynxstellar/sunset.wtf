@@ -69,6 +69,7 @@ assert(#ENV.SunsetSettingsSnapshot.Controls==3)
 rivalsFly,bedwarsAura,menuBlur=false,true,false
 rivalsBind,bedwarsBind=nil,nil
 ENV.SunsetSettingsSnapshot=nil
+ENV.SunsetSettingsSnapshots=nil
 assert(Persistence.Restore("Rivals") and rivalsFly and menuBlur and bedwarsAura,
     "Rivals selection did not restore independently from its file")
 assert(rivalsBind==Enum.KeyCode.Q and bedwarsBind==nil,"Rivals keybind did not restore independently")
@@ -78,6 +79,56 @@ assert(Persistence.Restore("BedWars") and not bedwarsAura and not menuBlur and r
 assert(bedwarsBind==Enum.KeyCode.R and rivalsBind==Enum.KeyCode.Q,"BedWars keybind did not restore independently")
 assert(files["SunsetConfigs/SunsetAuto_Rivals.json"]~=files["SunsetConfigs/SunsetAuto_BedWars.json"])
 print("PASS per-game configs: hidden module settings saved, enabled selections restored, separate files and blur settings")
+do
+    local previousControls=ConfigControls
+    local distance,active=150,false
+    local savedDistance=1250
+    local range={Key="Combat/Rivals/Aimbot/Max Distance",Kind="number",Get=function() return distance end,
+        Set=function(value) distance=value end}
+    local toggle={Key="Combat/Rivals/Aimbot/Aimbot",Kind="toggle",Get=function() return active end,
+        Set=function(value) if value then assert(distance==savedDistance,"aimbot enabled before range restored") end active=value end}
+    distance,active=savedDistance,true
+    ConfigControls={toggle,range}
+    Settings.SelectedGame="Rivals"
+    assert(Persistence.Save())
+    Settings.SelectedGame="BedWars"
+    assert(Persistence.Save())
+    distance,active=150,false
+    assert(Persistence.Restore("Rivals") and active and distance==savedDistance,
+        "per-game memory snapshot did not restore module/range")
+    ENV.SunsetSettingsSnapshot,ENV.SunsetSettingsSnapshots=nil,nil
+    distance,active=150,false
+    assert(Persistence.Restore("Rivals") and active and distance==savedDistance,
+        "fresh injection did not restore module/range from disk")
+    ConfigControls=previousControls
+end
+print("PASS reinjection settings: separate game snapshots, disk reload, parameters restored before modules enabled")
+local previousControls=ConfigControls
+local preset,accent,outlineEnabled,outlineBind="Rift",nil,false,nil
+local Color3={fromRGB=function(r,g,b) return {R=r/255,G=g/255,B=b/255} end}
+-- Persistence functions resolve globals lexically; provide the mocked Roblox color constructor.
+getfenv().Color3=Color3
+ConfigControls={
+    {Key="Sunset/All/Colors/Preset",Kind="choice",Get=function() return preset end,Set=function(v) preset=v end},
+    {Key="Sunset/All/Colors/Accent Color",Kind="color",Get=function() return accent end,Set=function(v) accent=v end},
+    {Key="Visuals/Rivals/Player Outlines/Player Outlines",Kind="toggle",Get=function() return outlineEnabled end,
+        Set=function(v) outlineEnabled=v end,GetBind=function() return outlineBind end,SetBind=function(v) outlineBind=v end},
+}
+Settings.SelectedGame="Rivals"
+ENV.SunsetSettingsSnapshot={Version=5,Game="Rivals",Controls={
+    {Key="Sunset/All/Colors/Preset",Kind="choice",Value="Rift"},
+    {Key="Sunset/All/Colors/Accent Color",Kind="color",Value={139,92,246}},
+    {Key="Visuals/Rivals/Enemy Outlines/Enemy Outlines",Kind="toggle",Value=true,Bind="Q"},
+}}
+assert(Persistence.Restore("Rivals") and preset=="Rift" and accent.R==139/255,
+    "existing theme did not migrate to Rift")
+assert(outlineEnabled and outlineBind==Enum.KeyCode.Q,"renamed outlines lost their enabled selection/keybind")
+preset="Rose"
+assert(Persistence.Save() and ENV.SunsetSettingsSnapshot.RiftThemeVersion==1)
+preset="Rift"
+assert(Persistence.Restore("Rivals") and preset=="Rose","later theme choice was overwritten")
+ConfigControls=previousControls
+print("PASS Rift theme migration: updated once, later choices preserved, outline selection/bind retained")
 
 local function installQueue(queue_on_teleport)
 -- INSERT_QUEUE_PRODUCTION

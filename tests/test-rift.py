@@ -69,7 +69,9 @@ def main():
         startup_path.write_text(startup_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(startup_path)], check=True)
         rivals_chunks = [
+            between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),
+            between(inner, 'local function refreshBedWarsPlayers()', '\nlocal function refreshBedWarsMap()'),
             between(inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
             between(inner, 'local function projectBounds(', '\nlocal ESP = {}'),
             between(inner, 'local savedCamType, savedCamMode, camOffset',
@@ -94,6 +96,12 @@ def main():
         reinject_path = temp / 'reinject-spec.luau'
         reinject_path.write_text(reinject_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(reinject_path)], check=True)
+        fly_spec = (ROOT / 'tests' / 'fly-spec.luau').read_text(encoding='utf-8')
+        fly_spec = fly_spec.replace('-- INSERT_FLY_PRODUCTION',
+            between(inner, 'local Fly = {}', '\nlocal MapFloorY'))
+        fly_path = temp / 'fly-spec.luau'
+        fly_path.write_text(fly_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(fly_path)], check=True)
         startup = between(inner, 'if detectedGame then\n    Persistence.Restore',
                           '\nENV.SunsetLoading.Status.Text')
         assert 'AutoReinject.Toggle.Set(false)' not in startup
