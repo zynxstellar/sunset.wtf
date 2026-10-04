@@ -140,12 +140,13 @@ function terrain:WriteVoxels(region,resolution,materials)
     assert(materials[1][1][1]==Enum.Material.Water, "water not written")
     self.LastRegion=region
 end
+local npcParts = {}
 local workspace = {Terrain=terrain,Gravity=196.2}
 function workspace:GetPartBoundsInBox(frame)
     local p=frame.Position/3
     return blocks[key(p)] and {{CanCollide=true}} or {}
 end
-function workspace:GetPartBoundsInRadius() return {} end
+function workspace:GetPartBoundsInRadius() return npcParts end
 function workspace:Raycast(origin,direction)
     if waterGround then
         if direction.Y < 0 and origin.Y >= waterGround and origin.Y+direction.Y <= waterGround then
@@ -313,6 +314,38 @@ players[2].ally=true
 bedWarsAuraStep()
 assert(#attackCalls==count, "aura attacked an ally")
 print("PASS aura: configured Reach, bounded validation, immediate equip attack, cadence, dead/ally filters")
+
+players[2].ally=false
+held=sword
+BedWars.AuraPreviousItem=nil
+enemyRoot.Position=Vector3.new(10,3,0)
+local guardian,guardianRoot,guardianHumanoid=newCharacter(Vector3.new(1,3,0))
+guardian.Name="DiamondGuardian"
+guardianHumanoid.Health=1
+local boss,bossRoot,bossHumanoid=newCharacter(Vector3.new(2,3,0))
+boss.Name="GolemBoss"
+bossHumanoid.Health=1000
+npcParts={
+    {FindFirstAncestorOfClass=function() return guardian end},
+    {FindFirstAncestorOfClass=function() return boss end},
+}
+function BedWars.GearScore(owner) return owner and 1 or 100 end
+for _,priority in ipairs({"Anything","Lower HP","Higher HP","More Gear"}) do
+    BedWars.AuraPriority=priority
+    BedWars.LastAuraAttack=nil
+    bedWarsAuraStep()
+    assert(attackCalls[#attackCalls].payload.entityInstance==enemy,
+        "NPC stole player priority in mode "..priority)
+    advance(0.2)
+end
+enemyRoot.Position=Vector3.new(100,3,0)
+BedWars.AuraPriority="Anything"
+BedWars.LastAuraAttack=nil
+bedWarsAuraStep()
+assert(attackCalls[#attackCalls].payload.entityInstance==guardian,
+    "NPC fallback stopped working when no player was in range")
+npcParts={}
+print("PASS player priority: closer guardian, lower/higher-health NPCs, all priority modes, NPC fallback")
 
 local listFrame={Parent=true,Position=UDim2.new(1,-14,0,38)}
 local hudFrame={Parent=true,Position=UDim2.new(0,0,0,0)}

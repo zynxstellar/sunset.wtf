@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-native-shop-k249"
+local SUNSET_BUILD = "20261004-rift-player-priority-k250"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -3843,6 +3843,7 @@ local function bedWarsAuraStep()
         if d <= range then
             targets[#targets + 1] = {
                 model = target, root = targetRoot, distance = d,
+                isPlayer = owner ~= nil,
                 health = targetHumanoid.Health,
                 gear = BedWars.AuraPriority == "More Gear" and BedWars.GearScore(owner, target) or 0,
             }
@@ -3905,6 +3906,7 @@ local function bedWarsAuraStep()
             or not BedWars.Running or not BedWars.AuraOn then return end
     end
     table.sort(targets, function(a, b)
+        if a.isPlayer ~= b.isPlayer then return a.isPlayer end
         if BedWars.AuraPriority == "Higher HP" and a.health ~= b.health then
             return a.health > b.health
         elseif BedWars.AuraPriority == "Lower HP" and a.health ~= b.health then

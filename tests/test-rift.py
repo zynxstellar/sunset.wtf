@@ -30,6 +30,7 @@ def main():
         between(inner, 'do\n    BedWars.NotifyGui', '\ndo\n    BedWars.SpotifyPanel'),
         between(inner, 'BedWars.VoidWater = {}', '\nlocal sprintController'),
         between(inner, 'function BedWars.AttackRange()', '\nfunction BedWars.MeleeItem'),
+        between(inner, 'function BedWars.HostileNpc(', '\nfunction BedWars.Visible('),
         between(inner, 'local swordHitRemote,', '\nlocal bedWarsProjectileApi'),
         between(inner, 'local function bedWarsReleaseScaffoldItem()', '\nlocal pickupAttempts'),
         between(inner, 'local function bedWarsShopCatalog()', '\nlocal function bedWarsAutoBuyStep'),
