@@ -20,7 +20,7 @@ Enum.KeyCode=setmetatable({}, {__index=function(t,name)
     rawset(t,name,key)
     return key
 end})
-Enum.RenderPriority={Camera={Value=200}}
+Enum.RenderPriority={Camera={Value=200},Last={Value=300}}
 local vectors={}
 local Vector3={new=function(x,y,z) return setmetatable({X=x or 0,Y=y or 0,Z=z or 0},vectors) end}
 local Vector2={new=function(x,y) return Vector3.new(x,y,0) end}
@@ -69,6 +69,7 @@ function CFrame.fromOrientation(x,y,z)
     f.LookVector=Vector3.new(-math.sin(y)*math.cos(x),math.sin(x),-math.cos(y)*math.cos(x))
     return f
 end
+CFrame.Angles=CFrame.fromOrientation
 function frameMeta.__mul(a,b)
     if getmetatable(b)==vectors then return a.Position+b end
     local f=CFrame.fromOrientation(table.unpack(b.Angles))
@@ -131,10 +132,10 @@ local function riftTrashFallback() end
 local function makeDraggable() end
 local connections={}
 local function track(c) table.insert(connections,c) return c end
-local RunService={Heartbeat=signal(),RenderStepped=signal()}
+local RunService={Heartbeat=signal(),RenderStepped=signal(),Stepped=signal()}
 RunService.Bindings={}
 function RunService:BindToRenderStep(name,priority,callback)
-    assert(priority==201)
+    assert(priority==201 or priority==301)
     self.Bindings[name]=callback
 end
 function RunService:UnbindFromRenderStep(name) self.Bindings[name]=nil end
@@ -179,10 +180,12 @@ local AimTab={Left=new("Frame",{},nil)}
 local VisualsTab={Left=new("Frame",{},nil)}
 local SettingsTab={Left=new("Frame",{},nil)}
 local MainTab={Left=new("Frame",{},nil)}
+local MiscTab={Left=new("Frame",{},nil)}
 local flightStarts,flightStops=0,0
 local Fly={Start=function() flightStarts+=1 end,Stop=function() flightStops+=1 end}
 Tabs.Combat={Left=AimTab.Left,Right=new("Frame",{},nil)}
 Tabs.Movement={Left=MainTab.Left,Right=new("Frame",{},nil)}
+Tabs.Misc={Left=MiscTab.Left,Right=new("Frame",{},nil)}
 Tabs.Visuals={Left=VisualsTab.Left,Right=new("Frame",{},nil)}
 Tabs.Sunset={Left=SettingsTab.Left,Right=new("Frame",{},nil)}
 local function gameSection(gameName,column,title)
@@ -558,6 +561,8 @@ assert(gun.StartShooting==nativeShot and rawget(localFighter,"GetCameraData")==n
     "unload did not restore native gun and inherited camera method")
 print("PASS Rivals shots: repeated shots, both aim frames, origin positions, real metadata, body choices, walls, cleanup")
 
+local fovCleanupIndex=#connections+1
+RivalsFOV.Setup()
 RivalsAim.Setup()
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
@@ -572,16 +577,68 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="Aimbot" then cards.aimbot=o end
     if o:IsA("TextButton") and o.Name=="Enemy Outlines" then cards.outlines=o end
     if o:IsA("TextButton") and o.Name=="ESP Boxes" then cards.boxes=o end
+    if o:IsA("TextButton") and o.Name=="Spinbot" then cards.spin=o end
+    if o:IsA("TextButton") and o.Name=="FOV" then cards.cameraFOV=o end
     if o.Parent==RivalsUI and o:IsA("Frame") and o.Name~="Frame" then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
+assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")
 local function findConfig(key)
     for _,c in ipairs(ConfigControls) do if c.Key==key then return c end end
     error("missing config "..key)
 end
+local fovToggle=findConfig("Visuals/Rivals/FOV/FOV")
+local fovValue=findConfig("Visuals/Rivals/FOV/Field of View")
+assert(fovToggle.GetBind()==nil and fovValue.Min==30 and fovValue.Max==120)
+Camera.FieldOfView=70
+fovValue.Set(100)
+assert(Camera.FieldOfView==70,"disabled FOV changed camera")
+fovToggle.Set(true)
+assert(Camera.FieldOfView==100,"FOV toggle did not apply")
+Camera.FieldOfView=65
+RunService.Bindings.RiftRivalsFOV()
+assert(Camera.FieldOfView==100,"game camera update overrode selected FOV")
+local replacement={FieldOfView=75}
+workspace.CurrentCamera=replacement
+RunService.Bindings.RiftRivalsFOV()
+assert(Camera.FieldOfView==70 and replacement.FieldOfView==100,"camera swap did not restore/capture FOV")
+fovToggle.Set(false)
+assert(replacement.FieldOfView==75,"FOV off did not restore original")
+workspace.CurrentCamera=Camera
+fovToggle.Set(true)
+connections[fovCleanupIndex].Disconnect()
+assert(Camera.FieldOfView==70 and not RunService.Bindings.RiftRivalsFOV,"FOV unload cleanup failed")
+local spin=findConfig("Misc/Rivals/Spinbot/Spinbot")
+local speed=findConfig("Misc/Rivals/Spinbot/Spin Speed")
+local reverse=findConfig("Misc/Rivals/Spinbot/Reverse Spin")
+local character=new("Model",{},nil)
+character.Parent=workspace
+local hum=new("Humanoid",{Health=100,AutoRotate=true},character)
+local root=new("Part",{Name="HumanoidRootPart",Position=Vector3.new(3,4,5),CFrame=CFrame.new(Vector3.new(3,4,5))},character)
+function character:FindFirstChild(name)
+    for _,child in ipairs(self.children) do if child.Name==name then return child end end
+end
+LocalPlayer.Character=character
+speed.Set(360)
+spin.Set(true)
+RunService.Stepped:Fire(0,0.05)
+assert(not hum.AutoRotate and math.abs(root.CFrame.Angles[2]-math.rad(18))<0.0001,"spin speed failed")
+reverse.Set(true)
+RunService.Stepped:Fire(0,0.05)
+assert(math.abs(root.CFrame.Angles[2])<0.0001,"reverse spin failed")
+Settings.FlyEnabled=true
+RunService.Stepped:Fire(0,0.05)
+assert(hum.AutoRotate,"flight conflict did not restore rotation")
+Settings.FlyEnabled=false
+RunService.Stepped:Fire(0,0.05)
+assert(not hum.AutoRotate,"spin did not resume")
+spin.Set(false)
+assert(hum.AutoRotate and spin.GetBind()==nil,"spin toggle did not restore rotation")
+LocalPlayer.Character=nil
+print("PASS Rivals Spinbot/FOV: speed/reverse/flight cleanup, camera swaps, disabled values, unload restoration")
 local cameraStep=RunService.Bindings.RiftRivalsCameraAim
 assert(cameraStep,"camera aim was not scheduled after the game camera")
 cards.aimbot.MouseButton1Click:Fire()

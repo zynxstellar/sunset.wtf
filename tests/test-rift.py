@@ -56,7 +56,14 @@ def main():
         for path in [ROOT / 'alua', inner_path]:
             subprocess.run([str(compiler), '--null', str(path)], check=True)
         subprocess.run([str(runtime), str(spec_path)], check=True)
+        slider_spec = (ROOT / 'tests' / 'slider-spec.luau').read_text(encoding='utf-8')
+        slider_spec = slider_spec.replace('-- INSERT_SLIDER_PRODUCTION',
+            between(inner, 'local function sliderNumber(', '\nfunction Elements.Dropdown'))
+        slider_path = temp / 'slider-spec.luau'
+        slider_path.write_text(slider_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(slider_path)], check=True)
         rivals_chunks = [
+            between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),
             between(inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
             between(inner, 'local function projectBounds(', '\nlocal ESP = {}'),
             between(inner, 'local savedCamType, savedCamMode, camOffset',

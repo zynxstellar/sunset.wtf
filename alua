@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-aim-esp-k262"
+local SUNSET_BUILD = "20261004-rift-rivals-sliders-spin-fov-k263"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -996,7 +996,7 @@ local function sliderNumber(raw, low, high, previous, step)
     return math.clamp(tonumber(string.format("%.4f", rounded)), low, high)
 end
 function Elements.Slider(parent, text, min, max, default, suffix, callback, step)
-    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1 }, parent)
+    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 52), BackgroundTransparency = 1 }, parent)
     local value = sliderNumber(default or min, min, max, min, step)
     local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
     local title = label(top, text .. ((suffix and suffix ~= "") and (" (" .. suffix:match("^%s*(.-)%s*$") .. ")") or ""), 12)
@@ -1011,13 +1011,21 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     border(number, T.border)
     local plus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -26, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
     local minus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -12, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
-    local bar = new("TextButton", { Size = UDim2.new(1, 0, 0, 8), Position = UDim2.fromOffset(0, 27), BackgroundColor3 = T.element, BorderSizePixel = 0, Text = "", AutoButtonColor = false }, holder)
+    local hitArea = new("TextButton", {
+        Name = "SliderDragArea", Size = UDim2.new(1, 0, 0, 30),
+        Position = UDim2.fromOffset(0, 22), BackgroundTransparency = 1,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false,
+    }, holder)
+    local bar = new("Frame", {
+        Size = UDim2.new(1, -16, 0, 8), Position = UDim2.fromOffset(8, 11),
+        BackgroundColor3 = T.element, BorderSizePixel = 0,
+    }, hitArea)
     border(bar, T.border)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, bar)
     local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.red, BorderSizePixel = 0 }, bar)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, fill)
     local knob = new("Frame", {
-        Size = UDim2.fromOffset(12, 12), AnchorPoint = Vector2.new(0.5, 0.5),
+        Size = UDim2.fromOffset(18, 18), AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0, 0.5), BackgroundColor3 = T.red,
         BorderSizePixel = 0, ZIndex = bar.ZIndex + 2,
     }, bar)
@@ -1033,19 +1041,47 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
         if callback and (changed or initial) then task.spawn(callback, value) end
     end
     number.FocusLost:Connect(function() set(number.Text) end)
-    local dragging = false
-    local function fromMouse()
+    local dragInput, grabOffset, scrollParents = nil, 0, {}
+    local function stopDrag()
+        dragInput = nil
+        for scroll, enabled in pairs(scrollParents) do scroll.ScrollingEnabled = enabled end
+        table.clear(scrollParents)
+    end
+    local function fromPointer(x)
         if bar.AbsoluteSize.X <= 0 then return end
-        local ratio = (UIS:GetMouseLocation().X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
+        local ratio = (x - grabOffset - bar.AbsolutePosition.X) / bar.AbsoluteSize.X
         set(min + math.clamp(ratio, 0, 1) * (max - min))
     end
-    bar.MouseButton1Down:Connect(function() dragging = true fromMouse() end)
+    hitArea.InputBegan:Connect(function(input)
+        if dragInput or (input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch) then return end
+        if bar.AbsoluteSize.X <= 0 then return end
+        dragInput = input
+        local fraction = max > min and (value - min) / (max - min) or 0
+        local offset = input.Position.X - (bar.AbsolutePosition.X + fraction * bar.AbsoluteSize.X)
+        -- Keep the value steady when grabbing the handle; clicks elsewhere jump to that spot.
+        grabOffset = math.abs(offset) <= 12 and offset or 0
+        local ancestor = holder.Parent
+        while ancestor and ancestor ~= Gui do
+            if ancestor:IsA("ScrollingFrame") then
+                scrollParents[ancestor] = ancestor.ScrollingEnabled
+                ancestor.ScrollingEnabled = false
+            end
+            ancestor = ancestor.Parent
+        end
+        fromPointer(input.Position.X)
+    end)
     track(UIS.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then fromMouse() end
+        if dragInput and (input == dragInput or (dragInput.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseMovement)) then
+            fromPointer(input.Position.X)
+        end
     end))
     track(UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        if dragInput and (input == dragInput or (dragInput.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseButton1)) then stopDrag() end
     end))
+    track(UIS.WindowFocusReleased:Connect(stopDrag))
     plus.MouseButton1Click:Connect(function() set(value + (step or 1)) end)
     minus.MouseButton1Click:Connect(function() set(value - (step or 1)) end)
     set(value, true)
@@ -1709,8 +1745,7 @@ do
     track({ Disconnect = function() Settings.WalkSpeedEnabled = false restore() end })
 end
 
-do
-    local s = makeSection(MiscTab.Left, "Spinbot")
+local function buildSpinbot(s)
     local enabled = false
     local rate = 360
     local direction = 1
@@ -1722,7 +1757,7 @@ do
         end
         trackedHumanoid, originalAutoRotate, trackedRoot = nil, nil, nil
     end
-    spinToggle = Elements.Toggle(s, "Spinbot", false, function(on)
+    local spinToggle = Elements.Toggle(s, "Spinbot", false, function(on)
         enabled = on
         if not on then restoreSpin() end
     end)
@@ -1751,7 +1786,9 @@ do
         root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
     end))
     track({ Disconnect = function() enabled = false restoreSpin() end })
+    return spinToggle
 end
+spinToggle = buildSpinbot(makeSection(MiscTab.Left, "Spinbot"))
 
 
 local GhostPulse = { Enabled = false, Speed = 2,
@@ -8982,6 +9019,8 @@ function BedWars.BuildUI(boardGame)
             { "Combat", "Aim Assist", "Combat", "Rivals", "Aim Assist", "Aim Assist" },
             { "Combat", "Aimbot", "Combat", "Rivals", "Aimbot", "Aimbot" },
             { "Movement", "Fly", "Movement", "Rivals", "Fly", "Fly" },
+            { "Misc", "Spinbot", "Misc", "Rivals", "Spinbot", "Spinbot" },
+            { "Visuals", "FOV", "Visuals", "Rivals", "FOV", "FOV" },
             { "Visuals", "FOV Circle", "Visuals", "Rivals", "FOV Circle", "FOV Circle" },
             { "Visuals", "Enemy Outlines", "Visuals", "Rivals", "Enemy Outlines", "Enemy Outlines" },
             { "Visuals", "ESP Boxes", "Visuals", "Rivals", "ESP Boxes", "ESP Boxes" },
@@ -9791,6 +9830,33 @@ function RivalsAim.Setup()
 end
 
 
+local RivalsFOV = { Enabled = false, Value = 80 }
+function RivalsFOV.Setup()
+    local trackedCamera, originalFOV
+    local function restore()
+        if trackedCamera and originalFOV then trackedCamera.FieldOfView = originalFOV end
+        trackedCamera, originalFOV = nil, nil
+    end
+    function RivalsFOV.Apply()
+        if not RivalsFOV.Enabled or Settings.SelectedGame ~= "Rivals" then restore() return end
+        local camera = workspace.CurrentCamera
+        if camera ~= trackedCamera then
+            restore()
+            trackedCamera = camera
+            originalFOV = camera and camera.FieldOfView
+        end
+        if camera and camera.FieldOfView ~= RivalsFOV.Value then
+            camera.FieldOfView = RivalsFOV.Value
+        end
+    end
+    RunService:BindToRenderStep("RiftRivalsFOV", Enum.RenderPriority.Last.Value + 1, RivalsFOV.Apply)
+    track({ Disconnect = function()
+        RivalsFOV.Enabled = false
+        RunService:UnbindFromRenderStep("RiftRivalsFOV")
+        restore()
+    end })
+end
+
 function RivalsAim.BuildUI()
     local aim = gameSection("Rivals", AimTab.Left, "Silent Aim")
     Elements.Dropdown(aim, "Aim Part", { "Head", "Torso", "Root" }, "Head", function(value)
@@ -9842,6 +9908,16 @@ function RivalsAim.BuildUI()
     Elements.Slider(fov, "Radius", 50, 1500, 150, " px", function(value)
         RivalsAim.Radius = value
     end)
+    local cameraFOV = gameSection("Rivals", VisualsTab.Left, "FOV")
+    Elements.Toggle(cameraFOV, "FOV", false, function(on)
+        RivalsFOV.Enabled = on
+        RivalsFOV.Apply()
+    end)
+    Elements.Slider(cameraFOV, "Field of View", 30, 120, 80, "deg", function(value)
+        RivalsFOV.Value = value
+        RivalsFOV.Apply()
+    end)
+    buildSpinbot(gameSection("Rivals", MiscTab.Left, "Spinbot"))
     local list = gameSection("Rivals", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on)
         Settings.ModuleListOn = on
@@ -9858,6 +9934,7 @@ function RivalsAim.BuildUI()
 end
 
 if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
+    RivalsFOV.Setup()
     RivalsAim.Setup()
     RivalsAim.BuildUI()
 end
