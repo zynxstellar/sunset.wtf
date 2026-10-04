@@ -6,7 +6,8 @@ local enabled=true
 local control={Key="Sunset/All/Arena Travel/Auto Reinject",Kind="toggle",
     Get=function() return enabled end,Set=function(on) enabled=on end}
 local ConfigControls={control}
-local Persistence={SavedHUDPositions=function() return {} end,RestoreHUDPositions=function() end}
+local bedWarsHiddenSections={}
+local Persistence={HUDFrames={}}
 local RivalsAim={}
 local task={spawn=function() end,wait=function() end}
 local typeof=type
@@ -14,6 +15,14 @@ local detectedGame="Rivals"
 local SUNSET_BUILD="test-reinject-k260"
 local SUNSET_LOCAL_SOURCE="SunsetConfigs/SunsetCurrent.lua"
 local AutoReinject={enabled=true,Status={}}
+local files,encodedData={},{}
+local HttpService={JSONEncode=function(_,data)
+    local id=tostring(#encodedData+1)
+    table.insert(encodedData,data)
+    return id
+end,JSONDecode=function(_,id) return encodedData[tonumber(id)] end}
+local writefile=function(path,data) files[path]=data end
+local readfile=function(path) assert(files[path],"missing mock file") return files[path] end
 
 -- INSERT_PERSISTENCE_PRODUCTION
 
@@ -29,6 +38,33 @@ ENV.SunsetSettingsSnapshot={Version=5,Game="BedWars",Controls={
     {Key=control.Key,Kind="toggle",Value=false}}}
 control.Set(true)
 assert(Persistence.Restore("BedWars") and not enabled,"BedWars setting changed during Rivals migration")
+
+local rivalsFly,bedwarsAura,menuBlur=true,true,true
+local hidden={Visible=false}
+local rivalsControl={Key="Movement/Rivals/Fly/Fly",Kind="toggle",Box=hidden,Row=hidden,
+    Get=function() return rivalsFly end,Set=function(on) rivalsFly=on end}
+local bedwarsControl={Key="Combat/BedWars/Kill Aura/Kill Aura",Kind="toggle",Box=hidden,Row=hidden,
+    Get=function() return bedwarsAura end,Set=function(on) bedwarsAura=on end}
+local blurControl={Key="Sunset/All/Menu Blur/Enabled",Kind="toggle",Box=hidden,Row=hidden,
+    Get=function() return menuBlur end,Set=function(on) menuBlur=on end}
+ConfigControls={control,rivalsControl,bedwarsControl,blurControl}
+Settings.SelectedGame="Rivals"
+assert(Persistence.Save())
+local savedRivals=ENV.SunsetSettingsSnapshot
+assert(#savedRivals.Controls==3,"hidden module settings were skipped or foreign game was included")
+Settings.SelectedGame="BedWars"
+bedwarsAura,menuBlur=false,false
+assert(Persistence.Save())
+assert(#ENV.SunsetSettingsSnapshot.Controls==3)
+rivalsFly,bedwarsAura,menuBlur=false,true,false
+ENV.SunsetSettingsSnapshot=nil
+assert(Persistence.Restore("Rivals") and rivalsFly and menuBlur and bedwarsAura,
+    "Rivals selection did not restore independently from its file")
+ENV.SunsetSettingsSnapshot=nil
+assert(Persistence.Restore("BedWars") and not bedwarsAura and not menuBlur and rivalsFly,
+    "BedWars selection did not restore independently from its file")
+assert(files["SunsetConfigs/SunsetAuto_Rivals.json"]~=files["SunsetConfigs/SunsetAuto_BedWars.json"])
+print("PASS per-game configs: hidden module settings saved, enabled selections restored, separate files and blur settings")
 
 local function installQueue(queue_on_teleport)
 -- INSERT_QUEUE_PRODUCTION

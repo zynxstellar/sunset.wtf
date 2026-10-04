@@ -29,6 +29,7 @@ local function color(r,g,b)
     return {R=r,G=g,B=b,Lerp=function(self) return self end,ToHSV=function() return 0,1,1 end}
 end
 local Color3={new=color,fromRGB=function(r,g,b) return color(r/255,g/255,b/255) end}
+local T={element=color(0,0,0),text=color(1,1,1),dim=color(0.5,0.5,0.5),red=color(1,0,1)}
 local UDim={new=function(s,o) return {Scale=s,Offset=o} end}
 local UDim2={new=function(xs,xo,ys,yo) return {X=UDim.new(xs,xo),Y=UDim.new(ys,yo)} end}
 function UDim2.fromOffset(x,y) return UDim2.new(0,x,0,y) end
@@ -120,7 +121,8 @@ Gui.Parent=true
 local PlayerGui=new("Folder",{},nil)
 local Window={Visible=false}
 local BedWarsUI,RivalsUI
-local Settings={SelectedGame="Rivals",MenuBlurOn=true,ModuleListOn=true,SetMenuBlur=function() end}
+local Settings={SelectedGame="Rivals",MenuKey=Enum.KeyCode.RightShift,
+    MenuBlurOn=true,ModuleListOn=true,SetMenuBlur=function() end}
 local Camera={CameraType="Custom",CFrame=CFrame.new(Vector3.new()),ViewportSize=Vector2.new(1920,1080)}
 Camera.CFrame.LookVector=Vector3.new(0,0,1)
 local workspace={CurrentCamera=Camera}
@@ -137,6 +139,7 @@ local LocalPlayer={CameraMode="LockFirstPerson",GetMouse=function() return mouse
     GetAttribute=function() return 1 end}
 local Players={GetPlayers=function() return {LocalPlayer} end}
 local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
+    InputBegan=signal(),GetFocusedTextBox=function() return nil end,
     IsMouseButtonPressed=function() return false end,GetMouseLocation=function() return Vector2.new(100,100) end}
 local ENV={}
 local useScriptable=true
@@ -148,7 +151,11 @@ local ConfigControls,gameSections,Tabs={},{},{}
 local AimTab={Left=new("Frame",{},nil)}
 local VisualsTab={Left=new("Frame",{},nil)}
 local SettingsTab={Left=new("Frame",{},nil)}
+local MainTab={Left=new("Frame",{},nil)}
+local flightStarts,flightStops=0,0
+local Fly={Start=function() flightStarts+=1 end,Stop=function() flightStops+=1 end}
 Tabs.Combat={Left=AimTab.Left,Right=new("Frame",{},nil)}
+Tabs.Movement={Left=MainTab.Left,Right=new("Frame",{},nil)}
 Tabs.Visuals={Left=VisualsTab.Left,Right=new("Frame",{},nil)}
 Tabs.Sunset={Left=SettingsTab.Left,Right=new("Frame",{},nil)}
 local function gameSection(gameName,column,title)
@@ -162,6 +169,9 @@ local function gameSection(gameName,column,title)
     return content
 end
 local Elements={}
+local function configKey(parent,text)
+    return parent.tab.."/"..parent.game.."/"..parent.section.."/"..text
+end
 local function addControl(parent,text,kind,default,callback)
     local value=default
     local row=new("Frame",{},parent)
@@ -169,13 +179,6 @@ local function addControl(parent,text,kind,default,callback)
         Box=parent.Parent,Row=row,Get=function() return value end}
     c.Set=function(v) value=v callback(v) end
     table.insert(ConfigControls,c)
-    return c
-end
-function Elements.Toggle(p,t,d,cb)
-    local c=addControl(p,t,"toggle",d,cb)
-    new("Frame",{Size=UDim2.fromOffset(12,12)},c.Row)
-    label(c.Row,t)
-    new("TextButton",{Visible=true,Text="-"},c.Row)
     return c
 end
 function Elements.Slider(p,t,a,b,d,s,cb)
@@ -534,10 +537,24 @@ local cards,columns={},{}
 for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="Silent Aim" then cards.aim=o end
     if o:IsA("TextButton") and o.Name=="FOV Circle" then cards.fov=o end
+    if o:IsA("TextButton") and o.Name=="Fly" then cards.fly=o end
     if o.Parent==RivalsUI and o:IsA("Frame") and o.Name~="Frame" then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
+assert(cards.fly,"Rivals Fly is missing from the Movement column")
+local flightControl
+for _,c in ipairs(ConfigControls) do
+    if c.Key=="Movement/Rivals/Fly/Fly" then flightControl=c end
+end
+assert(flightControl and flightControl.GetBind()==nil)
+assert(flightControl.SetBind(Enum.KeyCode.F)==false,"saved Fly keybind was accepted")
+cards.fly.MouseButton1Click:Fire()
+assert(Settings.FlyEnabled and flightStarts==1,"Fly menu card did not start flight")
+cards.fly.MouseButton1Click:Fire()
+assert(not Settings.FlyEnabled and flightStops==1,"Fly menu card did not stop flight")
+UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.F},false)
+assert(not Settings.FlyEnabled and flightStarts==1,"F toggled Fly")
 assert(cards.aim.Parent:IsA("ScrollingFrame"),"Rivals lost shared scrolling card list")
 local radius,partControl,wallControl
 for _,c in ipairs(ConfigControls) do

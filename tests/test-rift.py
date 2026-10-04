@@ -57,6 +57,7 @@ def main():
             subprocess.run([str(compiler), '--null', str(path)], check=True)
         subprocess.run([str(runtime), str(spec_path)], check=True)
         rivals_chunks = [
+            between(inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
             between(inner, 'local savedCamType, savedCamMode, camOffset',
                     '\ntrack(Window:GetPropertyChangedSignal("Visible")'),
             between(inner, 'function BedWars.BuildUI(boardGame)',
@@ -71,7 +72,7 @@ def main():
         subprocess.run([str(runtime), str(rivals_path)], check=True)
         reinject_spec = (ROOT / 'tests' / 'reinject-spec.luau').read_text(encoding='utf-8')
         reinject_spec = reinject_spec.replace('-- INSERT_PERSISTENCE_PRODUCTION',
-            between(inner, 'do\n    local lastSavedJSON', '\nlocal function configKey'))
+            between(inner, 'function Persistence.ControlApplies(', '\nlocal function configKey'))
         reinject_spec = reinject_spec.replace('-- INSERT_QUEUE_PRODUCTION',
             between(inner, 'if detectedGame then\n    local queueTeleport', '\ndo\n    if detectedGame then'))
         reinject_path = temp / 'reinject-spec.luau'
