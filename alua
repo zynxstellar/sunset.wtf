@@ -53,7 +53,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-players-velocity-camera-k267"
+local SUNSET_BUILD = "20261004-rift-ui-register-fix-k268"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -6411,7 +6411,9 @@ end
 
 
 
-do
+-- Give HUD/session setup its own registers; executor debug compilation keeps
+-- all locals alive and otherwise exceeds the main chunk's 200-register limit.
+(function()
 local targetHUD = new("Frame", {
     Name = "BedWarsTargetHUD", Visible = false,
     AnchorPoint = Vector2.new(0.5, 1),
@@ -7292,7 +7294,7 @@ track(LocalPlayer.Idled:Connect(function()
         virtualUser:Button2Up(Vector2.zero, workspace.CurrentCamera.CFrame)
     end)
 end))
-end
+end)()
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" then

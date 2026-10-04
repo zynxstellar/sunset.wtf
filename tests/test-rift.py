@@ -55,6 +55,10 @@ def main():
         spec_path.write_text(harness, encoding='utf-8')
         for path in [ROOT / 'alua', inner_path]:
             subprocess.run([str(compiler), '--null', str(path)], check=True)
+            # Executor loadstring may keep every debug local in a register.
+            # Default CLI debug mode prunes lifetimes and can hide the 200-register failure.
+            for optimization in ('-O0', '-O1', '-O2'):
+                subprocess.run([str(compiler), '--null', optimization, '-g2', str(path)], check=True)
         subprocess.run([str(runtime), str(spec_path)], check=True)
         slider_spec = (ROOT / 'tests' / 'slider-spec.luau').read_text(encoding='utf-8')
         slider_spec = slider_spec.replace('-- INSERT_SLIDER_PRODUCTION',
