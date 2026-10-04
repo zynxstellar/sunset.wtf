@@ -8726,7 +8726,16 @@ function BedWars.BuildUI(boardGame)
                 local row = option.Row
                 local toggleName = row:FindFirstChildOfClass("TextLabel")
                 local bindButton = row:FindFirstChildOfClass("TextButton")
-                if toggleName then
+                if toggleName and bindButton and bindButton.Visible then
+                    row.Size = UDim2.new(1, 0, 0, 22)
+                    toggleName.Size = UDim2.new(1, -61, 0, 20)
+                    toggleName.TextTruncate = Enum.TextTruncate.AtEnd
+                    bindButton.Position = UDim2.new(1, -40, 0, 3)
+                    bindButton.Size = UDim2.fromOffset(40, 16)
+                    bindButton.TextScaled = false
+                    bindButton.TextSize = 10
+                end
+                if boardGame == "Rivals" and toggleName then
                     row.Size = UDim2.new(1, 0, 0, 22)
                     local checkbox = row:FindFirstChildOfClass("Frame")
                     if checkbox then
@@ -8739,7 +8748,7 @@ function BedWars.BuildUI(boardGame)
                     toggleName.TextTruncate = Enum.TextTruncate.AtEnd
                     toggleName.TextYAlignment = Enum.TextYAlignment.Center
                 end
-                if bindButton and bindButton.Visible then
+                if boardGame == "Rivals" and bindButton and bindButton.Visible then
                     bindButton.AnchorPoint = Vector2.new(1, 0.5)
                     bindButton.Position = UDim2.new(1, 0, 0.5, 0)
                     bindButton.Size = UDim2.fromOffset(40, 16)
