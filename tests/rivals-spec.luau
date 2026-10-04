@@ -110,6 +110,14 @@ local Settings={SelectedGame="Rivals",MenuBlurOn=true,ModuleListOn=true,SetMenuB
 local Camera={CameraType="Custom",CFrame=CFrame.new(Vector3.new()),ViewportSize=Vector2.new(1920,1080)}
 Camera.CFrame.LookVector=Vector3.new(0,0,1)
 local workspace={CurrentCamera=Camera}
+local RaycastParams={new=function() return {} end}
+local raycastResult,raycastFailure,casts=nil,false,{}
+function workspace:Raycast(origin,direction,params)
+    if raycastFailure then error("raycast unavailable") end
+    table.insert(casts,{Origin=origin,Direction=direction,Params=params})
+    if type(raycastResult)=="function" then return raycastResult(origin,direction,params) end
+    return raycastResult
+end
 local mouse={}
 local LocalPlayer={CameraMode="LockFirstPerson",GetMouse=function() return mouse end,
     GetAttribute=function() return 1 end}
@@ -119,7 +127,7 @@ local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
 local ENV={}
 local useScriptable=true
 local function anyMenuVisible() return Window.Visible or RivalsUI and RivalsUI.Visible or false end
-local RivalsAim={Enabled=false,FOVVisible=false,Radius=150}
+local RivalsAim={Enabled=false,FOVVisible=false,Radius=150,AimPart="Head",WallCheck=true}
 local BedWars={KitCatalog=function() error("Rivals must not read BedWars kit modules") end}
 local Persistence={HUDFrames={}}
 local ConfigControls,gameSections,Tabs={},{},{}
@@ -156,9 +164,18 @@ function Elements.Toggle(p,t,d,cb)
     new("TextButton",{Visible=true,Text="-"},c.Row)
     return c
 end
-function Elements.Slider(p,t,a,b,d,s,cb) return addControl(p,t,"number",d,cb) end
+function Elements.Slider(p,t,a,b,d,s,cb)
+    local c=addControl(p,t,"number",d,cb)
+    c.Min,c.Max=a,b
+    return c
+end
+function Elements.Dropdown(p,t,options,d,cb)
+    local c=addControl(p,t,"choice",d,cb)
+    c.Options=options
+    return c
+end
 Elements.Label=label
-local BRAND,SUNSET_BUILD="RIFT","test-k256"
+local BRAND,SUNSET_BUILD="RIFT","test-k257"
 local hooks,hookInstalls,originalCalls={},0,{}
 local currentMethod="Raycast"
 local caller=false
@@ -188,7 +205,8 @@ local nativeCamera=function(self,...)
 end
 local fighterPrototype={GetCameraData=nativeCamera}
 local localFighter=setmetatable({IsLocalPlayer=true,
-    Get=function() return "arena" end},{__index=fighterPrototype})
+    Get=function() return "arena" end,
+    GetRaycastWhitelist=function() return {"native arena"} end},{__index=fighterPrototype})
 local controller={LocalFighter=localFighter,GetFighter=function(_,p) return p.Fighter end}
 local gun={StartShooting=function(item,...)
     shots+=1
@@ -210,18 +228,29 @@ function scripts:FindFirstChild(name)
     end}
 end
 function LocalPlayer:FindFirstChild(name) if name=="PlayerScripts" then return scripts end end
-local require=function(module) return module end
+local identity,requireFailure=8,false
+local getthreadidentity=function() return identity end
+local setthreadidentity=function(value) identity=value end
+local require=function(module)
+    assert(identity==2,"Cannot require a non-RobloxScript module from a RobloxScript")
+    if requireFailure then error("module initialization failed") end
+    return module
+end
 local function combatPlayer(team,x,health,environment)
     local model=new("Model",{},nil)
     model.Parent=workspace
     local head=new("BasePart",{Name="Head",Position=Vector3.new(x,0,100)},model)
     head.CFrame=CFrame.new(head.Position)
+    local torso=new("BasePart",{Name="UpperTorso",Position=Vector3.new(x,1,100)},model)
+    local root=new("BasePart",{Name="HumanoidRootPart",Position=Vector3.new(x,2,100)},model)
+    torso.CFrame,root.CFrame=CFrame.new(torso.Position),CFrame.new(root.Position)
     new("Humanoid",{Health=health or 100},model)
     function model:FindFirstChild(name)
         for _,c in ipairs(self.children) do if c.Name==name then return c end end
     end
     function model:IsDescendantOf(parent) return self.Parent==parent end
     function head:IsDescendantOf(parent) return parent==model or parent==workspace end
+    torso.IsDescendantOf,root.IsDescendantOf=head.IsDescendantOf,head.IsDescendantOf
     return {Character={},GetAttribute=function() return team end,
         Fighter={Entity={Model=model,RootPart=head},Get=function() return environment or "arena" end}},head
 end
@@ -260,7 +289,12 @@ assert(UIS.MouseBehavior=="LockCenter" and UIS.MouseIconEnabled==false,
     "menu ignored new mouse state requested by the game while open")
 print("PASS Rivals input: first-person camera preserved, focus released, mouse restored on close/unload")
 
+requireFailure=true
 RivalsAim.Setup()
+assert(not RivalsAim.Available and identity==8,"failed require leaked game script identity")
+requireFailure=false
+RivalsAim.Setup()
+assert(RivalsAim.Available and identity==8,"game module load failed or did not restore identity")
 assert(hookInstalls==0 and gun.StartShooting==nativeShot,"disabled aim patched a game method")
 RivalsAim.SetEnabled(true)
 assert(RivalsAim.Enabled and hookInstalls==0)
@@ -271,6 +305,7 @@ local dead=combatPlayer(2,0,0)
 local elsewhere=combatPlayer(2,0,100,"other arena")
 Players.GetPlayers=function() return {LocalPlayer,ally,dead,elsewhere,enemy} end
 local item={ClientFighter=localFighter,Info={IsRaycast=true}}
+raycastResult={Instance=target,Position=target.Position-Vector3.new(0,0,0.5)}
 for i=1,15 do
     local result=table.pack(gun.StartShooting(item,nil,"last",nil))
     assert(result.n==5 and result[1] and result[2]=="StartShooting" and result[4]==nil and result[5]=="last")
@@ -279,11 +314,49 @@ for i=1,15 do
         "packet and tracer did not select the actual enemy fighter model")
     assert(result[3].Other=="keep" and packet[utf8.char(2)]==nil,"rewriter mutated native packet")
     local origin=result[3][utf8.char(0)]
-    assert(origin.Position==packet[utf8.char(0)].Position and origin.LookVector.Z>0.9)
+    assert(origin==packet[utf8.char(0)],"rewriter changed the native origin field")
     assert(result[3][utf8.char(1)].Position==packet[utf8.char(1)].Position)
-    assert(result[3][utf8.char(3)].Position.Magnitude==0,"hit offset is not in part space")
+    assert(result[3][utf8.char(1)].LookVector.Z>0.9)
+    assert(result[3][utf8.char(3)].Position.Z==-0.5,"hit offset lost the actual surface collision")
 end
 assert(shots==15 and cameraCalls==30,"aim duplicated or dropped native firing calls")
+raycastResult=nil
+local noHit=select(3,gun.StartShooting(item))
+assert(noHit~=packet and noHit[utf8.char(2)]==nil and noHit[utf8.char(3)]==nil,
+    "no native collision fabricated a hit part instead of using directional aim")
+for _,name in ipairs({"Torso","Root"}) do
+    RivalsAim.AimPart=name
+    local part=enemy.Fighter.Entity.Model:FindFirstChild(name=="Torso" and "UpperTorso" or "HumanoidRootPart")
+    raycastResult={Instance=part,Position=part.Position}
+    assert(select(3,gun.StartShooting(item))[utf8.char(2)]==part,"Aim Part choice ignored")
+end
+RivalsAim.AimPart="Head"
+local wall={IsDescendantOf=function() return false end}
+raycastResult={Instance=wall,Position=Vector3.new(0,0,20)}
+assert(select(3,gun.StartShooting(item))==packet,"wall-blocked enemy was selected")
+RivalsAim.WallCheck=false
+wall.CFrame=CFrame.new(raycastResult.Position)
+local throughWall=select(3,gun.StartShooting(item))
+assert(throughWall~=packet and throughWall[utf8.char(2)]==wall,
+    "disabled wall check invented an enemy collision through a wall")
+RivalsAim.WallCheck=true
+raycastResult=nil
+local savedOrigin=packet[utf8.char(0)]
+packet[utf8.char(0)]={Position=Vector3.new(),NativeSentinel="opaque origin"}
+assert(select(3,gun.StartShooting(item))[utf8.char(0)]==packet[utf8.char(0)],
+    "non-CFrame origin shape was rejected or replaced")
+packet[utf8.char(0)]=savedOrigin
+packet[utf8.char(0)]=CFrame.new(Vector3.new(0,0,10))
+raycastResult=function(origin)
+    if origin.Z==10 then return {Instance=wall,Position=Vector3.new(0,0,20)} end
+    return nil
+end
+assert(select(3,gun.StartShooting(item))==packet,"wall at the shot origin was missed by camera-only check")
+packet[utf8.char(0)]=savedOrigin
+raycastResult=nil
+raycastFailure=true
+assert(select(3,gun.StartShooting(item))==packet,"failed collision query blocked native shot")
+raycastFailure=false
 local extra=table.pack(localFighter:GetCameraData(nil,"ordinary query"))
 assert(extra.n==3 and extra[1]==packet and extra[2]==nil and extra[3]=="camera-extra",
     "camera query outside a gun call changed")
@@ -320,7 +393,7 @@ assert(gun.StartShooting==installed,"toggle stacked duplicate shot wrappers")
 state.Restore()
 assert(gun.StartShooting==nativeShot and rawget(localFighter,"GetCameraData")==nil,
     "unload did not restore native gun and inherited camera method")
-print("PASS Rivals shots: 15 repeated shots, native packet/tracer targets, teams/arenas/FOV, pass-through, cleanup")
+print("PASS Rivals shots: repeated shots, origin preservation, real surface/no-hit metadata, body choices, walls, cleanup")
 
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
@@ -335,11 +408,29 @@ end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
 assert(cards.aim.Parent:IsA("ScrollingFrame"),"Rivals lost shared scrolling card list")
-local radius
-for _,c in ipairs(ConfigControls) do if c.Key=="Visuals/Rivals/FOV Circle/Radius" then radius=c end end
-assert(radius and radius.Kind=="number")
-radius.Set(275)
-assert(RivalsAim.Radius==275)
+local radius,partControl,wallControl
+for _,c in ipairs(ConfigControls) do
+    if c.Key=="Visuals/Rivals/FOV Circle/Radius" then radius=c end
+    if c.Key=="Combat/Rivals/Silent Aim/Aim Part" then partControl=c end
+    if c.Key=="Combat/Rivals/Silent Aim/Wall Check" then wallControl=c end
+end
+assert(radius and radius.Kind=="number" and radius.Max==1500)
+radius.Set(1250)
+assert(RivalsAim.Radius==1250)
+RivalsAim.FOVVisible=true
+RunService.RenderStepped:Fire()
+for _,o in ipairs(created) do if o.Name=="FOVCircle" then assert(o.Size.X.Offset==2500) end end
+assert(ConfigControls[1]==partControl,"Aim Part must be the first Silent Aim setting")
+partControl.Set("Torso")
+assert(RivalsAim.AimPart=="Torso")
+wallControl.Set(false)
+assert(RivalsAim.WallCheck==false)
+local rivalsTitle=false
+for _,o in ipairs(RivalsUI:GetDescendants()) do
+    if o.Text=="RIFT RIVALS" then rivalsTitle=true end
+    assert(o.Text~="Aim support ready","removed status text still rendered")
+end
+assert(rivalsTitle)
 cards.aim.MouseButton2Click:Fire()
 local aimControl
 for _,c in ipairs(ConfigControls) do if c.Key=="Combat/Rivals/Silent Aim/Silent Aim" then aimControl=c end end
@@ -359,6 +450,9 @@ BedWars.BuildUI()
 assert(BedWarsUI.Name=="RiftBedWarsBoard" and BedWarsUI.Size.X.Offset==1955)
 assert(Persistence.HUDFrames.BedWarsMenu==BedWarsUI)
 local kitColumn
+local bedwarsTitle=false
+for _,o in ipairs(BedWarsUI:GetDescendants()) do if o.Text=="RIFT BEDWARS" then bedwarsTitle=true end end
+assert(bedwarsTitle)
 for _,o in ipairs(BedWarsUI:GetChildren()) do if o.Name=="KIT" then kitColumn=o end end
 assert(kitColumn,"shared renderer lost BedWars kit column")
 print("PASS BedWars board: original dimensions and kit column retained")

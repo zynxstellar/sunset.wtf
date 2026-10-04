@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-shots-k256"
+local SUNSET_BUILD = "20261004-rift-rivals-hits-k257"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -96,6 +96,7 @@ local Settings = {
     DisableMoveOpen= false,
 }
 local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150,
+    AimPart = "Head", WallCheck = true,
     Available = false }
 
 
@@ -619,7 +620,7 @@ do
                 elseif control.Key == "Visuals/Rivals/FOV Circle/FOV Circle" then
                     control.Set(data.RivalsAim.FOVVisible == true)
                 elseif control.Key == "Visuals/Rivals/FOV Circle/Radius" then
-                    control.Set(math.clamp(tonumber(data.RivalsAim.Radius) or 150, 50, 400))
+                    control.Set(math.clamp(tonumber(data.RivalsAim.Radius) or 150, 50, 1500))
                 end
             end
         end
@@ -8395,7 +8396,7 @@ function BedWars.BuildUI(boardGame)
         logoFallback.Position = UDim2.fromOffset(20, 8)
         logoFallback.Size = UDim2.fromOffset(30, 30)
     end
-    local title = label(header, BRAND, 22, Color3.fromRGB(242, 244, 255))
+    local title = label(header, BRAND .. " " .. string.upper(boardGame), 22, Color3.fromRGB(242, 244, 255))
     title.Font = Enum.Font.GothamBold
     title.Position = UDim2.fromOffset(58, 10)
     title.Size = UDim2.fromOffset(230, 27)
@@ -9392,6 +9393,20 @@ function RivalsAim.Setup()
     local controller, gun, shotWrapper, originalShot
     local cameraPatches = {}
     local contexts = setmetatable({}, { __mode = "k" })
+    local function withGameIdentity(callback)
+        local getIdentity = getthreadidentity or getidentity
+        local setIdentity = setthreadidentity or setidentity
+        if type(getIdentity) ~= "function" or type(setIdentity) ~= "function" then
+            return callback()
+        end
+        local identity = getIdentity()
+        setIdentity(2)
+        local results = table.pack(pcall(callback))
+        local restored, restoreError = pcall(setIdentity, identity)
+        if not restored then error(restoreError, 0) end
+        if not results[1] then error(results[2], 0) end
+        return table.unpack(results, 2, results.n)
+    end
     local function loadApi()
         if controller and gun then return true end
         local ok, fighterApi, gunApi = pcall(function()
@@ -9402,14 +9417,46 @@ function RivalsAim.Setup()
             local fighterModule = controllers and controllers:FindFirstChild("FighterController")
             local gunModule = types and types:FindFirstChild("Gun")
             if not fighterModule or not gunModule then return end
-            return require(fighterModule), require(gunModule)
+            return withGameIdentity(function()
+                return require(fighterModule), require(gunModule)
+            end)
         end)
         if ok and type(fighterApi) == "table" and type(fighterApi.GetFighter) == "function"
             and type(gunApi) == "table" and type(gunApi.StartShooting) == "function" then
             controller, gun = fighterApi, gunApi
             return true
         end
+        RivalsAim.LoadError = ok and "Weapon modules not found" or tostring(fighterApi)
         return false
+    end
+    local function targetPart(entity)
+        local model = entity.Model
+        if RivalsAim.AimPart == "Torso" then
+            return model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
+                or model:FindFirstChild("HumanoidRootPart") or entity.RootPart
+        elseif RivalsAim.AimPart == "Root" then
+            return model:FindFirstChild("HumanoidRootPart") or entity.RootPart
+        end
+        return model:FindFirstChild("Head")
+    end
+    local function castToward(fighter, origin, position, whitelist)
+        local params = RaycastParams.new()
+        params.IgnoreWater = true
+        if type(whitelist) == "table" and #whitelist > 0 then
+            params.FilterType = Enum.RaycastFilterType.Include
+            params.FilterDescendantsInstances = whitelist
+        else
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = {
+                fighter.Entity and fighter.Entity.Model or LocalPlayer.Character,
+                workspace.CurrentCamera,
+            }
+        end
+        return workspace:Raycast(origin, position - origin, params)
+    end
+    local function unobstructed(fighter, part, origin)
+        local hit = castToward(fighter, origin, part.Position)
+        return not hit or hit.Instance:IsDescendantOf(part.Parent)
     end
     local function closestTarget(localFighter)
         local camera = workspace.CurrentCamera
@@ -9427,14 +9474,16 @@ function RivalsAim.Setup()
                 if model and model:IsDescendantOf(workspace)
                     and fighter:Get("EnvironmentID") == environment then
                     local humanoid = model:FindFirstChildOfClass("Humanoid")
-                    local part = model:FindFirstChild("Head")
-                        or model:FindFirstChild("UpperTorso") or entity.RootPart
+                    local part = targetPart(entity)
                     if (not humanoid or humanoid.Health > 0) and part
                         and part:IsA("BasePart") and part:IsDescendantOf(model) then
                         local point, onScreen = camera:WorldToViewportPoint(part.Position)
                         if onScreen and point.Z > 0 then
                             local distance = (Vector2.new(point.X, point.Y) - center).Magnitude
-                            if distance < score then closest, score = part, distance end
+                            if distance < score and (not RivalsAim.WallCheck
+                                or unobstructed(localFighter, part, camera.CFrame.Position)) then
+                                closest, score = part, distance
+                            end
                         end
                     end
                 end
@@ -9442,21 +9491,31 @@ function RivalsAim.Setup()
         end
         return closest
     end
-    local function redirectData(data, part)
+    local function redirectData(data, context, whitelist)
+        local part = context.Target
         if type(data) ~= "table" or not part or not part:IsDescendantOf(workspace) then return end
         local originKey, viewKey, hitKey, offsetKey = utf8.char(0), utf8.char(1), utf8.char(2), utf8.char(3)
         local origin, view = data[originKey], data[viewKey]
-        if typeof(origin) ~= "CFrame" or typeof(view) ~= "CFrame" then return end
+        if typeof(view) ~= "CFrame" then return end
         local position = part.Position
-        if (position - origin.Position).Magnitude < 0.001
-            or (position - view.Position).Magnitude < 0.001 then return end
+        if (position - view.Position).Magnitude < 0.001 then return end
+        if RivalsAim.WallCheck then
+            if not unobstructed(context.Fighter, part, view.Position) then return end
+            local originPosition = typeof(origin) == "Vector3" and origin
+                or origin and origin.Position
+            if typeof(originPosition) == "Vector3"
+                and not unobstructed(context.Fighter, part, originPosition) then return end
+        end
+        if type(whitelist) ~= "table" then
+            whitelist = context.Fighter:GetRaycastWhitelist(true)
+        end
+        local hit = castToward(context.Fighter, view.Position, position, whitelist)
         local corrected = table.clone(data)
-        -- Gun reads these exact four keys for the network shot and each local tracer.
-        -- Keep both native origins and all unrelated fields in the packet.
-        corrected[originKey] = CFrame.lookAt(origin.Position, position)
+        -- Preserve the native origin field exactly. Hit metadata must describe
+        -- an actual collision, including a surface offset, rather than a made-up hit.
         corrected[viewKey] = CFrame.lookAt(view.Position, position)
-        corrected[hitKey] = part
-        corrected[offsetKey] = part.CFrame:ToObjectSpace(CFrame.new(position))
+        corrected[hitKey] = hit and hit.Instance or nil
+        corrected[offsetKey] = hit and hit.Instance.CFrame:ToObjectSpace(CFrame.new(hit.Position)) or nil
         return corrected
     end
     local function patchCamera(fighter)
@@ -9469,7 +9528,7 @@ function RivalsAim.Setup()
             local results = table.pack(previous(self, ...))
             local context = contexts[coroutine.running()]
             if state.Active and not anyMenuVisible() and context and context.Fighter == self then
-                local ok, corrected = pcall(redirectData, results[1], context.Target)
+                local ok, corrected = pcall(redirectData, results[1], context, select(1, ...))
                 if ok and corrected then results[1] = corrected end
             end
             return table.unpack(results, 1, results.n)
@@ -9525,9 +9584,9 @@ function RivalsAim.Setup()
         state.Active = false
         RivalsAim.Enabled = on == true and installShot() or false
         state.Active = RivalsAim.Enabled
-        if RivalsAim.StatusLabel then
-            RivalsAim.StatusLabel.Text = on == true and not RivalsAim.Enabled
-                and "Weapon hook unavailable" or "Aim support ready"
+        if on == true and not RivalsAim.Enabled then
+            warn("[Rift] Silent Aim could not start: " .. (RivalsAim.LoadError or "Weapon patch unavailable"))
+            if RivalsAim.Toggle then RivalsAim.Toggle.Set(false) end
         end
     end
     track({ Disconnect = state.Restore })
@@ -9559,16 +9618,20 @@ end
 
 function RivalsAim.BuildUI()
     local aim = gameSection("Rivals", AimTab.Left, "Silent Aim")
-    Elements.Toggle(aim, "Silent Aim", false, function(on)
+    Elements.Dropdown(aim, "Aim Part", { "Head", "Torso", "Root" }, "Head", function(value)
+        RivalsAim.AimPart = value
+    end)
+    RivalsAim.Toggle = Elements.Toggle(aim, "Silent Aim", false, function(on)
         RivalsAim.SetEnabled(on)
     end)
-    RivalsAim.StatusLabel = Elements.Label(aim, RivalsAim.Available and "Aim support ready"
-        or "Rivals weapon modules unavailable")
+    Elements.Toggle(aim, "Wall Check", true, function(on)
+        RivalsAim.WallCheck = on
+    end)
     local fov = gameSection("Rivals", VisualsTab.Left, "FOV Circle")
     Elements.Toggle(fov, "FOV Circle", false, function(on)
         RivalsAim.FOVVisible = on
     end)
-    Elements.Slider(fov, "Radius", 50, 400, 150, " px", function(value)
+    Elements.Slider(fov, "Radius", 50, 1500, 150, " px", function(value)
         RivalsAim.Radius = value
     end)
     local list = gameSection("Rivals", SettingsTab.Left, "Module List")
