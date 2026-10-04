@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-water-artwork-notifications-k248"
+local SUNSET_BUILD = "20261004-rift-native-shop-k249"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -5242,21 +5242,26 @@ local function bedWarsClickHold()
 end
 local function bedWarsShopCatalog()
     if BedWars.ShopCatalog then return BedWars.ShopCatalog end
-    if BedWars.ShopCatalogFailed then return nil end
-    local ok, catalog = pcall(function()
-        local raw = game:HttpGet("https://raw.githubusercontent.com/VapeVoidware/VWCE/main/CheatEngine/ShopItemsMeta.json")
-        return HttpService:JSONDecode(raw)
-    end)
+    if os.clock() < (BedWars.ShopCatalogNextTry or 0) then return nil end
+    BedWars.ShopCatalogNextTry = os.clock() + 2
+    local storage = game:GetService("ReplicatedStorage")
+    local module = storage:FindFirstChild("bedwars-shop", true)
+    if not module then return nil end
+    local ok, exports = pcall(require, module)
+    local catalog = ok and type(exports) == "table" and (exports.BedwarsShop or exports)
     if not ok or type(catalog) ~= "table"
         or type(catalog.ShopItems) ~= "table" then
-        BedWars.ShopCatalogFailed = true
         warn("Rift Auto Buy: could not load shop catalog")
         return nil
     end
-    BedWars.ShopCatalog = {}
-    for _, item in ipairs(catalog.ShopItems) do
-        if item.itemType then BedWars.ShopCatalog[item.itemType] = item end
+    local indexed = {}
+    for _, item in pairs(catalog.ShopItems) do
+        if type(item) == "table" and type(item.itemType) == "string" then
+            indexed[item.itemType] = item
+        end
     end
+    if not next(indexed) then return nil end
+    BedWars.ShopCatalog = indexed
     return BedWars.ShopCatalog
 end
 local function bedWarsAutoBuyStep()
@@ -9020,7 +9025,7 @@ function BedWars.BuildUI()
         ["Bed Alarm"] = "Alerts when an enemy approaches your team bed.",
         ["Notifications"] = "Shows Rift alerts for friends, staff, and enabled features.",
         ["Music Overlay"] = "Shows your desktop media with artwork and playback time.",
-        ["Fly"] = "Voidware-style Fly with balloon lift and a timed fallback.",
+        ["Fly"] = "Balloon lift with a timed flight fallback.",
         ["Launch"] = "Launch yourself from a nearby cannon using its game action.",
         ["Speed"] = "Moves faster with wall checking and optional auto jump.",
         ["Auto Buy"] = "Buys armor, swords, and listed items near a shop.",

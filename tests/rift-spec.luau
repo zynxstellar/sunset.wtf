@@ -77,7 +77,14 @@ function Players:GetPlayerFromCharacter(model)
 end
 local UIS = {IsMouseButtonPressed=function() return false end,IsKeyDown=function() return false end,
     GetFocusedTextBox=function() return nil end}
-local game = {GetService=function() return {FindFirstChild=function() return nil end} end}
+local testShopModule, shopExports
+local require = function(module)
+    assert(module==testShopModule, "unexpected game module")
+    return shopExports
+end
+local game = {GetService=function() return {FindFirstChild=function(_,name)
+    if name=="bedwars-shop" then return testShopModule end
+end} end}
 function BedWars.Inventory() return inventory end
 function BedWars.FindWool() return wool end
 function BedWars.HeldItem() return held end
@@ -319,3 +326,19 @@ assert(Persistence.SavedHUDPositions().ModuleList[2]==-14, "saved list position 
 advance(5)
 assert(BedWars.NotifyActiveCount==0, "expired toast was not removed")
 print("PASS UI: bottom-left toast, expiry, shifted-config repair, other HUD positions preserved")
+
+BedWars.ShopCatalog=nil
+assert(bedWarsShopCatalog()==nil, "missing native shop should be retried later")
+testShopModule={}
+local offer={itemType="wool_white",currency="iron",price=8,amount=16}
+shopExports={BedwarsShop={ShopItems={wool=offer}}}
+assert(bedWarsShopCatalog()==nil, "shop retries were not throttled")
+advance(2.1)
+local catalog=bedWarsShopCatalog()
+assert(catalog and catalog.wool_white==offer, "native keyed shop offer was not preserved")
+assert(bedWarsShopCatalog()==catalog, "shop catalog cache was not reused")
+BedWars.ShopCatalog=nil
+advance(2.1)
+shopExports={ShopItems={offer}}
+assert(bedWarsShopCatalog().wool_white==offer, "direct native shop export was not supported")
+print("PASS shop catalog: late module, retry throttle, keyed/list exports, native offer preservation")

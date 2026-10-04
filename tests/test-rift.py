@@ -32,6 +32,7 @@ def main():
         between(inner, 'function BedWars.AttackRange()', '\nfunction BedWars.MeleeItem'),
         between(inner, 'local swordHitRemote,', '\nlocal bedWarsProjectileApi'),
         between(inner, 'local function bedWarsReleaseScaffoldItem()', '\nlocal pickupAttempts'),
+        between(inner, 'local function bedWarsShopCatalog()', '\nlocal function bedWarsAutoBuyStep'),
     ]
     water = between(inner, 'track(RunService.Heartbeat:Connect(function()\n    if not BedWars.Running or Settings.SelectedGame ~= "BedWars" then return end\n    if not BedWars.AntiVoidOn', '\ntask.spawn(function()')
     water = water.removeprefix('track(RunService.Heartbeat:Connect(function()').removesuffix('\nend))')
