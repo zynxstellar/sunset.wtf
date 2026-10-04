@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261003-rift-polish-k242"
+local SUNSET_BUILD = "20261003-rift-polish-k243"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -8974,7 +8974,7 @@ function BedWars.BuildUI()
                 Vector2.new(1000, 25)).X)
             local textColor = gold
             local row = new("Frame", {
-                Visible = false, Size = UDim2.fromOffset(math.min(textWidth + 22, 220), 18),
+                Visible = false, Size = UDim2.fromOffset(math.min(textWidth + 8, 220), 18),
                 LayoutOrder = -textWidth * 1000 + index,
                 BackgroundColor3 = Color3.fromRGB(22, 27, 41),
                 BackgroundTransparency = 0.02,
@@ -8990,7 +8990,7 @@ function BedWars.BuildUI()
                 textColor, Enum.TextXAlignment.Right)
             textLabel.Font = Enum.Font.GothamBold
             textLabel.Position = UDim2.fromOffset(2, 0)
-            textLabel.Size = UDim2.new(1, -8, 0, 18)
+            textLabel.Size = UDim2.new(1, -7, 0, 18)
             textLabel.TextStrokeTransparency = 1
             textLabel.TextTruncate = Enum.TextTruncate.None
             entry.ModuleRow = row
