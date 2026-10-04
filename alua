@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-music-loading-k247"
+local SUNSET_BUILD = "20261004-rift-water-artwork-notifications-k248"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -515,8 +515,7 @@ function Persistence.SavedHUDPositions()
     local positions = {}
     for name, frame in pairs(Persistence.HUDFrames) do
         if frame and frame.Parent then
-            local p = name == "ModuleList" and BedWars
-                and BedWars.ModuleListRestingPosition or frame.Position
+            local p = frame.Position
             positions[name] = { p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset }
         end
     end
@@ -526,7 +525,8 @@ function Persistence.RestoreHUDPositions(positions, legacyLayout)
     if type(positions) ~= "table" then return end
     for name, value in pairs(positions) do
         local frame = Persistence.HUDFrames[name]
-        if not (legacyLayout and (name == "BedWarsMenu" or name == "RivalsMenu"))
+        if name ~= "ModuleList"
+            and not (legacyLayout and (name == "BedWarsMenu" or name == "RivalsMenu"))
             and frame and frame.Parent and type(value) == "table"
             and type(value[1]) == "number" and type(value[2]) == "number"
             and type(value[3]) == "number" and type(value[4]) == "number" then
@@ -2677,7 +2677,7 @@ BedWars = {
     WorldESPOn = false, OutlineOre = true, OutlineEnchant = true,
     Running = true, AuraOn = false, ScaffoldOn = false,
     ScaffoldVoidRescue = true, ScaffoldTowerOn = true,
-    ScaffoldTowerSpeed = 38, AuraStatus = "Off",
+    ScaffoldTowerSpeed = 38, AuraStatus = "Off", AuraCPS = 10,
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
     WaterFightOn = false, WaterFightRange = 14, AutoPlayAgainOn = false,
     SpiderOn = false, SpiderSpeed = 16,
@@ -2713,6 +2713,7 @@ BedWars = {
     FastBreakOn = false, FastBreakCooldown = 0.25,
     NoClickDelayOn = false, ReachOn = false, ReachDistance = 18,
     NoSlowdownOn = false, FastDropOn = false, NoFallOn = false,
+    NoFallMinDrop = 18,
     AimAssistOn = false, AimAssistSpeed = 6, AimAssistRange = 30,
     TriggerBotOn = false, TriggerCPS = 4,
     VelocityOn = false, VelocityHorizontal = 0, VelocityVertical = 0,
@@ -2746,8 +2747,8 @@ do
         IgnoreGuiInset = true, DisplayOrder = 2147483646,
     }, PlayerGui)
     local stack = new("Frame", {
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -14, 1, -18),
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 14, 1, -18),
         Size = UDim2.fromOffset(260, 275),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, BedWars.NotifyGui)
@@ -2759,9 +2760,6 @@ do
     local order = 0
     function BedWars.Notify(title, message, force)
         if not BedWars.Running or (not BedWars.NotifyOn and not force) then return end
-        stack.Position = BedWars.SpotifyPanel and BedWars.SpotifyPanel.Visible
-            and UDim2.new(1, -14, 1, -280)
-            or UDim2.new(1, -14, 1, -18)
         order += 1
         local slot = new("Frame", {
             Size = UDim2.fromOffset(260, 50), LayoutOrder = order,
@@ -2774,7 +2772,7 @@ do
         end
         BedWars.NotifyActiveCount = #slots
         local toast = new("Frame", {
-            Position = UDim2.fromOffset(276, 0),
+            Position = UDim2.fromOffset(-276, 0),
             Size = UDim2.fromOffset(260, 50),
             BackgroundColor3 = T.inner,
             BackgroundTransparency = 0.25, BorderSizePixel = 0,
@@ -2803,7 +2801,7 @@ do
             if not slot.Parent then return end
             TweenService:Create(toast, TweenInfo.new(0.24,
                 Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                { Position = UDim2.fromOffset(276, 0),
+                { Position = UDim2.fromOffset(-276, 0),
                     BackgroundTransparency = 0.8 }):Play()
             task.wait(0.25)
             if slot.Parent then slot:Destroy() end
@@ -2821,13 +2819,6 @@ do
         BackgroundTransparency = 0.22, BorderSizePixel = 0,
         Active = true, Visible = false,
     }, Gui)
-    track(BedWars.SpotifyPanel:GetPropertyChangedSignal("Visible"):Connect(function()
-        if BedWars.NotifyStack and BedWars.NotifyStack.Parent then
-            BedWars.NotifyStack.Position = BedWars.SpotifyPanel.Visible
-                and UDim2.new(1, -14, 1, -280)
-                or UDim2.new(1, -14, 1, -18)
-        end
-    end))
     Persistence.HUDFrames.MusicOverlay = BedWars.SpotifyPanel
     new("UICorner", { CornerRadius = UDim.new(0, 12) }, BedWars.SpotifyPanel)
     border(BedWars.SpotifyPanel, T.accent)
@@ -2877,7 +2868,7 @@ do
     end
     makeDraggable(BedWars.SpotifyPanel, BedWars.SpotifyPanel)
     function BedWars.SpotifyStep()
-        local url = "http://127.0.0.1:47821/now-playing"
+        local url = "http://127.0.0.1:47821/now-playing?t=" .. tostring(os.clock())
         local requestFn = type(ENV.request) == "function" and ENV.request
             or type(ENV.http_request) == "function" and ENV.http_request
             or type(request) == "function" and request
@@ -2931,7 +2922,8 @@ do
                 if save and asset then
                     local imageOk, imageResponse
                     local imageRequest = {
-                        Url = "http://127.0.0.1:47821/cover", Method = "GET" }
+                        Url = "http://127.0.0.1:47821/cover?key="
+                            .. HttpService:UrlEncode(data.artwork_key), Method = "GET" }
                     if requestFn then
                         imageOk, imageResponse = pcall(requestFn, imageRequest)
                     else
@@ -2940,12 +2932,16 @@ do
                         end)
                     end
                     if imageOk and type(imageResponse) == "table"
-                        and tonumber(imageResponse.StatusCode or imageResponse.status_code) == 200
+                        and (tonumber(imageResponse.StatusCode or imageResponse.status_code
+                            or imageResponse.Status) == 200
+                            or (not imageResponse.StatusCode and not imageResponse.status_code
+                                and not imageResponse.Status and imageResponse.Success == true))
                         and type(imageResponse.Body or imageResponse.body) == "string" then
                         local folder = type(ENV.makefolder) == "function" and ENV.makefolder
                             or type(makefolder) == "function" and makefolder or nil
                         if folder then pcall(folder, "SunsetConfigs") end
-                        local headers = imageResponse.Headers or imageResponse.headers or {}
+                        local headers = imageResponse.Headers or imageResponse.headers
+                        if type(headers) ~= "table" then headers = {} end
                         local contentType = headers["Content-Type"] or headers["content-type"]
                         local extension = type(contentType) == "string"
                             and contentType:find("jpeg", 1, true) and ".jpg" or ".png"
@@ -2954,12 +2950,18 @@ do
                         local wrote = pcall(save, path,
                             imageResponse.Body or imageResponse.body)
                         if wrote then
+                            if not BedWars.Running or not cover.Parent then
+                                local delete = type(ENV.delfile) == "function" and ENV.delfile
+                                    or type(delfile) == "function" and delfile or nil
+                                if delete then pcall(delete, path) end
+                                return
+                            end
+                            table.insert(BedWars.MusicCoverFiles, path)
                             local loaded, imageId = pcall(asset, path)
                             if loaded and type(imageId) == "string" and imageId ~= "" then
                                 cover.Image = imageId
                                 icon.Visible = false
                                 BedWars.MusicArtworkKey = data.artwork_key
-                                table.insert(BedWars.MusicCoverFiles, path)
                             end
                         end
                     end
@@ -3403,7 +3405,7 @@ end
 BedWars.VoidWater = {}
 do
 local voidWaterSnapshot, voidWaterCorner, voidWaterCenter
-local voidWaterTop, voidWaterMode
+local voidWaterTop, voidWaterMode, voidWaterWidth
 local voidWaterTerrain = workspace.Terrain
 function BedWars.VoidWater.Clear()
     if voidWaterSnapshot and voidWaterCorner then
@@ -3412,24 +3414,25 @@ function BedWars.VoidWater.Clear()
         end)
         voidWaterSnapshot:Destroy()
     end
-    voidWaterSnapshot, voidWaterCorner, voidWaterCenter, voidWaterTop, voidWaterMode = nil, nil, nil, nil, nil
+    voidWaterSnapshot, voidWaterCorner, voidWaterCenter, voidWaterTop, voidWaterMode, voidWaterWidth = nil, nil, nil, nil, nil, nil
 end
 function BedWars.VoidWater.Mode()
     return voidWaterMode
 end
-function BedWars.VoidWater.Place(position, surfaceY, mode)
+function BedWars.VoidWater.Place(position, surfaceY, mode, cushionWidth)
     mode = mode or "Void"
     local width = mode == "Fight"
         and math.ceil(math.max(40, (BedWars.WaterFightRange + 8) * 2) / 4) * 4
-        or mode == "NoFall" and 20
+        or mode == "NoFall" and math.ceil(math.clamp(cushionWidth or 32, 32, 128) / 4) * 4
         or math.floor(BedWars.VoidWaterWidth / 4) * 4
-    local depth = mode == "Fight" and 32 or mode == "NoFall" and 16
+    local depth = mode == "Fight" and 32 or mode == "NoFall" and 24
         or math.floor(BedWars.VoidWaterDepth / 4) * 4
     if voidWaterCenter and voidWaterTop == surfaceY and voidWaterMode == mode
+        and voidWaterWidth == width
         and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
-            < (mode == "Fight" and 4 or mode == "NoFall" and 5
+            < (mode == "Fight" and 4 or mode == "NoFall" and width / 4
                 or math.min(24, width / 4)) then
-        return
+        return true
     end
     BedWars.VoidWater.Clear()
     local x = math.floor((position.X - width / 2) / 4) * 4
@@ -3468,6 +3471,8 @@ function BedWars.VoidWater.Place(position, surfaceY, mode)
     voidWaterSnapshot, voidWaterCorner = snapshot, corner
     voidWaterCenter = Vector2.new(x + width / 2, z + width / 2)
     voidWaterTop, voidWaterMode = surfaceY, mode
+    voidWaterWidth = width
+    return true
 end
 end
 local sprintController
@@ -3632,7 +3637,7 @@ function BedWars.Equip(item)
     return false
 end
 function BedWars.AttackRange()
-    local configured = BedWars.ReachOn and BedWars.ReachDistance or nil
+    if BedWars.ReachOn then return math.clamp(tonumber(BedWars.ReachDistance) or 18, 0, 18) end
     local ts = game:GetService("ReplicatedStorage"):FindFirstChild("TS")
     local combat = ts and ts:FindFirstChild("combat")
     local module = combat and combat:FindFirstChild("combat-constant")
@@ -3640,10 +3645,10 @@ function BedWars.AttackRange()
         local ok, data = pcall(require, module)
         local value = ok and data.CombatConstant and data.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE
         if type(value) == "number" then
-            return configured and math.max(value, configured) or value
+            return value
         end
     end
-    return configured and math.max(14.4, configured) or 14.4
+    return 14.4
 end
 function BedWars.MeleeItem(item)
     if not item then return false end
@@ -3755,6 +3760,29 @@ function BedWars.Visible(character, target, origin, targetRoot, checkWalls)
     return false
 end
 local swordHitRemote, lastSwordRemoteLookup = nil, -math.huge
+function BedWars.AuraPayload(weapon, root, targetRoot, targetModel)
+    local delta = targetRoot.Position - root.Position
+    if delta.Magnitude < 0.01 or delta.Magnitude > BedWars.AttackRange() then return nil end
+    local direction = delta.Unit
+    -- Match the reference client's bounded reach validation. Keep targeting
+    -- tied to the configured range instead of the patched mouse-ray constant.
+    local position = root.Position
+    if BedWars.ReachOn then
+        position += direction * math.clamp(delta.Magnitude - 14.399, 0, 3.601)
+    end
+    return {
+        weapon = weapon, entityInstance = targetModel,
+        chargedAttack = { chargeRatio = 0 },
+        validate = {
+            raycast = {
+                cameraPosition = { value = position },
+                cursorDirection = { value = direction },
+            },
+            selfPosition = { value = position },
+            targetPosition = { value = targetRoot.Position },
+        },
+    }
+end
 function BedWars.ReleaseAuraItem()
     local previous, sword = BedWars.AuraPreviousItem, BedWars.AuraSwordItem
     if not previous then return end
@@ -3769,13 +3797,13 @@ function BedWars.ReleaseAuraItem()
 end
 local function bedWarsAuraStep()
     if BedWars.ItemBusy then return end
+    if os.clock() - (BedWars.LastAuraAttack or -math.huge) < 1 / BedWars.AuraCPS
+        or BedWars.AuraRequestPending then return end
     if BedWars.AuraPreviousItem and not BedWars.ScaffoldPreviousItem
         and BedWars.HeldItem() ~= BedWars.AuraSwordItem then
         BedWars.AuraPreviousItem = nil
         BedWars.AuraSwordItem = nil
     end
-    if BedWars.ScaffoldOn and BedWars.BridgingNeeded
-        and os.clock() - BedWars.BridgingNeeded < 1.1 then return end
     local character = LocalPlayer.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -3816,7 +3844,7 @@ local function bedWarsAuraStep()
             targets[#targets + 1] = {
                 model = target, root = targetRoot, distance = d,
                 health = targetHumanoid.Health,
-                gear = BedWars.GearScore(owner, target),
+                gear = BedWars.AuraPriority == "More Gear" and BedWars.GearScore(owner, target) or 0,
             }
         end
     end
@@ -3837,17 +3865,23 @@ local function bedWarsAuraStep()
     end
     if #targets == 0 then
         BedWars.AuraStatus = "No enemy in sword range"
+        BedWars.LastAuraAttack = nil
         BedWars.ReleaseAuraItem()
         return
     end
-
-
     if not BedWars.MeleeItem(weapon) then
-        if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+        if BedWars.HoldingAbility() and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
             BedWars.AuraStatus = "Using held item"
             return
         end
-        if BedWars.ScaffoldPreviousItem then return end
+        if BedWars.ScaffoldOn and humanoid.FloorMaterial == Enum.Material.Air
+            and BedWars.BridgingNeeded and os.clock() - BedWars.BridgingNeeded < 0.15 then
+            BedWars.AuraStatus = "Placing bridge support"
+            return
+        end
+        if BedWars.ScaffoldPreviousItem and BedWars.ReleaseScaffoldItem then
+            BedWars.ReleaseScaffoldItem()
+        end
         local sword = BedWars.BestSword()
         BedWars.AuraStatus = sword and "Equipping sword" or "No sword found"
         if sword then
@@ -3859,13 +3893,16 @@ local function bedWarsAuraStep()
             BedWars.ItemBusy = false
             if ok then
                 BedWars.AuraSwordItem = sword
+                weapon = sword
             else
                 BedWars.AuraPreviousItem = nil
                 BedWars.AuraSwordItem = nil
                 BedWars.AuraStatus = "Sword equip failed"
             end
         end
-        return
+        if not BedWars.MeleeItem(weapon) then return end
+        if LocalPlayer.Character ~= character or humanoid.Health <= 0
+            or not BedWars.Running or not BedWars.AuraOn then return end
     end
     table.sort(targets, function(a, b)
         if BedWars.AuraPriority == "Higher HP" and a.health ~= b.health then
@@ -3877,37 +3914,36 @@ local function bedWarsAuraStep()
         end
         return a.distance < b.distance
     end)
-    local camera = workspace.CurrentCamera
-    local cameraPosition = camera and camera.CFrame.Position or root.Position + Vector3.new(0, 2, 0)
     local target = targets[1]
     if Players:GetPlayerFromCharacter(target.model) then
         BedWars.TargetModel = target.model
         BedWars.TargetLastAt = os.clock()
     end
-    local delta = target.root.Position - cameraPosition
-    if delta.Magnitude < 0.01 then return end
-    local payload = {
-        weapon = weapon,
-        entityInstance = target.model,
-        chargedAttack = { chargeRatio = 0 },
-        validate = {
-            raycast = {
-                cameraPosition = { value = cameraPosition },
-                cursorDirection = { value = delta.Unit },
-            },
-            selfPosition = { value = root.Position },
-            targetPosition = { value = target.root.Position },
-        },
-    }
-    local ok, err = pcall(function()
-        if remote:IsA("RemoteEvent") then
-            remote:FireServer(payload)
-        else
-            remote:InvokeServer(payload)
-        end
+    local targetHumanoid = target.model:FindFirstChildOfClass("Humanoid")
+    if not targetHumanoid or targetHumanoid.Health <= 0
+        or target.model:FindFirstChildOfClass("ForceField") then return end
+    local payload = BedWars.AuraPayload(weapon, root, target.root, target.model)
+    if not payload or BedWars.HeldItem() ~= weapon then return end
+    BedWars.LastAuraAttack = os.clock()
+    local ticket = {}
+    BedWars.AuraRequestPending = ticket
+    task.delay(1, function()
+        if BedWars.AuraRequestPending == ticket then BedWars.AuraRequestPending = nil end
     end)
-    BedWars.AuraStatus = ok and ("Target: " .. target.model.Name)
-        or ("Attack error: " .. tostring(err):sub(1, 45))
+    task.spawn(function()
+        local ok, result = pcall(function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(payload)
+            else
+                return remote:InvokeServer(payload)
+            end
+        end)
+        if BedWars.AuraRequestPending ~= ticket then return end
+        BedWars.AuraRequestPending = nil
+        if not BedWars.AuraOn or LocalPlayer.Character ~= character then return end
+        BedWars.AuraStatus = ok and result ~= false and ("Attacking: " .. target.model.Name)
+            or (ok and "Attack rejected" or "Attack error: " .. tostring(result):sub(1, 45))
+    end)
 end
 local bedWarsProjectileApi
 local function bedWarsGetProjectileApi()
@@ -4116,26 +4152,50 @@ local function bedWarsReleaseScaffoldItem()
         BedWars.ItemBusy = false
     end
 end
+BedWars.ReleaseScaffoldItem = bedWarsReleaseScaffoldItem
 local function scaffoldGridKey(grid)
     return tostring(grid.X) .. ":" .. tostring(grid.Y) .. ":" .. tostring(grid.Z)
 end
+function BedWars.ResetScaffold()
+    BedWars.ScaffoldGeneration = (BedWars.ScaffoldGeneration or 0) + 1
+    BedWars.ScaffoldBridgeY = nil
+    BedWars.ScaffoldAttempts = {}
+    BedWars.ScaffoldInFlight = {}
+    BedWars.ScaffoldConfirmed = {}
+    BedWars.ScaffoldPending = 0
+    BedWars.ScaffoldLastSend = -math.huge
+    BedWars.ScaffoldLastPrune = 0
+end
 local function bedWarsScaffoldStep()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if root ~= BedWars.ScaffoldRoot then
+        BedWars.ResetScaffold()
+        BedWars.ScaffoldRoot = root
+        BedWars.ScaffoldPreviousItem = nil
+        BedWars.ScaffoldWoolItem = nil
+    end
+    if not root or not humanoid or humanoid.Health <= 0 then return end
     if BedWars.ItemBusy then return end
     if BedWars.HoldingAbility()
         and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
     if BedWars.ProjectilePriorityUntil
         and os.clock() < BedWars.ProjectilePriorityUntil then return end
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local item = BedWars.FindWool()
+    if not item then return end
     local remote = BedWars.ScaffoldPlaceRemote
     if not remote or not remote.Parent then
         remote = BedWars.Remote("PlaceBlock", true)
         BedWars.ScaffoldPlaceRemote = remote
     end
-    if not root or not humanoid or humanoid.Health <= 0
-        or not remote or not remote:IsA("RemoteFunction") then return end
+    if not remote or not remote:IsA("RemoteFunction") then return end
+    local now = os.clock()
+    local interval = 0.05
+    if now - (BedWars.ScaffoldLastSend or -math.huge) < interval
+        or (BedWars.ScaffoldPending or 0) >= 6 then return end
+    local pingOk, ping = pcall(LocalPlayer.GetNetworkPing, LocalPlayer)
+    local leadTime = math.clamp((pingOk and tonumber(ping) or 0.05) * 2 + 0.12, 0.12, 0.45)
     local towerRequested = BedWars.ScaffoldTowerOn
         and UIS:IsKeyDown(Enum.KeyCode.Space)
         and not UIS:GetFocusedTextBox()
@@ -4145,50 +4205,69 @@ local function bedWarsScaffoldStep()
         or humanoid.FloorMaterial ~= Enum.Material.Air or towerRequested then
         BedWars.ScaffoldBridgeY = feetGridY
     end
-    local overlap = OverlapParams.new()
-    overlap.FilterType = Enum.RaycastFilterType.Exclude
     local ignored = { character }
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Character and player.Character ~= character then
             table.insert(ignored, player.Character)
         end
     end
+    local overlap = OverlapParams.new()
+    overlap.FilterType = Enum.RaycastFilterType.Exclude
     overlap.FilterDescendantsInstances = ignored
     local ray = RaycastParams.new()
     ray.FilterType = Enum.RaycastFilterType.Exclude
     ray.FilterDescendantsInstances = ignored
     ray.RespectCanCollide = true
+    ray.IgnoreWater = true
+    local openCells = {}
     local function cellOpen(grid)
-        local center = grid * 3
-        for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(center), Vector3.new(2.6, 2.6, 2.6), overlap)) do
-            if part.CanCollide then return false end
+        local key = scaffoldGridKey(grid)
+        if openCells[key] ~= nil then return openCells[key] end
+        local open = true
+        for _, part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(grid * 3),
+            Vector3.new(2.6, 2.6, 2.6), overlap)) do
+            if part.CanCollide then open = false break end
         end
-        return true
+        openCells[key] = open
+        return open
     end
-    BedWars.ScaffoldAttempts = BedWars.ScaffoldAttempts or {}
-    BedWars.ScaffoldInFlight = BedWars.ScaffoldInFlight or {}
-    BedWars.ScaffoldConfirmed = BedWars.ScaffoldConfirmed or {}
-    local now = os.clock()
-    local function recentlyConfirmed(candidate)
-        return now - (BedWars.ScaffoldConfirmed[scaffoldGridKey(candidate)]
-            or -math.huge) < 0.8
+    if now - BedWars.ScaffoldLastPrune > 2 then
+        BedWars.ScaffoldLastPrune = now
+        for key, stamp in pairs(BedWars.ScaffoldAttempts) do
+            if now - stamp > 5 then BedWars.ScaffoldAttempts[key] = nil end
+        end
+        for key, stamp in pairs(BedWars.ScaffoldConfirmed) do
+            if now - stamp > 2 then BedWars.ScaffoldConfirmed[key] = nil end
+        end
+    end
+    local function knownSupport(candidate)
+        local key = scaffoldGridKey(candidate)
+        -- Pipeline adjacent cells in send order instead of waiting a full
+        -- server round trip for each block. Rejected cells remain retryable.
+        return BedWars.ScaffoldInFlight[key] ~= nil
+            or now - (BedWars.ScaffoldConfirmed[key] or -math.huge) < 0.8
+            or not cellOpen(candidate)
     end
     local function hasSideSupport(candidate)
-        local center = candidate * 3
-        for _, offset in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0),
-            Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-            if recentlyConfirmed(candidate + offset / 3)
-                or workspace:Raycast(center, offset, ray) then return true end
+        for _, offset in ipairs({ Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0),
+            Vector3.new(0, 0, 1), Vector3.new(0, 0, -1) }) do
+            if knownSupport(candidate + offset)
+                or workspace:Raycast(candidate * 3, offset * 3, ray) then return true end
         end
         return false
     end
     local grid
-    local function consider(candidate, supported)
-        if not supported or not cellOpen(candidate) then return false end
+    local function consider(candidate)
+        if knownSupport(candidate) then return false end
         local key = scaffoldGridKey(candidate)
-        if BedWars.ScaffoldInFlight[key]
-            or recentlyConfirmed(candidate)
-            or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now then return false end
+        if now - (BedWars.ScaffoldAttempts[key] or -math.huge) < 0.12 then return false end
+        local supported = hasSideSupport(candidate)
+        if not supported and (towerRequested or (BedWars.ScaffoldVoidRescue
+            and root.AssemblyLinearVelocity.Y < -8)) then
+            supported = knownSupport(candidate - Vector3.new(0, 1, 0))
+                or workspace:Raycast(candidate * 3, Vector3.new(0, -3, 0), ray) ~= nil
+        end
+        if not supported then return false end
         grid = candidate
         return true
     end
@@ -4196,97 +4275,85 @@ local function bedWarsScaffoldStep()
     local targetY = belowBridge and feetGridY or BedWars.ScaffoldBridgeY
     local footGrid = Vector3.new(math.round(root.Position.X / 3),
         targetY, math.round(root.Position.Z / 3))
-    local footSupported = not cellOpen(footGrid) or recentlyConfirmed(footGrid)
-    if not footSupported then
-        local supported = hasSideSupport(footGrid)
-        if not supported and (towerRequested or (BedWars.ScaffoldVoidRescue
-            and root.AssemblyLinearVelocity.Y < -8)) then
-            supported = workspace:Raycast(footGrid * 3,
-                Vector3.new(0, -3, 0), ray) ~= nil
-        end
-        consider(footGrid, supported)
-    end
-    if not grid and footSupported and not towerRequested and not belowBridge
+    consider(footGrid)
+    if not grid and knownSupport(footGrid) and not towerRequested and not belowBridge
         and humanoid.MoveDirection.Magnitude >= 0.05 then
         local direction = humanoid.MoveDirection.Unit
-        local step = math.abs(direction.X) >= math.abs(direction.Z)
-            and Vector3.new(math.sign(direction.X), 0, 0)
-            or Vector3.new(0, 0, math.sign(direction.Z))
-        local nextGrid = footGrid + step
-        local supported = recentlyConfirmed(footGrid)
-            or workspace:Raycast(nextGrid * 3, -step * 3, ray) ~= nil
-        consider(nextGrid, supported)
+        local velocity = root.AssemblyLinearVelocity
+        local speed = math.max(Vector3.new(velocity.X, 0, velocity.Z).Magnitude,
+            humanoid.WalkSpeed)
+        local distance = math.clamp(speed * leadTime + 3, 3, 12)
+        local previous = footGrid
+        for step = 1, math.ceil(distance / 1.2) do
+            local point = root.Position + direction * math.min(step * 1.2, distance)
+            local candidate = Vector3.new(math.round(point.X / 3), targetY,
+                math.round(point.Z / 3))
+            if candidate.X ~= previous.X and candidate.Z ~= previous.Z then
+                -- Diagonal cells need a cardinal connector, otherwise their
+                -- only contact is a corner and placement is rejected.
+                local connector = Vector3.new(candidate.X, targetY, previous.Z)
+                if not knownSupport(connector) and consider(connector) then break end
+                if not knownSupport(connector) then break end
+            end
+            if consider(candidate) then break end
+            if not knownSupport(candidate) then break end
+            previous = candidate
+        end
     end
     if not grid then return end
-
-
-    local gapOrigin = grid * 3 + Vector3.new(0, 1.5, 0)
-    local groundBelow = workspace:Raycast(gapOrigin, Vector3.new(0, -24, 0), ray)
-    local overVoid = not groundBelow or (gapOrigin.Y - groundBelow.Position.Y) > 12
-    if not overVoid and bedWarsEnemyInSwordRange(root) then return end
-    if not item then return end
-    if BedWars.ScaffoldWoolItem
-        and BedWars.HeldItem() ~= BedWars.ScaffoldWoolItem then
-
-
-        local held = BedWars.HeldItem()
-        if held and held ~= item then BedWars.ScaffoldPreviousItem = held end
-        BedWars.ScaffoldWoolItem = nil
-    end
-    BedWars.BridgingNeeded = os.clock()
+    BedWars.BridgingNeeded = now
     local key = scaffoldGridKey(grid)
-    if BedWars.ScaffoldInFlight[key]
-        or (BedWars.ScaffoldAttempts[key] or 0) + 0.1 > now
-        or (BedWars.ScaffoldPending or 0) >= 1 then return end
+    local generation = BedWars.ScaffoldGeneration
+    local ticket = {}
     BedWars.ScaffoldAttempts[key] = now
-    BedWars.ScaffoldInFlight[key] = true
-    BedWars.ScaffoldPending = (BedWars.ScaffoldPending or 0) + 1
+    BedWars.ScaffoldInFlight[key] = ticket
+    BedWars.ScaffoldPending += 1
+    BedWars.ScaffoldLastSend = now
     local finished = false
     local function finishPlacement()
         if finished then return end
         finished = true
+        if BedWars.ScaffoldGeneration ~= generation
+            or BedWars.ScaffoldInFlight[key] ~= ticket then return end
         BedWars.ScaffoldInFlight[key] = nil
-        BedWars.ScaffoldPending = math.max(0, (BedWars.ScaffoldPending or 1) - 1)
+        BedWars.ScaffoldPending = math.max(0, BedWars.ScaffoldPending - 1)
     end
-    task.delay(0.65, finishPlacement)
+    task.delay(math.max(1, leadTime * 4), finishPlacement)
     BedWars.ItemBusy = true
     task.spawn(function()
-        local dispatched = false
-        pcall(function()
-            if not BedWars.Running or not BedWars.ScaffoldOn then return end
+        local function current()
+            return BedWars.Running and BedWars.ScaffoldOn
+                and Settings.SelectedGame == "BedWars"
+                and BedWars.ScaffoldGeneration == generation
+                and LocalPlayer.Character == character and humanoid.Health > 0
+        end
+        local equipped = pcall(function()
+            if not current() then return end
             local previous = BedWars.HeldItem()
             if previous and previous ~= item and not BedWars.ScaffoldPreviousItem then
                 BedWars.ScaffoldPreviousItem = previous
             end
-            if not BedWars.Equip(item) then return end
+            if not BedWars.Equip(item) or not current() then return end
             BedWars.ScaffoldWoolItem = item
-            if item.Parent == BedWars.Inventory() and BedWars.HeldItem() == item then
-                dispatched = true
-
-
-                task.spawn(function()
-                    local ok, result = pcall(function()
-                        return remote:InvokeServer({ blockType = item.Name, position = grid })
-                    end)
-                    if ok and result ~= false then
-                        BedWars.ScaffoldConfirmed[key] = os.clock()
-                    end
-                    if ok and result ~= false and towerRequested
-                        and BedWars.ScaffoldOn and root.Parent then
-                        local velocity = root.AssemblyLinearVelocity
-                        root.AssemblyLinearVelocity = Vector3.new(velocity.X,
-                            math.max(velocity.Y, BedWars.ScaffoldTowerSpeed), velocity.Z)
-                    end
-                    finishPlacement()
-                end)
-                task.wait(0.01)
-                return
-            end
         end)
-        if not dispatched then
-            finishPlacement()
-        end
         BedWars.ItemBusy = false
+        if not equipped or not current() or item.Parent ~= BedWars.Inventory()
+            or BedWars.HeldItem() ~= item then
+            finishPlacement()
+            return
+        end
+        local ok, result = pcall(function()
+            return remote:InvokeServer({ blockType = item.Name, position = grid })
+        end)
+        if current() and not finished and ok and result ~= false then
+            BedWars.ScaffoldConfirmed[key] = os.clock()
+            if towerRequested and root.Parent then
+                local velocity = root.AssemblyLinearVelocity
+                root.AssemblyLinearVelocity = Vector3.new(velocity.X,
+                    math.max(velocity.Y, BedWars.ScaffoldTowerSpeed), velocity.Z)
+            end
+        end
+        finishPlacement()
     end)
 end
 local pickupAttempts = setmetatable({}, { __mode = "k" })
@@ -6172,7 +6239,7 @@ function BedWars.Stop()
     BedWars.Running = false
     BedWars.AuraOn = false
     BedWars.ScaffoldOn = false
-    BedWars.ScaffoldBridgeY = nil
+    BedWars.ResetScaffold()
     BedWars.NotifyOn = false
     BedWars.SpotifyHUDOn = false
     if BedWars.SpotifyPanel then BedWars.SpotifyPanel.Visible = false end
@@ -7169,7 +7236,7 @@ task.spawn(function()
         else
             BedWars.ReleaseAuraItem()
         end
-        task.wait(0.3)
+        RunService.Heartbeat:Wait()
     end
 end)
 task.spawn(function()
@@ -7224,14 +7291,15 @@ end)
 task.spawn(function()
     while BedWars.Running do
         if Settings.SelectedGame == "BedWars" and BedWars.ScaffoldOn then
-            bedWarsScaffoldStep()
+            local ok, err = pcall(bedWarsScaffoldStep)
+            if not ok then warn("Rift Scaffold: " .. tostring(err)) end
         end
         if BedWars.ScaffoldPreviousItem and (not BedWars.ScaffoldOn
             or not BedWars.BridgingNeeded
             or os.clock() - BedWars.BridgingNeeded > (BedWars.SpeedOn and 1.5 or 1.1)) then
             bedWarsReleaseScaffoldItem()
         end
-        task.wait(0.02)
+        RunService.Heartbeat:Wait()
     end
 end)
 local function bedWarsSafeGround(position, character)
@@ -7259,7 +7327,12 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.NoFallPeakY = nil
         BedWars.NoFallWaterUntil = nil
     end
-    if not root or not humanoid or humanoid.Health <= 0 then return end
+    if not root or not humanoid or humanoid.Health <= 0 then
+        BedWars.NoFallPeakY = nil
+        BedWars.NoFallWaterUntil = nil
+        BedWars.VoidWater.Clear()
+        return
+    end
     local _, solidGround = bedWarsSafeGround(root.Position, character)
     local grounded = humanoid.FloorMaterial ~= Enum.Material.Air
         and humanoid.FloorMaterial ~= Enum.Material.Water and solidGround
@@ -7267,13 +7340,19 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.LastSafeCFrame = root.CFrame
         BedWars.WaterGroundY = root.Position.Y
     end
+    local feetY = root.Position.Y - humanoid.HipHeight - root.Size.Y / 2
+    local swimming = humanoid:GetState() == Enum.HumanoidStateType.Swimming
+        or humanoid.FloorMaterial == Enum.Material.Water
     if BedWars.NoFallOn then
-        if humanoid.FloorMaterial ~= Enum.Material.Air
-            and humanoid.FloorMaterial ~= Enum.Material.Water then
-            BedWars.NoFallPeakY = root.Position.Y
+        if swimming then
+            BedWars.NoFallPeakY = nil
+            if BedWars.VoidWater.Mode() == "NoFall" then
+                BedWars.NoFallWaterUntil = os.clock() + 0.75
+            end
+        elseif grounded then
+            BedWars.NoFallPeakY = feetY
         else
-            BedWars.NoFallPeakY = math.max(BedWars.NoFallPeakY or root.Position.Y,
-                root.Position.Y)
+            BedWars.NoFallPeakY = math.max(BedWars.NoFallPeakY or feetY, feetY)
         end
     else
         BedWars.NoFallPeakY = nil
@@ -7293,25 +7372,40 @@ track(RunService.Heartbeat:Connect(function()
             end
         end
     end
-    local noFallHit, noFallPosition
-    if BedWars.NoFallOn and humanoid.FloorMaterial == Enum.Material.Air then
+    local noFallHit, noFallPosition, noFallWidth
+    if BedWars.NoFallOn and not grounded and not swimming then
         local velocity = root.AssemblyLinearVelocity
-        if velocity.Y < -30 then
+        if velocity.Y < -8 then
             local ray = RaycastParams.new()
             ray.FilterType = Enum.RaycastFilterType.Exclude
             ray.FilterDescendantsInstances = { character }
             ray.RespectCanCollide = true
             ray.IgnoreWater = true
-            noFallPosition = root.Position + Vector3.new(velocity.X * 0.12,
-                0, velocity.Z * 0.12)
-            noFallHit = workspace:Raycast(noFallPosition,
-                Vector3.new(0, -80, 0), ray)
+            -- Sweep the predicted foot trajectory rather than casting below a
+            -- fixed horizontal offset. This catches fast and diagonal falls.
+            local origin = Vector3.new(root.Position.X, feetY + 0.5, root.Position.Z)
+            local previous = origin
+            for step = 1, 6 do
+                local seconds = step * 0.1
+                local predicted = origin + velocity * seconds
+                    - Vector3.new(0, math.max(0, workspace.Gravity) * seconds * seconds / 2, 0)
+                local hit = workspace:Raycast(previous, predicted - previous, ray)
+                if hit then
+                    if hit.Normal.Y > 0.25 then noFallHit = hit end
+                    break
+                end
+                previous = predicted
+            end
             if noFallHit then
-                local remaining = root.Position.Y - noFallHit.Position.Y
-                local drop = (BedWars.NoFallPeakY or root.Position.Y)
+                local drop = (BedWars.NoFallPeakY or feetY)
                     - noFallHit.Position.Y
-                if remaining < 5 or remaining > 44 or drop < 18 then
+                if drop < BedWars.NoFallMinDrop then
                     noFallHit = nil
+                else
+                    noFallPosition = (root.Position + noFallHit.Position) / 2
+                    local travel = Vector2.new(root.Position.X - noFallHit.Position.X,
+                        root.Position.Z - noFallHit.Position.Z).Magnitude
+                    noFallWidth = math.max(32, travel + 24)
                 end
             end
         end
@@ -7320,9 +7414,11 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.VoidWater.Place(root.Position,
             math.ceil((root.Position.Y + 16) / 4) * 4, "Fight")
     elseif noFallHit then
-        BedWars.NoFallWaterUntil = os.clock() + 1.2
-        BedWars.VoidWater.Place(noFallPosition,
-            math.ceil((noFallHit.Position.Y + 10) / 4) * 4, "NoFall")
+        local surfaceY = math.ceil((noFallHit.Position.Y
+            + math.clamp(-root.AssemblyLinearVelocity.Y * 0.12, 12, 24)) / 4) * 4
+        if BedWars.VoidWater.Place(noFallPosition, surfaceY, "NoFall", noFallWidth) then
+            BedWars.NoFallWaterUntil = os.clock() + 1.5
+        end
     else
         local voidBelow = false
         if BedWars.VoidWaterOn and BedWars.WaterGroundY
@@ -7508,6 +7604,8 @@ do
             BedWars.VoidWater.Clear()
         end
     end)
+    Elements.Slider(noFallSection, "Minimum Drop", 10, 60, 18, "studs",
+        function(value) BedWars.NoFallMinDrop = value end)
     local balloonSection = gameSection(gameName, MainTab.Right, "Auto Balloon")
     Elements.Toggle(balloonSection, "Auto Balloon", false, function(on)
         BedWars.AutoBalloonOn = on
@@ -7560,8 +7658,12 @@ do
     local killAuraSection = gameSection(gameName, AimTab.Left, "Kill Aura")
     Elements.Toggle(killAuraSection, "Kill Aura", false, function(on)
         BedWars.AuraOn = on
+        BedWars.LastAuraAttack = nil
+        BedWars.AuraRequestPending = nil
         if not on then BedWars.AuraStatus = "Off" end
     end)
+    Elements.Slider(killAuraSection, "Attacks Per Second", 4, 15, 10, "APS",
+        function(value) BedWars.AuraCPS = value end)
     Elements.Dropdown(killAuraSection, "Target Priority",
         { "Anything", "Lower HP", "Higher HP", "More Gear" }, "Lower HP", function(value)
             BedWars.AuraPriority = value
@@ -7630,7 +7732,7 @@ do
     local scaffoldSection = gameSection(gameName, MiscTab.Left, "Scaffold")
     Elements.Toggle(scaffoldSection, "Scaffold", false, function(on)
         BedWars.ScaffoldOn = on
-        BedWars.ScaffoldBridgeY = nil
+        BedWars.ResetScaffold()
         if not on then
             BedWars.BridgingNeeded = nil
             bedWarsReleaseScaffoldItem()
@@ -9177,7 +9279,6 @@ function BedWars.BuildUI()
     }, Gui)
     local moduleListScale = new("UIScale", { Scale = 1 }, moduleList)
     Persistence.HUDFrames.ModuleList = moduleList
-    BedWars.ModuleListRestingPosition = moduleList.Position
     local moduleBrand = label(moduleList, BRAND, 18,
         gold, Enum.TextXAlignment.Right)
     moduleBrand.Font = Enum.Font.GothamBold
@@ -9250,20 +9351,7 @@ function BedWars.BuildUI()
             end)
             local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
                 or Vector2.new(1280, 720)
-            local notificationsVisible = (BedWars.NotifyActiveCount or 0) > 0
-            local canShift = notificationsVisible and viewport.X >= 650
-            if canShift then
-                if not BedWars.ModuleListShifted then
-                    BedWars.ModuleListRestingPosition = moduleList.Position
-                end
-                local base = BedWars.ModuleListRestingPosition
-                moduleList.Position = base + UDim2.fromOffset(-296, 0)
-            elseif BedWars.ModuleListShifted then
-                moduleList.Position = BedWars.ModuleListRestingPosition
-            else
-                BedWars.ModuleListRestingPosition = moduleList.Position
-            end
-            BedWars.ModuleListShifted = canShift
+            moduleList.Position = UDim2.new(1, -14, 0, 38)
             local rowStep = 19
             local contentHeight = 26 + #activeRows * rowStep
             moduleList.Size = UDim2.fromOffset(224, contentHeight)
@@ -9281,7 +9369,6 @@ function BedWars.BuildUI()
             end
             moduleList.Visible = Settings.SelectedGame == "BedWars"
                 and Settings.ModuleListOn and not BedWarsUI.Visible and anyActive
-                and (viewport.X >= 650 or not notificationsVisible)
             task.wait(0.15)
         end
     end)

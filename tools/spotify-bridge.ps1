@@ -17,6 +17,8 @@ $getInput = $randomStreamType.GetMethod('GetInputStreamAt')
 $script:coverBytes = $null
 $script:coverType = 'image/jpeg'
 $script:coverKey = ''
+$script:coverTrack = ''
+$script:coverNextRead = [DateTimeOffset]::MinValue
 
 function Await-WinRT($operation, [type]$resultType) {
     $task = $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation))
@@ -26,16 +28,53 @@ function Await-WinRT($operation, [type]$resultType) {
 function Read-Cover($thumbnail) {
     if (-not $thumbnail) { return $null }
     $source = Await-WinRT ($thumbnail.OpenReadAsync()) $streamType
-    $input = $getInput.Invoke($source, @([uint64]0))
-    $stream = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($input)
-    $memory = [System.IO.MemoryStream]::new()
+    $stream = $null
+    $memory = $null
     try {
+        $input = $getInput.Invoke($source, @([uint64]0))
+        $stream = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($input)
+        $memory = [System.IO.MemoryStream]::new()
         $stream.CopyTo($memory)
         if ($memory.Length -gt 2MB) { return $null }
-        return $memory.ToArray()
+        # Keep the byte array intact instead of enumerating it into Object[].
+        return ,$memory.ToArray()
     } finally {
-        $stream.Dispose()
-        $memory.Dispose()
+        if ($stream) { $stream.Dispose() }
+        if ($memory) { $memory.Dispose() }
+        if ($source -is [IDisposable]) { $source.Dispose() }
+    }
+}
+
+function Update-Cover($trackKey, $thumbnail) {
+    if ($script:coverTrack -ne $trackKey) {
+        $script:coverTrack = $trackKey
+        $script:coverBytes = $null
+        $script:coverKey = ''
+        $script:coverNextRead = [DateTimeOffset]::MinValue
+    }
+    $now = [DateTimeOffset]::UtcNow
+    if ($now -lt $script:coverNextRead) { return }
+    # Media titles can arrive before their thumbnail. Retry missing artwork,
+    # and refresh successful reads to detect artwork changes on the same track.
+    $script:coverNextRead = $now.AddSeconds(1)
+    try {
+        [byte[]]$bytes = Read-Cover $thumbnail
+        if (-not $bytes -or $bytes.Length -lt 4) { return }
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hash = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+        $script:coverBytes = $bytes
+        $script:coverType = if ($bytes[0] -eq 137 -and $bytes[1] -eq 80) {
+            'image/png'
+        } else { 'image/jpeg' }
+        $script:coverKey = "$trackKey|$hash"
+        $script:coverNextRead = $now.AddSeconds(2)
+    } catch {
+        # Preserve a successfully read cover for this track during a transient
+        # read failure; a new track has already cleared the previous cover.
     }
 }
 
@@ -67,18 +106,8 @@ function Get-NowPlaying {
                 $position += [Math]::Max(0, ([DateTimeOffset]::UtcNow - $timeline.LastUpdatedTime).TotalSeconds)
             }
             if ($duration -gt 0) { $position = [Math]::Min($position, $duration) }
-            $key = "$source|$title|$artist"
-            if ($script:coverKey -ne $key) {
-                $script:coverKey = $key
-                $script:coverBytes = $null
-                try { $script:coverBytes = Read-Cover $media.Thumbnail } catch { }
-                if ($script:coverBytes -and $script:coverBytes.Length -ge 4 -and
-                    $script:coverBytes[0] -eq 137 -and $script:coverBytes[1] -eq 80) {
-                    $script:coverType = 'image/png'
-                } else {
-                    $script:coverType = 'image/jpeg'
-                }
-            }
+            $key = "$source|$title|$artist|$($media.AlbumTitle)"
+            Update-Cover $key $media.Thumbnail
             return @{
                 source = $source
                 title = $title.Substring(0, [Math]::Min(240, $title.Length))
@@ -87,11 +116,15 @@ function Get-NowPlaying {
                 position = [Math]::Round($position, 1)
                 duration = [Math]::Round($duration, 1)
                 playing = $playing
-                artwork_key = if ($script:coverBytes) { $key } else { '' }
+                artwork_key = $script:coverKey
                 available = -not [string]::IsNullOrWhiteSpace($title)
             }
         }
     } catch { }
+    $script:coverBytes = $null
+    $script:coverKey = ''
+    $script:coverTrack = ''
+    $script:coverNextRead = [DateTimeOffset]::MinValue
     $title = Get-Process -Name Spotify -ErrorAction SilentlyContinue |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } |
         Select-Object -ExpandProperty MainWindowTitle -First 1
@@ -128,11 +161,19 @@ try {
 
             $isTrack = $requestLine -match '^GET /now-playing(?:\?[^ ]*)? HTTP/1\.[01]$'
             $isCover = $requestLine -match '^GET /cover(?:\?[^ ]*)? HTTP/1\.[01]$'
+            $requestedKey = ''
+            if ($isCover -and $requestLine -match '[?&]key=([^ &]*)') {
+                $requestedKey = [Uri]::UnescapeDataString($Matches[1])
+            }
             if ($isTrack) {
                 $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(
                     (Get-NowPlaying | ConvertTo-Json -Compress))
                 $contentType = 'application/json; charset=utf-8'
                 $status = '200 OK'
+            } elseif ($isCover -and $requestedKey -and $requestedKey -ne $script:coverKey) {
+                $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes('{"error":"artwork changed"}')
+                $contentType = 'application/json; charset=utf-8'
+                $status = '409 Conflict'
             } elseif ($isCover -and $script:coverBytes) {
                 $bodyBytes = $script:coverBytes
                 $contentType = $script:coverType
