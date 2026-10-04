@@ -303,10 +303,12 @@ function scripts:FindFirstChild(name)
     end}
 end
 function LocalPlayer:FindFirstChild(name) if name=="PlayerScripts" then return scripts end end
-local identity,requireFailure=8,false
+local identity,requireFailure,requireCalls,modulesReady=8,false,0,false
+local getloadedmodules=function() return modulesReady and {controller,gun,eliminationApi} or {} end
 local getthreadidentity=function() return identity end
 local setthreadidentity=function(value) identity=value end
 local require=function(module)
+    requireCalls+=1
     assert(identity==2,"Cannot require a non-RobloxScript module from a RobloxScript")
     if requireFailure then error("module initialization failed") end
     return module
@@ -367,10 +369,15 @@ print("PASS Rivals input: first-person camera preserved, focus released, mouse r
 
 requireFailure=true
 RivalsAim.Setup()
-assert(not RivalsAim.Available and identity==8,"failed require leaked game script identity")
+assert(requireCalls==0 and not RivalsAim.Available and identity==8,"startup required game modules")
+RivalsAim.SetEnabled(true)
+assert(requireCalls==0 and not RivalsAim.Enabled,"aim initialized a module before the game")
+modulesReady=true
+RivalsAim.SetEnabled(true)
+assert(not RivalsAim.Enabled and identity==8,"failed require leaked game script identity")
 requireFailure=false
 RivalsAim.Setup()
-assert(RivalsAim.Available and identity==8,"game module load failed or did not restore identity")
+assert(not RivalsAim.Available and identity==8,"setup eagerly loaded game modules")
 assert(hookInstalls==0 and gun.StartShooting==nativeShot,"disabled aim patched a game method")
 RivalsAim.SetEnabled(true)
 assert(RivalsAim.Enabled and hookInstalls==0)

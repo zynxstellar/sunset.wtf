@@ -70,7 +70,7 @@ def main():
                     '\ntrack(Window:GetPropertyChangedSignal("Visible")'),
             between(inner, 'function BedWars.BuildUI(boardGame)',
                     '\nif game.PlaceId == 6872265039'),
-            between(inner, 'function RivalsAim.Setup()',
+            between(inner, 'local function rivalsModuleLoaded(',
                     '\nif game.PlaceId == 17625359962'),
         ]
         rivals_spec = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8')

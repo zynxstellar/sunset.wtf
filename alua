@@ -24,7 +24,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-rivals-kill-chat-k264"
+local SUNSET_BUILD = "20261004-rift-rivals-safe-startup-k265"
 local BRAND = "RIFT"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
 
@@ -9447,6 +9447,14 @@ end
 
 
 
+local function rivalsModuleLoaded(module)
+    -- Only use modules already initialized by the game. Starting them from Rift can
+    -- race PlayerDataController and poison Roblox's cached require result.
+    if type(getloadedmodules) ~= "function" then return false end
+    local ok, loaded = pcall(getloadedmodules)
+    return ok and type(loaded) == "table" and table.find(loaded, module) ~= nil
+end
+
 function RivalsAim.Setup()
     -- Retire the global ray/mouse wrappers left by older builds.
     local oldState = ENV.SunsetRivalsAimHook
@@ -9486,6 +9494,9 @@ function RivalsAim.Setup()
             local fighterModule = controllers and controllers:FindFirstChild("FighterController")
             local gunModule = types and types:FindFirstChild("Gun")
             if not fighterModule or not gunModule then return end
+            if not rivalsModuleLoaded(fighterModule) or not rivalsModuleLoaded(gunModule) then
+                error("Rivals is still initializing; wait for the lobby before enabling aim")
+            end
             return withGameIdentity(function()
                 return require(fighterModule), require(gunModule)
             end)
@@ -9493,6 +9504,7 @@ function RivalsAim.Setup()
         if ok and type(fighterApi) == "table" and type(fighterApi.GetFighter) == "function"
             and type(gunApi) == "table" and type(gunApi.StartShooting) == "function" then
             controller, gun = fighterApi, gunApi
+            RivalsAim.Available = true
             return true
         end
         RivalsAim.LoadError = ok and "Weapon modules not found" or tostring(fighterApi)
@@ -9517,6 +9529,7 @@ function RivalsAim.Setup()
                 local fighter = classes and classes:FindFirstChild("ClientFighter")
                 local module = fighter and fighter:FindFirstChild("FighterInterface")
                 if not module then error("Elimination interface not ready") end
+                if not rivalsModuleLoaded(module) then error("Wait for the Rivals lobby before enabling Kill Chat") end
                 return withGameIdentity(function() return require(module) end)
             end)
             if not ok or type(api) ~= "table" or type(api.EliminationEffect) ~= "function" then
@@ -9766,7 +9779,7 @@ function RivalsAim.Setup()
         table.clear(cameraPatches)
         table.clear(contexts)
     end
-    RivalsAim.Available = loadApi()
+    RivalsAim.Available = false
     function RivalsAim.SetEnabled(on)
         state.Active = false
         RivalsAim.Enabled = on == true and installShot() or false
@@ -9813,8 +9826,14 @@ function RivalsAim.Setup()
     visualsScreen = new("ScreenGui", {
         Name = "RiftRivalsESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = -1,
     }, PlayerGui)
+    local nextVisualApiRetry = 0
     visualsConnection = RunService.RenderStepped:Connect(function()
         if state.Restored then return end
+        if not controller and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn)
+            and os.clock() >= nextVisualApiRetry then
+            nextVisualApiRetry = os.clock() + 1
+            loadApi()
+        end
         local seen = {}
         local fighter = controller and controller.LocalFighter
         local camera = workspace.CurrentCamera
