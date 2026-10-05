@@ -12,6 +12,13 @@ if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
 end
 
 local ENV = (typeof(getgenv) == "function" and getgenv()) or _G
+do
+    local copy = type(ENV.setclipboard) == "function" and ENV.setclipboard
+        or type(setclipboard) == "function" and setclipboard
+        or type(ENV.toclipboard) == "function" and ENV.toclipboard
+        or type(toclipboard) == "function" and toclipboard
+    if copy then pcall(copy, "https://discord.com/invite/CNGZy3gYzP") end
+end
 local function waitForRivalsStartup()
     local token = {}
     ENV.SunsetStartupToken = token
@@ -53,7 +60,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-ui-register-fix-k268"
+local SUNSET_BUILD = "20261005-rift-discord-clipboard-k269"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
