@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-storage-fix-k278"
+local SUNSET_BUILD = "20261006-rift-coldwar-native-volley-k279"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10407,7 +10407,7 @@ function Settings.SetupColdWarAim(playerModel)
     end
     local aim = { Enabled = false, AimPart = "Head", WallCheck = true,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false }
-    aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
+    aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, NativeErrors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
     local state = { Destroyed = false }
     ENV.SunsetColdWarAimHook = state
@@ -10472,23 +10472,27 @@ function Settings.SetupColdWarAim(playerModel)
             return delta.Unit, time
         end
     end
-    local function clearArc(origin, direction, time, params, model)
+    local function clearArc(origin, direction, time, params, model, velocity)
         if not aim.WallCheck then return true end
         local tr = makeTrajectory(origin, direction, params.Weapon)
         local last = origin
         for i = 1, 12 do
-            local position = trajectory.GetPositionAtTime(tr, time * i / 12)
+            local sampleTime = time * 1.08 * i / 12
+            local position = trajectory.GetPositionAtTime(tr, sampleTime) - velocity * sampleTime
             local hit = workspace:Raycast(last, position - last, params.RaycastParams)
-            if hit then return hit.Instance:IsDescendantOf(model) end
+            if hit then
+                return hit.Instance:IsDescendantOf(model) and table.find({ "Head", "Torso", "Left Arm",
+                    "Right Arm", "Left Leg", "Right Leg", "UpperTorso", "LowerTorso" }, hit.Instance.Name) ~= nil
+            end
             last = position
         end
-        return true
+        return false
     end
     function aim.Resolve(tool, muzzle, bullet, origin, direction)
         local camera = workspace.CurrentCamera
         if not camera or not vector(direction) then return end
-        local params = weaponSource.toFireParams({ Tool = tool, MuzzleIndex = muzzle,
-            BulletIndex = bullet, Origin = origin, Direction = direction, Owner = LocalPlayer })
+        local params = weaponSource.toFireParams({ Tool = tool, MuzzleIndex = muzzle or 1,
+            BulletIndex = bullet or 1, Origin = origin, Direction = direction, Owner = LocalPlayer })
         if type(params) ~= "table" or type(params.Weapon) ~= "table"
             or type(params.Weapon.MuzzleSpeed) ~= "number" or params.Weapon.MuzzleSpeed <= 0
             or params.Weapon.Explosive or not params.RaycastParams then return nil, "Weapon parameters unavailable or unsupported" end
@@ -10535,28 +10539,20 @@ function Settings.SetupColdWarAim(playerModel)
                 local v = root.AssemblyLinearVelocity
                 if vector(v) and v.Magnitude <= 80 then velocity = v end
             end
-            local selected, time = solve(origin, candidate.Part.Position, params.Weapon, velocity)
-            if selected and clearArc(origin, selected, time, params, candidate.Model) then
-                return selected
+            local names = aim.AimPart == "Torso" and { "Torso", "UpperTorso", "Head", "Left Leg", "Right Leg" }
+                or aim.AimPart == "Nearest" and { candidate.Part.Name, "Head", "Torso", "UpperTorso", "Left Arm", "Right Arm" }
+                or { "Head", "Torso", "UpperTorso", "Left Arm", "Right Arm" }
+            for _, name in ipairs(names) do
+                local part = candidate.Model:FindFirstChild(name)
+                if part and part:IsA("BasePart") then
+                    local selected, time = solve(origin, part.Position, params.Weapon, velocity)
+                    if selected and clearArc(origin, selected, time, params, candidate.Model, velocity) then
+                        return selected
+                    end
+                end
             end
         end
         return nil, "No clear ballistic path to the selected targets"
-    end
-    local function redirected(directions, selected)
-        -- Rotate the volley together so shotgun spread and direction magnitudes survive.
-        local from, to = directions[1].Unit, selected.Unit
-        local axis = from:Cross(to)
-        local sine, cosine = axis.Magnitude, math.clamp(from:Dot(to), -1, 1)
-        if sine < 1e-6 and cosine < 0 then
-            axis = from:Cross(math.abs(from.X) < 0.9 and Vector3.new(1, 0, 0) or Vector3.new(0, 1, 0)).Unit
-        elseif sine >= 1e-6 then axis = axis.Unit end
-        local result = table.clone(directions)
-        for i, value in ipairs(directions) do
-            if not vector(value) then return end
-            result[i] = sine < 1e-6 and cosine > 0 and value
-                or value * cosine + axis:Cross(value) * sine + axis * (axis:Dot(value) * (1 - cosine))
-        end
-        return result
     end
     local function install()
         if api and api[field] == wrapper then return true end
@@ -10588,6 +10584,9 @@ function Settings.SetupColdWarAim(playerModel)
         api, field, original = cf, key, cf[key]
         local native = original
         wrapper = function(tool, muzzle, bullet, origin, directions, opts, ...)
+            if state.Destroyed or not aim.Enabled then
+                return native(tool, muzzle, bullet, origin, directions, opts, ...)
+            end
             local diagnostic = aim.Diagnostics
             diagnostic.Shots = diagnostic.Shots + 1
             diagnostic.LastReason = "Shot passed through: disabled, menu open, or unsupported firing arguments"
@@ -10596,10 +10595,14 @@ function Settings.SetupColdWarAim(playerModel)
                 and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
                 local ok, result, reason = pcall(function()
                     local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
-                    return selected and redirected(directions, selected), why
+                    if not vector(selected) then return nil, why end
+                    -- Match the reference volley: preserve the game's directions table
+                    -- and update its existing entries before its original firing call.
+                    if table.isfrozen(directions) then return nil, "Native direction array is read-only" end
+                    for i = 1, #directions do directions[i] = selected end
+                    return selected
                 end)
                 if ok and result then
-                    directions = result
                     diagnostic.Redirected = diagnostic.Redirected + 1
                     diagnostic.LastReason = "Shot direction updated; damage still requires server acceptance"
                 elseif not ok then
@@ -10610,7 +10613,18 @@ function Settings.SetupColdWarAim(playerModel)
             if aim.CheckUntil and os.clock() <= aim.CheckUntil and diagnostic.Shots - aim.CheckStart < 8 then
                 print("[Rift aim check] shot " .. diagnostic.Shots .. ": " .. diagnostic.LastReason)
             end
-            return native(tool, muzzle, bullet, origin, directions, opts, ...)
+            local results = table.pack(pcall(native, tool, muzzle, bullet, origin, directions, opts, ...))
+            if not results[1] then
+                diagnostic.NativeErrors = diagnostic.NativeErrors + 1
+                diagnostic.LastReason = "Native firing error: " .. tostring(results[2])
+                aim.LoadError = diagnostic.LastReason
+                aim.Enabled, aim.Available = false, false
+                restoreHandler()
+                if aim.Toggle then pcall(aim.Toggle.Set, false) end
+                warn("[Rift aim check] " .. diagnostic.LastReason .. "; Silent Aim removed from the firing path")
+                error(results[2], 0)
+            end
+            return table.unpack(results, 2, results.n)
         end
         api[field] = wrapper
         return true
@@ -10638,7 +10652,8 @@ function Settings.SetupColdWarAim(playerModel)
             .. "; firing handler=" .. tostring(api ~= nil and api[field] == wrapper))
         if aim.LoadError then print("[Rift aim check] " .. aim.LoadError) end
         print("[Rift aim check] shots=" .. aim.Diagnostics.Shots .. "; redirected=" .. aim.Diagnostics.Redirected
-            .. "; errors=" .. aim.Diagnostics.Errors .. "; " .. aim.Diagnostics.LastReason)
+            .. "; errors=" .. aim.Diagnostics.Errors .. "; native errors=" .. aim.Diagnostics.NativeErrors
+            .. "; " .. aim.Diagnostics.LastReason)
         aim.CheckUntil, aim.CheckStart = os.clock() + 20, aim.Diagnostics.Shots
         print("[Rift aim check] Close the menu and fire three shots at an enemy inside the FOV. Observing for 20 seconds.")
     end

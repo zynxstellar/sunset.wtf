@@ -58,11 +58,19 @@ function Elements.Button(s,n,f) controls[s.."/"..n]={Click=f} end
 local workspace={Children={},CurrentCamera={ViewportSize=Vector2.new(1920,1080)}}
 function workspace.CurrentCamera:WorldToViewportPoint(p) return Vector3.new(960+p.X,540-p.Y,p.Z),p.Z>0 end
 local wall,raycasts,rayFailure=nil,0,false
+local collisionTarget
 function workspace:Raycast(o,d,params)
     assert(params.Sentinel=="native collision params")
     raycasts+=1
     if rayFailure then error("cast failed") end
-    return wall and {Instance=wall} or nil
+    if wall then return {Instance=wall} end
+    if collisionTarget and o.Z<=100 and o.Z+d.Z>=100 and d.Z>0 then
+        local point=o+d*((100-o.Z)/d.Z)
+        for _,name in ipairs({"Head","Torso"}) do
+            local part=collisionTarget.Children[name]
+            if math.abs(point.X-part.Position.X)<1 and math.abs(point.Y-part.Position.Y)<1 then return {Instance=part} end
+        end
+    end
 end
 local LocalPlayer=object("Me","Player")
 LocalPlayer.Team={Name="NATO"}
@@ -78,6 +86,7 @@ local function player(name,team,x,z)
     table.insert(roster,p) return p
 end
 local enemy=player("Enemy","PACT",10,100)
+collisionTarget=enemy.Character
 local ally=player("Ally","NATO",0,50)
 local spectator=player("Spectator","Lobby",0,30)
 local function model(p) return p~=LocalPlayer and not p.Dead and p.Character or nil end
@@ -133,19 +142,21 @@ assert(messages[1]:find("firing handler=true"),"diagnostic omitted actual handle
 local tool=object("Rifle","Tool")
 local origin=Vector3.new()
 local directions={Vector3.new(0,0,1),Vector3.new(0.03,0.01,1),Metadata="native metadata"}
+local readonlyDirections=false
 local function fire(opts)
+    directions={Vector3.new(0,0,1),Vector3.new(0.03,0.01,1),Metadata="native metadata"}
+    if readonlyDirections then table.freeze(directions) end
     return table.pack(cm.Export.volley(tool,2,3,origin,directions,opts,"extra",nil,9))
 end
 for _=1,3 do
     local result=fire()
     assert(result.n==3 and result[1]=="native" and result[2]==nil and result[3]==42)
     assert(received.n==9 and received[6]==nil and received[7]=="extra" and received[9]==9)
-    assert(received[5]~=directions and received[5].Metadata=="native metadata")
+    assert(received[5]==directions and received[5].Metadata=="native metadata","reference volley array identity/metadata changed")
     assert(received[5][1]:Dot((enemy.Character:FindFirstChild("Head").Position-origin).Unit)>0.99999)
-    assert(math.abs(received[5][2].Magnitude-directions[2].Magnitude)<1e-6,"pellet magnitude changed")
-    assert(math.abs(received[5][1]:Dot(received[5][2])-directions[1]:Dot(directions[2]))<1e-6,"spread changed")
+    assert(received[5][2]==received[5][1],"reference volley directions were not updated together")
 end
-assert(calls==3 and directions[1].X==0 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
+assert(calls==3 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
 assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3 and #messages>=6,"firing diagnostic did not observe shots")
 controls["Cold War/Silent Aim/Aim Part"]:Set("Torso") fire()
 assert(received[5][1].Y==0,"torso selection ignored")
@@ -155,24 +166,30 @@ gravity=0 enemy.Character.Children.HumanoidRootPart.AssemblyLinearVelocity=Vecto
 fire() assert(received[5][1].X>(enemy.Character.Children.Head.Position-origin).Unit.X,"movement lead missing")
 enemy.Character.Children.HumanoidRootPart.AssemblyLinearVelocity=Vector3.new()
 wall=object("Wall","BasePart",workspace)
-fire() assert(received[5]==directions,"wall check bent a blocked shot")
-aim.WallCheck=false fire() assert(received[5]~=directions)
+fire() assert(directions[1].X==0,"wall check bent a blocked shot")
+aim.WallCheck=false fire() assert(directions[1].X>0)
 aim.WallCheck=true wall=nil
-aim.Radius=5 fire() assert(received[5]==directions,"FOV exclusion failed")
+aim.Radius=5 fire() assert(directions[1].X==0,"FOV exclusion failed")
 assert(aim.Diagnostics.LastReason:find("FOV"),"FOV failure missing from diagnostic")
-aim.Radius=150 aim.MaxDistance=25 fire() assert(received[5]==directions,"range exclusion failed")
-aim.MaxDistance=1000 enemy.Dead=true fire() assert(received[5]==directions,"dead player targeted") enemy.Dead=false
+aim.Radius=150 aim.MaxDistance=25 fire() assert(directions[1].X==0,"range exclusion failed")
+aim.MaxDistance=1000 enemy.Dead=true fire() assert(directions[1].X==0,"dead player targeted") enemy.Dead=false
 local force=object("Shield","ForceField",enemy.Character)
-fire() assert(received[5]==directions,"spawn shield ignored") enemy.Character.Children.Shield=nil
+fire() assert(directions[1].X==0,"spawn shield ignored") enemy.Character.Children.Shield=nil
 local values=object("CharacterValues","Folder",enemy.Character)
 object("Unconscious","BoolValue",values).Value=true
-fire() assert(received[5]==directions,"downed target selected") values.Children.Unconscious.Value=false
-menu=true fire() assert(received[5]==directions) menu=false
-fire({Replay=true}) assert(received[5]==directions,"non-native options altered")
-params.Weapon.Explosive=true fire() assert(received[5]==directions) params.Weapon.Explosive=false
-rayFailure=true fire() assert(received[5]==directions,"resolver error suppressed normal firing") rayFailure=false
+fire() assert(directions[1].X==0,"downed target selected") values.Children.Unconscious.Value=false
+menu=true fire() assert(directions[1].X==0) menu=false
+fire({Replay=true}) assert(directions[1].X==0,"non-native options altered")
+params.Weapon.Explosive=true fire() assert(directions[1].X==0) params.Weapon.Explosive=false
+rayFailure=true fire() assert(directions[1].X==0,"resolver error suppressed normal firing") rayFailure=false
 assert(aim.Diagnostics.Errors>0 and aim.Diagnostics.LastReason:find("cast failed"),"resolver error was hidden from diagnostic")
+readonlyDirections=true fire()
+assert(directions[1].X==0 and aim.Enabled,"read-only native array blocked normal firing") readonlyDirections=false
+local beforeFailure=calls
 nativeFailure=true local ok,err=pcall(fire) assert(not ok and tostring(err):find("native failure")) nativeFailure=false
+assert(calls==beforeFailure+1 and aim.Diagnostics.NativeErrors==1 and cm.Export.volley==native and not aim.Enabled,
+    "native error caused duplicate firing or left Silent Aim installed")
+fire() assert(directions[1].X==0,"native firing was not restored after failure")
 aim.FOVVisible=true frame()
 assert(circles[1].Visible and circles[1].Radius==150 and circles[1].Position.X==960)
 menu=true frame() assert(not circles[1].Visible) menu=false
@@ -194,4 +211,4 @@ Settings.SetupColdWarAim(model)
 assert(cm.Export.volley==native and not replacement.Enabled,"reinjection stacked handlers")
 Settings.ColdWarAim.Check() now+=21 frame()
 assert(messages[#messages]:find("No calls reached"),"diagnostic did not report an inactive firing path")
-print("PASS Cold War Silent Aim: deferred/loaded modules and identity, repeated native calls/returns/errors, spread/input preservation, drop/lead, teams/death/shields/downed/FOV/range/walls/menu, options/errors pass through, disable/unload/reinjection and foreign handler ownership")
+print("PASS Cold War Silent Aim: deferred modules, reference native array update and ballistic landing, repeated original calls/results, drop/lead, target filters, read-only arrays, native-error diagnostic/removal with no duplicate shots, disable/unload/reinjection")
