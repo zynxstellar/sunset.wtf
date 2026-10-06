@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-aim-check-button-k277"
+local SUNSET_BUILD = "20261006-rift-coldwar-storage-fix-k278"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10561,7 +10561,8 @@ function Settings.SetupColdWarAim(playerModel)
     local function install()
         if api and api[field] == wrapper then return true end
         restoreHandler()
-        local shared = ReplicatedStorage:FindFirstChild("Shared")
+        local storage = game:GetService("ReplicatedStorage")
+        local shared = storage:FindFirstChild("Shared")
         local ballistics = shared and shared:FindFirstChild("Ballistics")
         local sources = ballistics and ballistics:FindFirstChild("Sources")
         local scripts = LocalPlayer:FindFirstChild("PlayerScripts")

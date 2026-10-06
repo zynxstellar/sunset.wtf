@@ -81,8 +81,14 @@ local enemy=player("Enemy","PACT",10,100)
 local ally=player("Ally","NATO",0,50)
 local spectator=player("Spectator","Lobby",0,30)
 local function model(p) return p~=LocalPlayer and not p.Dead and p.Character or nil end
-local ReplicatedStorage=object("RS","Folder")
-local ballistics=object("Ballistics","Folder",object("Shared","Folder",ReplicatedStorage))
+-- Do not supply a ReplicatedStorage variable: Roblox only exposes this service
+-- through game:GetService. The old fixture masked a production nil reference.
+local storage=object("RS","Folder")
+local serviceCalls=0
+local game={GetService=function(_,name)
+    assert(name=="ReplicatedStorage") serviceCalls+=1 return storage
+end}
+local ballistics=object("Ballistics","Folder",object("Shared","Folder",storage))
 local tm=object("Trajectory","ModuleScript",ballistics)
 local wm=object("WeaponSource","ModuleScript",object("Sources","Folder",ballistics))
 local cm=object("ClientFire","ModuleScript",object("BallisticsClient","Folder",object("PlayerScripts","Folder",LocalPlayer)))
@@ -121,6 +127,7 @@ aim.SetEnabled(true)
 assert(not aim.Available and requireCalls==0 and identity==8,"unready modules were required")
 loaded=true now=2 frame()
 assert(aim.Available and cm.Export.volley~=native and identity==8,"late-ready install failed")
+assert(serviceCalls>0,"Cold War did not resolve storage through the Roblox service API")
 controls["Cold War/Silent Aim/Check Silent Aim"].Click()
 assert(messages[1]:find("firing handler=true"),"diagnostic omitted actual handler state")
 local tool=object("Rifle","Tool")
