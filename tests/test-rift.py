@@ -84,6 +84,8 @@ def main():
                     '\nif game.PlaceId == 6872265039'),
             between(inner, 'local function rivalsModuleLoaded(',
                     '\nif game.PlaceId == 17625359962'),
+            between(inner, 'function Settings.SetupColdWar()',
+                    '\nif game.PlaceId == 13687899540'),
         ]
         rivals_spec = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8')
         rivals_spec = rivals_spec.replace('-- INSERT_RIVALS_PRODUCTION', '\n'.join(rivals_chunks))

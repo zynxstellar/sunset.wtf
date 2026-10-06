@@ -113,6 +113,7 @@ local function new(class,props,parent)
             {"Frame","TextLabel","TextButton","TextBox","ScrollingFrame","ImageLabel"},self.ClassName)~=nil)
     end
     function obj:GetChildren() return self.children end
+    function obj:ReleaseFocus() self.Focused=false end
     function obj:FindFirstChild(name)
         for _,child in ipairs(self.children) do if child.Name==name then return child end end
     end
@@ -162,7 +163,7 @@ local PlayerGui=new("Folder",{},nil)
 local Window={Visible=false}
 local BedWarsUI,RivalsUI
 local Settings={SelectedGame="Rivals",MenuKey=Enum.KeyCode.RightShift,
-    MenuBlurOn=true,ModuleListOn=true,SetMenuBlur=function() end}
+    MenuBlurOn=true,ModuleListOn=true,GameBoards={},SetMenuBlur=function() end}
 local Camera={CameraType="Custom",CFrame=CFrame.new(Vector3.new()),ViewportSize=Vector2.new(1920,1080)}
 Camera.CFrame.LookVector=Vector3.new(0,0,1)
 local workspace={CurrentCamera=Camera}
@@ -186,7 +187,10 @@ local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
     GetMouseLocation=function() return Vector2.new(100,100) end}
 local ENV={}
 local useScriptable=true
-local function anyMenuVisible() return Window.Visible or RivalsUI and RivalsUI.Visible or false end
+local function anyMenuVisible()
+    for _,board in pairs(Settings.GameBoards) do if board.Parent and board.Visible then return true end end
+    return Window.Visible or RivalsUI and RivalsUI.Visible or false
+end
 local RivalsAim={Enabled=false,FOVVisible=false,Radius=150,AimPart="Head",WallCheck=true}
 RivalsAim.Assist={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true,Strength=8}
 RivalsAim.Aimbot={Enabled=false,AimPart="Head",WallCheck=true,HoldMouse=true,MaxDistance=1000}
@@ -1070,3 +1074,102 @@ assert(not RunService.Bindings.RiftRivalsView and Camera.CFrame==originalView
     and LocalPlayer.CameraMaxZoomDistance==originalMax,"unload did not restore camera/zoom")
 print("PASS view unload: camera offset, mode, zoom bounds, and render binding restored")
 end
+
+(function()
+    Settings.SelectedGame="Cold War"
+    Window.Visible=false
+    for _,board in pairs(Settings.GameBoards) do board.Visible=false end
+    local oldBedwarsBoard=BedWarsUI
+    local cleanupIndex=#connections+1
+    Settings.SetupColdWar()
+    local board=Settings.GameBoards["Cold War"]
+    assert(board and board.Name=="RiftCold WarBoard" and BedWarsUI==oldBedwarsBoard,
+        "Cold War did not register its own board")
+    assert(Persistence.HUDFrames["Cold WarMenu"]==board,"Cold War menu position is not saved")
+    local foundBoxes,foundOutlines,kitColumn=false,false,false
+    for _,object in ipairs(board:GetDescendants()) do
+        if object:IsA("TextButton") and object.Name=="ESP Boxes" then foundBoxes=true end
+        if object:IsA("TextButton") and object.Name=="Player Outlines" then foundOutlines=true end
+        if object.Name=="KIT" then kitColumn=true end
+    end
+    assert(foundBoxes and foundOutlines and not kitColumn,"Cold War visuals missing or BedWars kit controls leaked")
+    local boxesControl=findConfig("Visuals/Cold War/ESP Boxes/ESP Boxes")
+    local outlinesControl=findConfig("Visuals/Cold War/Player Outlines/Player Outlines")
+    assert(not boxesControl.Get() and not outlinesControl.Get() and not boxesControl.GetBind(),
+        "Cold War visuals/keybind enabled by default")
+    local foe=combatPlayer(2,30)
+    local friend=combatPlayer(1,10)
+    local deadPlayer=combatPlayer(2,50,0)
+    foe.Character,friend.Character,deadPlayer.Character=foe.Fighter.Entity.Model,friend.Fighter.Entity.Model,deadPlayer.Fighter.Entity.Model
+    foe.Name,friend.Name,deadPlayer.Name="Enemy","Teammate","Dead"
+    local savedPlayers=Players.GetPlayers
+    Players.GetPlayers=function() return {LocalPlayer,foe,friend,deadPlayer} end
+    local function liveColdWarVisuals()
+        local boxes,outlines={},{}
+        for _,object in ipairs(created) do
+            if object.Parent and object.Name=="ColdWarBox" then table.insert(boxes,object) end
+            if object.Parent and object.Name=="RiftColdWarOutline" then table.insert(outlines,object) end
+        end
+        return boxes,outlines
+    end
+    boxesControl.SetBind(Enum.KeyCode.Q)
+    UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.Q},false)
+    assert(boxesControl.Get(),"assigned Cold War keybind did not enable ESP")
+    outlinesControl.Set(true)
+    local boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==2 and #outlines==2,"Cold War did not filter self/dead or include teammates")
+    for _,outline in ipairs(outlines) do assert(outline.Enabled and outline.FillTransparency==1) end
+    local boxColor,outlineColor=color(0.4,0.5,0.8),color(0.1,0.7,0.6)
+    findConfig("Visuals/Cold War/ESP Boxes/Color").Set(boxColor)
+    findConfig("Visuals/Cold War/Player Outlines/Color").Set(outlineColor)
+    findConfig("Visuals/Cold War/ESP Boxes/Show Names").Set(false)
+    for _,box in ipairs(boxes) do
+        assert(box.Visible and box.Size.X.Offset>0 and box.Size.Y.Offset>0,
+            "Cold War boxes were not projected around characters")
+        assert(box:FindFirstChildOfClass("UIStroke").Color==boxColor
+            and not box:FindFirstChild("PlayerName").Visible,"box color/name settings were ignored")
+    end
+    for _,outline in ipairs(outlines) do assert(outline.OutlineColor==outlineColor) end
+    local oldModel=foe.Character
+    local respawn=combatPlayer(2,70)
+    foe.Character=respawn.Fighter.Entity.Model
+    RunService.RenderStepped:Fire(1/60)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==2 and #outlines==2,"respawn duplicated Cold War visuals")
+    for _,outline in ipairs(outlines) do assert(outline.Adornee~=oldModel,"outline remained on old character") end
+    local head=foe.Character:FindFirstChild("Head")
+    head.Position=Vector3.new(4000,0,100)
+    RunService.RenderStepped:Fire(1/60)
+    boxes,outlines=liveColdWarVisuals()
+    local hiddenBoxes=0
+    for _,box in ipairs(boxes) do if not box.Visible then hiddenBoxes+=1 end end
+    assert(hiddenBoxes==1 and #outlines==2,"off-screen ESP box was not hidden independently from outlines")
+    head.Position=Vector3.new(70,0,100)
+    friend.Character:FindFirstChildOfClass("Humanoid").Health=0
+    RunService.RenderStepped:Fire(1/60)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==1 and #outlines==1,"dead Cold War player kept visuals")
+    board.Visible=true
+    local mode=LocalPlayer.CameraMode
+    onMenuVisibility()
+    assert(LocalPlayer.CameraMode==mode,"Cold War menu replaced the native camera mode")
+    RunService.RenderStepped:Fire(1/60)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==0 and #outlines==0,"Cold War visuals did not pause for the menu")
+    board.Visible=false
+    onMenuVisibility()
+    outlinesControl.Set(false)
+    RunService.RenderStepped:Fire(1/60)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==1 and not outlines[1].Enabled,"outlines could not be disabled independently")
+    boxesControl.Set(false)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==0 and #outlines==0,"disabled Cold War visuals remained")
+    boxesControl.Set(true)
+    for i=cleanupIndex,#connections do connections[i]:Disconnect() end
+    Settings.ColdWarVisuals.Apply()
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==0 and #outlines==0,"Cold War unload left visuals or recreated them")
+    Players.GetPlayers=savedPlayers
+    print("PASS Cold War: own Rift board/config controls, keybind, all-player boxes/outlines, colors, respawn, death, off-screen, menu and unload cleanup")
+end)()

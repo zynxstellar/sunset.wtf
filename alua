@@ -7,7 +7,8 @@ local source = [========[
 
 
 if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
-    and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082 then
+    and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082
+    and game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026 then
     return
 end
 
@@ -60,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261005-rift-discord-clipboard-k269"
+local SUNSET_BUILD = "20261005-rift-coldwar-visuals-k270"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -118,6 +119,7 @@ local RefreshConfigList
 
 
 local Settings = {
+    GameBoards     = {},
     MenuKey        = Enum.KeyCode.RightShift,
     FlyEnabled     = false,
     FlySpeed       = 50,
@@ -304,6 +306,9 @@ local BedWarsUI
 local RivalsUI
 Settings.ActiveSearchBox = nil
 local function anyMenuVisible()
+    for _, board in pairs(Settings.GameBoards) do
+        if board.Parent and board.Visible then return true end
+    end
     return Window.Visible or (BedWarsUI and BedWarsUI.Visible)
         or (RivalsUI and RivalsUI.Visible) or false
 end
@@ -332,10 +337,9 @@ track(UIS.InputBegan:Connect(function(i, gp)
         and not ENV.SunsetLoading and i.KeyCode == Settings.MenuKey
         and (not UIS:GetFocusedTextBox()
             or UIS:GetFocusedTextBox() == Settings.ActiveSearchBox) then
-        if Settings.SelectedGame == "BedWars" and BedWarsUI then
-            BedWarsUI.Visible = not BedWarsUI.Visible
-        elseif Settings.SelectedGame == "Rivals" and RivalsUI then
-            RivalsUI.Visible = not RivalsUI.Visible
+        local board = Settings.GameBoards[Settings.SelectedGame]
+        if board then
+            board.Visible = not board.Visible
         else
             Window.Visible = not Window.Visible
         end
@@ -389,11 +393,11 @@ local function onMenuVisibility()
             MouseBehavior = UIS.MouseBehavior,
             MouseIconEnabled = UIS.MouseIconEnabled,
         }
-        if Settings.SelectedGame ~= "Rivals" then
+        if Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War" then
             savedCamMode = LocalPlayer.CameraMode
             LocalPlayer.CameraMode = Enum.CameraMode.Classic
         end
-        if useScriptable and Settings.SelectedGame ~= "Rivals" then
+        if useScriptable and Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War" then
             savedCamType = Camera.CameraType
             local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             camOffset = root and root.CFrame:ToObjectSpace(Camera.CFrame) or nil
@@ -409,7 +413,7 @@ track(Window:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
 
 local function forceUnlock()
     if not anyMenuVisible() then return end
-    if useScriptable and Settings.SelectedGame ~= "Rivals" then
+    if useScriptable and Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War" then
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Scriptable
         end
@@ -585,7 +589,7 @@ function Persistence.ControlApplies(control, gameName)
     local tab, scope = control.Key:match("^([^/]+)/([^/]+)/")
     if scope == gameName then return true end
     if scope ~= "All" then return false end
-    if gameName == "Rivals" then return tab == "Sunset" end
+    if gameName == "Rivals" or gameName == "Cold War" then return tab == "Sunset" end
     if control.Key:match("^Player/All/Third Person/") then return true end
     return not control.Box or not table.find(bedWarsHiddenSections, control.Box)
 end
@@ -1652,8 +1656,7 @@ task.spawn(function()
         frames += 1
         if os.clock() - last >= 1 then
             local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
-            Watermark.Text = (Settings.SelectedGame == "BedWars"
-                or Settings.SelectedGame == "Rivals")
+            Watermark.Text = Settings.GameBoards[Settings.SelectedGame] ~= nil
                 and string.format("RIFT  •  %s  •  %d FPS  •  %d MS", LocalPlayer.Name, frames, ping)
                 or string.format("Rift | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
             frames, last = 0, os.clock()
@@ -2796,7 +2799,8 @@ end
 BedWars = {
     PlayersOn = false, BedsOn = false, TeamCheck = true,
     WorldESPOn = false, OutlineOre = true, OutlineEnchant = true,
-    Running = true, AuraOn = false, ScaffoldOn = false,
+    Running = game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026,
+    AuraOn = false, ScaffoldOn = false,
     ScaffoldVoidRescue = true, ScaffoldTowerOn = true,
     ScaffoldTowerSpeed = 38, AuraStatus = "Off", AuraCPS = 10,
     SprintOn = false, AntiVoidOn = false, VoidWaterOn = false,
@@ -8405,7 +8409,8 @@ end
 function BedWars.BuildUI(boardGame)
     boardGame = boardGame or "BedWars"
     local isRivals = boardGame == "Rivals"
-    local categoryOrder = isRivals
+    local isColdWar = boardGame == "Cold War"
+    local categoryOrder = (isRivals or isColdWar)
         and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
         or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
     local boardWidth = 20 + #categoryOrder * 215
@@ -8422,7 +8427,8 @@ function BedWars.BuildUI(boardGame)
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, Gui)
-    if isRivals then RivalsUI = board else BedWarsUI = board end
+    Settings.GameBoards[boardGame] = board
+    if isRivals then RivalsUI = board elseif boardGame == "BedWars" then BedWarsUI = board end
     Persistence.HUDFrames[boardGame .. "Menu"] = board
     local boardScale = new("UIScale", { Scale = 1 }, board)
     local openingScale = new("NumberValue", { Value = 1 }, board)
@@ -8621,7 +8627,7 @@ function BedWars.BuildUI(boardGame)
     end
 
     local kitNames, kitIds = {}, {}
-    if not isRivals then kitNames, kitIds = BedWars.KitCatalog() end
+    if boardGame == "BedWars" then kitNames, kitIds = BedWars.KitCatalog() end
     local kitSelected = table.find(kitNames, "Miner") and "Miner" or kitNames[1]
     if columns.KIT then
         local column = columns.KIT
@@ -8794,7 +8800,7 @@ function BedWars.BuildUI(boardGame)
                     bindButton.TextScaled = false
                     bindButton.TextSize = 10
                 end
-                if boardGame == "Rivals" and toggleName then
+                if (isRivals or isColdWar) and toggleName then
                     row.Size = UDim2.new(1, 0, 0, 22)
                     local checkbox = row:FindFirstChildOfClass("Frame")
                     if checkbox then
@@ -8807,7 +8813,7 @@ function BedWars.BuildUI(boardGame)
                     toggleName.TextTruncate = Enum.TextTruncate.AtEnd
                     toggleName.TextYAlignment = Enum.TextYAlignment.Center
                 end
-                if boardGame == "Rivals" and bindButton and bindButton.Visible then
+                if (isRivals or isColdWar) and bindButton and bindButton.Visible then
                     bindButton.AnchorPoint = Vector2.new(1, 0.5)
                     bindButton.Position = UDim2.new(1, 0, 0.5, 0)
                     bindButton.Size = UDim2.fromOffset(40, 16)
@@ -9021,7 +9027,19 @@ function BedWars.BuildUI(boardGame)
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
 
-    if isRivals then
+    if isColdWar then
+        specs = {
+            { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
+            { "Visuals", "Player Outlines", "Visuals", "Cold War", "Player Outlines", "Player Outlines" },
+            { "Sunset", "Module List", "Sunset", "Cold War", "Module List", "Module List" },
+            { "Sunset", "Configs", "Sunset", "All", "Configs" },
+            { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+            { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
+            { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
+            { "Sunset", "Colors", "Sunset", "All", "Colors" },
+            { "Sunset", "Menu Key", "Sunset", "All", "Main" },
+        }
+    elseif isRivals then
         specs = {
             { "Combat", "Silent Aim", "Combat", "Rivals", "Silent Aim", "Silent Aim" },
             { "Combat", "Aim Assist", "Combat", "Rivals", "Aim Assist", "Aim Assist" },
@@ -10324,6 +10342,119 @@ if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
     RivalsAim.BuildUI()
 end
 
+function Settings.SetupColdWar()
+    local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true,
+        BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
+    Settings.ColdWarVisuals = options
+    local overlay = new("ScreenGui", {
+        Name = "RiftColdWarESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = -1,
+    }, PlayerGui)
+    local entries = {}
+    local destroyed = false
+    local function remove(player)
+        local entry = entries[player]
+        if not entry then return end
+        entry.Box:Destroy()
+        entry.Highlight:Destroy()
+        entries[player] = nil
+    end
+    local function playerModel(player)
+        if player == LocalPlayer then return end
+        local model = player.Character
+        if not model or not model:IsDescendantOf(workspace) then return end
+        local humanoid = model:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then return end
+        return model
+    end
+    function options.Apply()
+        if destroyed then return end
+        local seen = {}
+        local camera = workspace.CurrentCamera
+        if Settings.SelectedGame == "Cold War" and camera and not anyMenuVisible()
+            and (options.BoxesOn or options.OutlinesOn) then
+            for _, player in ipairs(Players:GetPlayers()) do
+                local ok, model = pcall(playerModel, player)
+                if ok and model then
+                    seen[player] = true
+                    local entry = entries[player]
+                    if entry and entry.Model ~= model then remove(player) entry = nil end
+                    if not entry then
+                        local box = new("Frame", {
+                            Name = "ColdWarBox", Visible = false, BackgroundTransparency = 1, BorderSizePixel = 0,
+                        }, overlay)
+                        local name = label(box, "", 13, options.BoxColor, Enum.TextXAlignment.Center)
+                        name.Name = "PlayerName"
+                        name.AnchorPoint, name.Position = Vector2.new(0.5, 1), UDim2.fromScale(0.5, 0)
+                        name.Size = UDim2.fromOffset(180, 18)
+                        name.TextStrokeTransparency = 0.25
+                        name.TextTruncate = Enum.TextTruncate.AtEnd
+                        entry = { Model = model, Box = box, Name = name,
+                            Stroke = border(box, options.BoxColor, 1.5),
+                            Highlight = new("Highlight", {
+                                Name = "RiftColdWarOutline", Adornee = model, Enabled = false,
+                                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+                                FillTransparency = 1, OutlineTransparency = 0,
+                            }, model) }
+                        entries[player] = entry
+                    end
+                    entry.Highlight.Enabled = options.OutlinesOn
+                    entry.Highlight.OutlineColor = options.OutlineColor
+                    entry.Stroke.Color = options.BoxColor
+                    entry.Name.TextColor3 = options.BoxColor
+                    entry.Name.Text = player.DisplayName or player.Name
+                    entry.Name.Visible = options.NamesOn
+                    entry.Box.Visible = false
+                    if options.BoxesOn then
+                        local projected, x, y, width, height = pcall(function()
+                            local frame, size = model:GetBoundingBox()
+                            return projectBounds(camera, frame, size)
+                        end)
+                        if projected and x then
+                            entry.Box.Position = UDim2.fromOffset(x, y)
+                            entry.Box.Size = UDim2.fromOffset(width, height)
+                            entry.Box.Visible = true
+                        end
+                    end
+                end
+            end
+        end
+        for player in pairs(entries) do if not seen[player] then remove(player) end end
+    end
+    track(RunService.RenderStepped:Connect(options.Apply))
+    track({ Disconnect = function()
+        destroyed = true
+        options.BoxesOn, options.OutlinesOn = false, false
+        for player in pairs(entries) do remove(player) end
+        overlay:Destroy()
+    end })
+    local boxes = gameSection("Cold War", VisualsTab.Left, "ESP Boxes")
+    Elements.Toggle(boxes, "ESP Boxes", false, function(on)
+        options.BoxesOn = on
+        options.Apply()
+    end)
+    Elements.ColorPicker(boxes, "Color", options.BoxColor, function(color)
+        options.BoxColor = color
+        options.Apply()
+    end)
+    Elements.Toggle(boxes, "Show Names", true, function(on)
+        options.NamesOn = on
+        options.Apply()
+    end)
+    local outlines = gameSection("Cold War", VisualsTab.Left, "Player Outlines")
+    Elements.Toggle(outlines, "Player Outlines", false, function(on)
+        options.OutlinesOn = on
+        options.Apply()
+    end)
+    Elements.ColorPicker(outlines, "Color", options.OutlineColor, function(color)
+        options.OutlineColor = color
+        options.Apply()
+    end)
+    local list = gameSection("Cold War", SettingsTab.Left, "Module List")
+    Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
+    BedWars.BuildUI("Cold War")
+end
+if game.PlaceId == 13687899540 or game.GameId == 4750561026 then Settings.SetupColdWar() end
+
 
 
 
@@ -10369,6 +10500,7 @@ print(BRAND .. " [" .. SUNSET_BUILD .. "] loaded. RightShift to open/close.")
 local supportedGames = {
     { Name = "BedWars", Place = 6872265039, Universe = 2619619496 },
     { Name = "Rivals", Place = 17625359962, Universe = 6035872082 },
+    { Name = "Cold War", Place = 13687899540, Universe = 4750561026 },
 }
 local detectedGame
 for _, entry in ipairs(supportedGames) do
@@ -10431,6 +10563,7 @@ if detectedGame then
                 local allowed = {
                     [6872265039] = true, [2619619496] = true,
                     [17625359962] = true, [6035872082] = true,
+                    [13687899540] = true, [4750561026] = true,
                 }
                 if allowed[game.PlaceId] or allowed[game.GameId] then
                     local ok, err = pcall(function()
@@ -10473,10 +10606,10 @@ do
     if detectedGame then
         Settings.SelectedGame = detectedGame
         showGameSections(detectedGame)
-        if detectedGame == "Rivals" then BedWars.Stop() end
+        if detectedGame ~= "BedWars" then BedWars.Stop() end
         if RefreshConfigList then RefreshConfigList() end
         Title.Text = "  Rift | " .. detectedGame
-        if detectedGame == "BedWars" or detectedGame == "Rivals" then
+        if Settings.GameBoards[detectedGame] then
             Watermark.BackgroundTransparency = 1
             Watermark.Size = UDim2.fromOffset(380, 24)
             Watermark.Position = UDim2.new(1, -15, 0, 8)
@@ -10499,7 +10632,7 @@ do
         showGameSections(nil)
         Title.Text = "  Rift | Unsupported game"
         local notice = makeSection(SettingsTab.Left, "Unsupported Game")
-        Elements.Label(notice, "Rift supports BedWars and Rivals.")
+        Elements.Label(notice, "Rift supports BedWars, Rivals, and Cold War.")
         SettingsTab.Select()
     end
 end
@@ -10538,10 +10671,8 @@ task.delay(0.45, function()
     task.wait(0.35)
     if loading.Gui and loading.Gui.Parent then loading.Gui:Destroy() end
     if ENV.SunsetLoading == loading then ENV.SunsetLoading = nil end
-    if detectedGame == "BedWars" and BedWarsUI then
-        BedWarsUI.Visible = true
-    elseif detectedGame == "Rivals" and RivalsUI then
-        RivalsUI.Visible = true
+    if detectedGame and Settings.GameBoards[detectedGame] then
+        Settings.GameBoards[detectedGame].Visible = true
     end
     onMenuVisibility()
 end)

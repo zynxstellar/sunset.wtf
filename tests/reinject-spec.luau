@@ -103,6 +103,32 @@ do
     ConfigControls=previousControls
 end
 print("PASS reinjection settings: separate game snapshots, disk reload, parameters restored before modules enabled")
+do
+    local previousControls=ConfigControls
+    local boxes,outlines,names,boxBind,outlineBind=true,true,false,Enum.KeyCode.Q,Enum.KeyCode.R
+    local coldWarControls={
+        {Key="Visuals/Cold War/ESP Boxes/ESP Boxes",Kind="toggle",Get=function() return boxes end,Set=function(v) boxes=v end,
+            GetBind=function() return boxBind end,SetBind=function(v) boxBind=v end},
+        {Key="Visuals/Cold War/Player Outlines/Player Outlines",Kind="toggle",Get=function() return outlines end,Set=function(v) outlines=v end,
+            GetBind=function() return outlineBind end,SetBind=function(v) outlineBind=v end},
+        {Key="Visuals/Cold War/ESP Boxes/Show Names",Kind="toggle",Get=function() return names end,Set=function(v) names=v end},
+    }
+    ConfigControls={control,rivalsControl,bedwarsControl,blurControl}
+    for _,c in ipairs(coldWarControls) do table.insert(ConfigControls,c) end
+    Settings.SelectedGame="Cold War"
+    assert(Persistence.Save() and files["SunsetConfigs/SunsetAuto_Cold_War.json"],"Cold War did not have a separate config file")
+    assert(#ENV.SunsetSettingsSnapshot.Controls==5,"foreign modules leaked into Cold War config")
+    ENV.SunsetSettingsSnapshot,ENV.SunsetSettingsSnapshots=nil,nil
+    boxes,outlines,names,boxBind,outlineBind=false,false,true,nil,nil
+    assert(Persistence.Restore("Cold War") and boxes and outlines and not names,
+        "Cold War visuals did not restore after reinjection")
+    assert(boxBind==Enum.KeyCode.Q and outlineBind==Enum.KeyCode.R,"Cold War binds did not restore")
+    ENV.SunsetSettingsSnapshot=nil
+    assert(Persistence.Restore("Rivals") and boxes and outlines,"Rivals restore changed Cold War controls")
+    ConfigControls=previousControls
+    Settings.SelectedGame="Rivals"
+end
+print("PASS Cold War config: separate file, visual selection/names/keybind restore, other-game isolation")
 local previousControls=ConfigControls
 local preset,accent,outlineEnabled,outlineBind="Rift",nil,false,nil
 local Color3={fromRGB=function(r,g,b) return {R=r/255,G=g/255,B=b/255} end}
@@ -163,6 +189,8 @@ end
 assert(runQueue(17625359962,6035872082).Reloads==1,"Rivals was not reinjected")
 assert(runQueue(999,6035872082).Reloads==1,"Rivals subplace was not reinjected")
 assert(runQueue(6872265039,2619619496).Reloads==1,"BedWars was not reinjected")
+assert(runQueue(13687899540,4750561026).Reloads==1,"Cold War was not reinjected")
+assert(runQueue(999,4750561026).Reloads==1,"Cold War subplace was not reinjected")
 assert(runQueue(1,2).Reloads==nil,"unsupported game loaded Rift")
 assert(runQueue(17625359962,6035872082,true).Reloads==nil,"disabled destination loaded Rift")
 AutoReinject.Cancel()
