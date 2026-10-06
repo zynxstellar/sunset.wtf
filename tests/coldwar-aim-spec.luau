@@ -33,7 +33,11 @@ function ENV.Drawing.new(kind)
 end
 local Color3={fromRGB=function(r,g,b) return {r,g,b} end}
 local menu=false
-local function anyMenuVisible() return menu end
+local firingContext=false
+local function anyMenuVisible()
+    assert(not firingContext,"The current thread cannot access 'Instance' (lacking capability Plugin)")
+    return menu
+end
 local connections={}
 local function track(c) table.insert(connections,c) end
 local frame
@@ -150,7 +154,11 @@ local readonlyDirections=false
 local function fire(opts)
     directions={Vector3.new(0,0,1),Vector3.new(0.03,0.01,1),Metadata="native metadata"}
     if readonlyDirections then table.freeze(directions) end
-    return table.pack(cm.Export.volley(tool,2,3,origin,directions,opts,"extra",nil,9))
+    firingContext=true
+    local results=table.pack(pcall(cm.Export.volley,tool,2,3,origin,directions,opts,"extra",nil,9))
+    firingContext=false
+    if not results[1] then error(results[2],0) end
+    return table.pack(table.unpack(results,2,results.n))
 end
 for _=1,3 do
     local result=fire()
@@ -196,7 +204,7 @@ fire() assert(directions[1].X==0,"spawn shield ignored") enemy.Character.Childre
 local values=object("CharacterValues","Folder",enemy.Character)
 object("Unconscious","BoolValue",values).Value=true
 fire() assert(directions[1].X==0,"downed target selected") values.Children.Unconscious.Value=false
-menu=true fire() assert(directions[1].X==0) menu=false
+menu=true frame() fire() assert(directions[1].X==0) menu=false frame()
 fire({Replay=true}) assert(directions[1].X==0,"non-native options altered")
 params.Weapon.Explosive=true fire() assert(directions[1].X==0) params.Weapon.Explosive=false
 rayFailure=true fire() assert(directions[1].X==0,"resolver error suppressed normal firing") rayFailure=false
@@ -229,4 +237,4 @@ Settings.SetupColdWarAim(model)
 assert(cm.Export.volley==native and not replacement.Enabled,"reinjection stacked handlers")
 Settings.ColdWarAim.Check() now+=21 frame()
 assert(messages[#messages]:find("No calls reached"),"diagnostic did not report an inactive firing path")
-print("PASS Cold War Silent Aim: deferred modules, reference native array update and ballistic landing, repeated yielding native calls/results, drop/lead, target filters, read-only arrays, direct native errors without duplicate shots, disable/unload/reinjection")
+print("PASS Cold War Silent Aim: deferred modules, native array update and ballistic landing, repeated yielding calls with UI permission denied in weapon thread, drop/lead, target filters, read-only arrays, native errors, disable/unload/reinjection")

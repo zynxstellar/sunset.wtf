@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-direct-fire-k280"
+local SUNSET_BUILD = "20261006-rift-coldwar-menu-thread-fix-k281"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10405,7 +10405,7 @@ function Settings.SetupColdWarAim(playerModel)
     if type(previous) == "table" and type(previous.Restore) == "function" then
         pcall(previous.Restore)
     end
-    local aim = { Enabled = false, AimPart = "Head", WallCheck = true,
+    local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", WallCheck = true,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false }
     aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
@@ -10591,7 +10591,7 @@ function Settings.SetupColdWarAim(playerModel)
             diagnostic.Shots = diagnostic.Shots + 1
             diagnostic.LastReason = "Shot passed through: disabled, menu open, or unsupported firing arguments"
             if aim.Enabled and not state.Destroyed and Settings.SelectedGame == "Cold War"
-                and not anyMenuVisible() and opts == nil and typeof(tool) == "Instance"
+                and not aim.MenuOpen and opts == nil and typeof(tool) == "Instance"
                 and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
                 local ok, result, reason = pcall(function()
                     local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
@@ -10650,6 +10650,9 @@ function Settings.SetupColdWarAim(playerModel)
     ENV.RiftCheckSilentAim = aim.Check
     function aim.Update()
         if state.Destroyed then return end
+        -- The native weapon thread cannot access gethui/CoreGui instances.
+        -- Read our UI here and give firing only the cached Lua boolean.
+        aim.MenuOpen = anyMenuVisible()
         if aim.CheckUntil and os.clock() > aim.CheckUntil then
             print("[Rift aim check] Finished: observed " .. (aim.Diagnostics.Shots - aim.CheckStart)
                 .. " firing calls. " .. (aim.Diagnostics.Shots == aim.CheckStart
@@ -10658,7 +10661,7 @@ function Settings.SetupColdWarAim(playerModel)
         end
         if aim.Enabled and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
         local camera = workspace.CurrentCamera
-        local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not anyMenuVisible()
+        local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not aim.MenuOpen
         if visible and not circle and type(drawing) == "table" and type(drawing.new) == "function" then
             local ok, object = pcall(drawing.new, "Circle")
             if ok then circle = object end
