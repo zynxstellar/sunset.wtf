@@ -109,9 +109,13 @@ tm.Export={new=function(data) data.Gravity=gravity return data end,
 local fp
 wm.Export={toFireParams=function(data) fp=data return params end}
 local calls,received,nativeFailure=0,nil,false
+local nativeYield=false
 local function native(...)
     calls+=1 received=table.pack(...)
     if nativeFailure then error("native failure") end
+    if nativeYield then
+        assert(coroutine.yield("native waiting")=="continue firing","native continuation changed")
+    end
     return "native",nil,42
 end
 cm.Export={fire=function() error("low-level fire must not be replaced") end,volley=native}
@@ -158,6 +162,20 @@ for _=1,3 do
 end
 assert(calls==3 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
 assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3 and #messages>=6,"firing diagnostic did not observe shots")
+nativeYield=true
+local firingThread=coroutine.create(function()
+    for _=1,3 do
+        local result=fire()
+        assert(result.n==3 and result[1]=="native" and result[2]==nil and result[3]==42)
+    end
+end)
+for _=1,3 do
+    local ok,waiting=coroutine.resume(firingThread,"continue firing")
+    assert(ok and waiting=="native waiting","repeated native firing could not yield")
+end
+assert(coroutine.resume(firingThread,"continue firing"))
+assert(coroutine.status(firingThread)=="dead","native firing continuation stuck after first bullet")
+nativeYield=false
 controls["Cold War/Silent Aim/Aim Part"]:Set("Torso") fire()
 assert(received[5][1].Y==0,"torso selection ignored")
 aim.AimPart="Head" gravity=100 fire()
@@ -187,9 +205,9 @@ readonlyDirections=true fire()
 assert(directions[1].X==0 and aim.Enabled,"read-only native array blocked normal firing") readonlyDirections=false
 local beforeFailure=calls
 nativeFailure=true local ok,err=pcall(fire) assert(not ok and tostring(err):find("native failure")) nativeFailure=false
-assert(calls==beforeFailure+1 and aim.Diagnostics.NativeErrors==1 and cm.Export.volley==native and not aim.Enabled,
-    "native error caused duplicate firing or left Silent Aim installed")
-fire() assert(directions[1].X==0,"native firing was not restored after failure")
+assert(calls==beforeFailure+1 and aim.Enabled,"native error caused duplicate firing or changed module state")
+aim.SetEnabled(false)
+fire() assert(directions[1].X==0,"disable did not restore native firing after failure")
 aim.FOVVisible=true frame()
 assert(circles[1].Visible and circles[1].Radius==150 and circles[1].Position.X==960)
 menu=true frame() assert(not circles[1].Visible) menu=false
@@ -211,4 +229,4 @@ Settings.SetupColdWarAim(model)
 assert(cm.Export.volley==native and not replacement.Enabled,"reinjection stacked handlers")
 Settings.ColdWarAim.Check() now+=21 frame()
 assert(messages[#messages]:find("No calls reached"),"diagnostic did not report an inactive firing path")
-print("PASS Cold War Silent Aim: deferred modules, reference native array update and ballistic landing, repeated original calls/results, drop/lead, target filters, read-only arrays, native-error diagnostic/removal with no duplicate shots, disable/unload/reinjection")
+print("PASS Cold War Silent Aim: deferred modules, reference native array update and ballistic landing, repeated yielding native calls/results, drop/lead, target filters, read-only arrays, direct native errors without duplicate shots, disable/unload/reinjection")
