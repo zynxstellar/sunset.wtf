@@ -119,6 +119,12 @@ def main():
         aim_path = temp / 'coldwar-aim-spec.luau'
         aim_path.write_text(aim_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(aim_path)], check=True)
+        extras_spec = (ROOT / 'tests' / 'visual-extras-spec.luau').read_text(encoding='utf-8')
+        extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
+            between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWar()'))
+        extras_path = temp / 'visual-extras-spec.luau'
+        extras_path.write_text(extras_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(extras_path)], check=True)
         rivals_chunks = [
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),

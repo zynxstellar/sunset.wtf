@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-check-removed-k282"
+local SUNSET_BUILD = "20261006-rift-coldwar-visuals-chance-k283"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10401,7 +10401,7 @@ function Settings.SetupColdWarAim(playerModel)
     end
     ENV.RiftCheckSilentAim = nil
     local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", WallCheck = true,
-        Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false }
+        Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false, HitChance = 100 }
     aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
     local state = { Destroyed = false }
@@ -10573,12 +10573,13 @@ function Settings.SetupColdWarAim(playerModel)
             end
         end
         if not key then error("Cold War firing interface is unavailable", 0) end
-        if not aim.Enabled or state.Destroyed then return false end
+        if state.Destroyed or not (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return false end
         trajectory, weaponSource = tr, ws
+        aim.Trajectory, aim.WeaponSource = tr, ws
         api, field, original = cf, key, cf[key]
         local native = original
         wrapper = function(tool, muzzle, bullet, origin, directions, opts, ...)
-            if state.Destroyed or not aim.Enabled then
+            if state.Destroyed then
                 return native(tool, muzzle, bullet, origin, directions, opts, ...)
             end
             local diagnostic = aim.Diagnostics
@@ -10588,6 +10589,9 @@ function Settings.SetupColdWarAim(playerModel)
                 and not aim.MenuOpen and opts == nil and typeof(tool) == "Instance"
                 and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
                 local ok, result, reason = pcall(function()
+                    if aim.HitChance <= 0 or (aim.HitChance < 100 and math.random() * 100 >= aim.HitChance) then
+                        return nil, "Hit Chance: native shot preserved"
+                    end
                     local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
                     if not vector(selected) then return nil, why end
                     -- Match the reference volley: preserve the game's directions table
@@ -10604,6 +10608,11 @@ function Settings.SetupColdWarAim(playerModel)
                     diagnostic.LastReason = "Aim calculation failed: " .. tostring(result)
                 else diagnostic.LastReason = reason or "No usable aim direction" end
             end
+            local trails = Settings.ColdWarBulletTrails
+            if trails and trails.Enabled and opts == nil and typeof(origin) == "Vector3" and type(directions) == "table" then
+                -- Only enqueue Lua data here. Drawing and world reads belong to the render thread.
+                pcall(trails.Record, tool, muzzle, bullet, origin, directions)
+            end
             -- Keep the native firing call on its original continuation path.
             -- Only aim calculation above is protected; firing owns its yields/errors.
             return native(tool, muzzle, bullet, origin, directions, opts, ...)
@@ -10612,7 +10621,7 @@ function Settings.SetupColdWarAim(playerModel)
         return true
     end
     function aim.TryInstall()
-        if pending or not aim.Enabled or state.Destroyed then return end
+        if pending or state.Destroyed or not (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return end
         pending = true
         nextRetry = os.clock() + 1
         task.spawn(function()
@@ -10626,14 +10635,17 @@ function Settings.SetupColdWarAim(playerModel)
     end
     function aim.SetEnabled(on)
         aim.Enabled = on == true and not state.Destroyed
-        if aim.Enabled then aim.TryInstall() else aim.Available = false restoreHandler() end
+        if aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled) then
+            if not aim.Available then aim.TryInstall() end
+        else aim.Available = false restoreHandler() end
     end
     function aim.Update()
         if state.Destroyed then return end
         -- The native weapon thread cannot access gethui/CoreGui instances.
         -- Read our UI here and give firing only the cached Lua boolean.
         aim.MenuOpen = anyMenuVisible()
-        if aim.Enabled and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
+        if (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled))
+            and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
         local camera = workspace.CurrentCamera
         local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not aim.MenuOpen
         if visible and not circle and type(drawing) == "table" and type(drawing.new) == "function" then
@@ -10657,6 +10669,7 @@ function Settings.SetupColdWarAim(playerModel)
     aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
     Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
+    Elements.Slider(section, "Hit Chance", 0, 100, 100, "%", function(value) aim.HitChance = value end)
     Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
     local fov = gameSection("Cold War", VisualsTab.Left, "FOV Circle")
     Elements.Toggle(fov, "FOV Circle", false, function(on) aim.FOVVisible = on aim.Update() end)
@@ -11081,11 +11094,122 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     return options, playerModel
 end
 
+function Settings.SetupColdWarVisualExtras()
+    local trails = { Enabled = false, Lifetime = 1.5, Thickness = 2,
+        Color = Color3.fromRGB(139, 92, 246), Queue = {}, Paths = {} }
+    Settings.ColdWarBulletTrails = trails
+    local fov = { Enabled = false, Value = 90 }
+    Settings.ColdWarFOV = fov
+    local drawing = type(ENV.Drawing) == "table" and ENV.Drawing or Drawing
+    local camera, savedFOV
+    local destroyed = false
+    local function remove(path)
+        for _, line in ipairs(path.Lines or {}) do pcall(function() line:Remove() end) end
+    end
+    local function clear()
+        for _, path in ipairs(trails.Paths) do remove(path) end
+        table.clear(trails.Paths)
+        table.clear(trails.Queue)
+    end
+    local function restoreFOV()
+        if camera and savedFOV then pcall(function() camera.FieldOfView = savedFOV end) end
+        camera, savedFOV = nil, nil
+    end
+    function trails.Record(tool, muzzle, bullet, origin, directions)
+        if destroyed or not trails.Enabled then return end
+        local copy = {}
+        for i = 1, math.min(#directions, 16) do copy[i] = directions[i] end
+        if #trails.Queue >= 32 then table.remove(trails.Queue, 1) end
+        table.insert(trails.Queue, { Tool = tool, Muzzle = muzzle, Bullet = bullet,
+            Origin = origin, Directions = copy, Started = os.clock() })
+    end
+    local function build(shot, direction)
+        local aim = Settings.ColdWarAim
+        if not aim or not aim.WeaponSource or not aim.Trajectory then return end
+        local params = aim.WeaponSource.toFireParams({ Tool = shot.Tool, MuzzleIndex = shot.Muzzle,
+            BulletIndex = shot.Bullet, Origin = shot.Origin, Direction = direction, Owner = LocalPlayer })
+        if not params or not params.Weapon or not params.RaycastParams then return end
+        local weapon, api = params.Weapon, aim.Trajectory
+        if type(weapon.MuzzleSpeed) ~= "number" or weapon.MuzzleSpeed <= 0 then return end
+        local tr = api.new({ Origin = shot.Origin, Direction = direction.Unit,
+            MuzzleSpeed = weapon.MuzzleSpeed, K = weapon.K })
+        local duration = math.min(2, 2000 / weapon.MuzzleSpeed)
+        local path = { Points = { shot.Origin }, Lines = {}, Started = shot.Started }
+        for i = 1, 32 do
+            local last = path.Points[#path.Points]
+            local point = api.GetPositionAtTime(tr, duration * i / 32)
+            local hit = workspace:Raycast(last, point - last, params.RaycastParams)
+            table.insert(path.Points, hit and hit.Position or point)
+            if hit then break end
+        end
+        if #trails.Paths >= 32 then remove(table.remove(trails.Paths, 1)) end
+        table.insert(trails.Paths, path)
+    end
+    function trails.Update()
+        if destroyed then return end
+        local active = Settings.SelectedGame == "Cold War"
+        local current = workspace.CurrentCamera
+        if fov.Enabled and active and current then
+            if camera ~= current then restoreFOV() camera, savedFOV = current, current.FieldOfView end
+            camera.FieldOfView = fov.Value
+        else restoreFOV() end
+        if not trails.Enabled or not active or not drawing or type(drawing.new) ~= "function" then clear() return end
+        local now = os.clock()
+        local queue = trails.Queue
+        trails.Queue = {}
+        for _, shot in ipairs(queue) do
+            if now - shot.Started < trails.Lifetime then
+                for _, direction in ipairs(shot.Directions) do
+                    if typeof(direction) == "Vector3" and direction.Magnitude > 1e-6 then pcall(build, shot, direction) end
+                end
+            end
+        end
+        for i = #trails.Paths, 1, -1 do
+            local path = trails.Paths[i]
+            local progress = (now - path.Started) / trails.Lifetime
+            if progress >= 1 then remove(path) table.remove(trails.Paths, i)
+            else
+                for segment = 1, #path.Points - 1 do
+                    local ok = pcall(function()
+                        local line = path.Lines[segment]
+                        if not line then line = drawing.new("Line") path.Lines[segment] = line end
+                        local a = current and current:WorldToViewportPoint(path.Points[segment])
+                        local b = current and current:WorldToViewportPoint(path.Points[segment + 1])
+                        line.Visible = a ~= nil and b ~= nil and a.Z > 0 and b.Z > 0
+                        if line.Visible then
+                            line.From, line.To = Vector2.new(a.X, a.Y), Vector2.new(b.X, b.Y)
+                            line.Color, line.Thickness = trails.Color, trails.Thickness
+                            line.Transparency = math.clamp((1 - progress) / 0.3, 0, 1)
+                        end
+                    end)
+                    if not ok then remove(path) table.remove(trails.Paths, i) break end
+                end
+            end
+        end
+    end
+    track(RunService.RenderStepped:Connect(trails.Update))
+    track({ Disconnect = function() destroyed = true trails.Enabled = false clear() restoreFOV() end })
+    local section = gameSection("Cold War", VisualsTab.Left, "Bullet Tracers")
+    Elements.Toggle(section, "Bullet Tracers", false, function(on)
+        trails.Enabled = on
+        if not on then clear() end
+        local aim = Settings.ColdWarAim
+        if aim then aim.SetEnabled(aim.Enabled) end
+    end)
+    Elements.ColorPicker(section, "Color", trails.Color, function(color) trails.Color = color end)
+    Elements.Slider(section, "Disappear After", 100, 10000, 1500, "ms", function(value) trails.Lifetime = value / 1000 end)
+    Elements.Slider(section, "Thickness", 1, 5, 2, " px", function(value) trails.Thickness = value end)
+    local cameraSection = gameSection("Cold War", VisualsTab.Left, "FOV")
+    Elements.Toggle(cameraSection, "FOV", false, function(on) fov.Enabled = on if not on then restoreFOV() end end)
+    Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "°", function(value) fov.Value = value end)
+end
+
 function Settings.SetupColdWar()
     local options, playerModel = Settings.SetupPlayerESP("Cold War")
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
+    Settings.SetupColdWarVisualExtras()
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
 end

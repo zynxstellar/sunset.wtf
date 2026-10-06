@@ -1,4 +1,5 @@
 -- The production handler is exercised against a native firing/ballistics fixture.
+local math=table.clone(math)
 local meta={}
 local Vector3={new=function(x,y,z) return setmetatable({X=x or 0,Y=y or 0,Z=z or 0},meta) end}
 local Vector2={new=function(x,y) return Vector3.new(x,y,0) end}
@@ -169,6 +170,21 @@ for _=1,3 do
 end
 assert(calls==3 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
 assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3,"firing counters did not observe shots")
+aim.HitChance=0
+fire()
+assert(directions[1].X==0 and received[5]==directions,"zero chance redirected or replaced a native shot")
+assert(aim.Diagnostics.LastReason:find("Hit Chance"),"chance skip was not recorded")
+aim.HitChance=100
+fire()
+assert(directions[1].X>0,"full chance skipped an eligible shot")
+local originalRandom=math.random
+local rolls=0
+math.random=function() rolls+=1 return 0.49 end
+aim.HitChance=50 fire()
+assert(rolls==1 and directions[1].X>0 and directions[2]==directions[1],"chance was not rolled once per volley")
+math.random=function() rolls+=1 return 0.5 end
+fire() assert(rolls==2 and directions[1].X==0,"chance boundary redirected a skipped shot")
+math.random=originalRandom aim.HitChance=100
 nativeYield=true
 local firingThread=coroutine.create(function()
     for _=1,3 do
@@ -215,6 +231,18 @@ nativeFailure=true local ok,err=pcall(fire) assert(not ok and tostring(err):find
 assert(calls==beforeFailure+1 and aim.Enabled,"native error caused duplicate firing or changed module state")
 aim.SetEnabled(false)
 fire() assert(directions[1].X==0,"disable did not restore native firing after failure")
+local recorded=0
+Settings.ColdWarBulletTrails={Enabled=true,Record=function(t,m,b,o,ds)
+    recorded+=1 assert(t==tool and m==2 and b==3 and o==origin and ds==directions)
+end}
+aim.SetEnabled(false)
+local observer=cm.Export.volley
+assert(observer~=native,"trails required Silent Aim enabled")
+aim.SetEnabled(false) assert(cm.Export.volley==observer,"trail toggle stacked a firing wrapper")
+fire() assert(recorded==1 and directions[1].X==0,"trail-only observer altered native shot")
+Settings.ColdWarBulletTrails.Enabled=false aim.SetEnabled(false)
+assert(cm.Export.volley==native,"disabling both features left a firing wrapper")
+Settings.ColdWarBulletTrails=nil
 aim.FOVVisible=true frame()
 assert(circles[1].Visible and circles[1].Radius==150 and circles[1].Position.X==960)
 menu=true frame() assert(not circles[1].Visible) menu=false
