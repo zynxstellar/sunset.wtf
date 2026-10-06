@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261005-rift-coldwar-ui-k273"
+local SUNSET_BUILD = "20261005-rift-coldwar-drawing-k274"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10405,75 +10405,117 @@ function Settings.SetupColdWar()
     local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true,
         BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
     Settings.ColdWarVisuals = options
-    local overlay = new("ScreenGui", {
-        Name = "RiftColdWarESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = -1,
-    }, PlayerGui)
+    local drawing = type(ENV.Drawing) == "table" and ENV.Drawing or Drawing
+    options.Available = type(drawing) == "table" and type(drawing.new) == "function"
+    local bodyParts = { "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+        "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+        "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg",
+        "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }
     local entries = {}
     local destroyed = false
+    local function make(kind, properties)
+        local object = drawing.new(kind)
+        local ok, err = pcall(function()
+            object.Visible = false
+            for key, value in pairs(properties) do object[key] = value end
+        end)
+        if not ok then pcall(function() object:Remove() end) error(err) end
+        return object
+    end
+    local function removeDrawing(object)
+        if object then pcall(function() object:Remove() end) end
+    end
     local function remove(player)
         local entry = entries[player]
         if not entry then return end
-        entry.Box:Destroy()
-        entry.Highlight:Destroy()
+        removeDrawing(entry.Box)
+        removeDrawing(entry.Name)
+        for _, outline in pairs(entry.Outlines) do removeDrawing(outline) end
         entries[player] = nil
+    end
+    local function hide(entry)
+        entry.Box.Visible, entry.Name.Visible = false, false
+        for _, outline in pairs(entry.Outlines) do outline.Visible = false end
     end
     local function playerModel(player)
         if player == LocalPlayer then return end
         local model = player.Character
         if not model or not model:IsDescendantOf(workspace) then return end
-        local humanoid = model:FindFirstChildOfClass("Humanoid")
-        if not humanoid or humanoid.Health <= 0 then return end
+        if model:GetAttribute("Ragdolled") == true then return end
+        local head = model:FindFirstChild("Head")
+        local torso = model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
+        if not head or not torso then return end
+        local limbHealth = false
+        for _, part in ipairs({ head, torso }) do
+            local health = part:FindFirstChild("Health")
+            if health and health:IsA("NumberValue") then
+                limbHealth = true
+                if health.Value <= 0 then return end
+            end
+        end
+        if not limbHealth then
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then return end
+        end
         return model
+    end
+    local function applyPlayer(player, model, camera)
+        local entry = entries[player]
+        if entry and entry.Model ~= model then remove(player) entry = nil end
+        if not entry then
+            entry = { Model = model, Outlines = {} }
+            entries[player] = entry
+            entry.Box = make("Square", { Filled = false, Thickness = 1.5, ZIndex = 2, Transparency = 1 })
+            entry.Name = make("Text", { Size = 13, Center = true, Outline = true, ZIndex = 3, Transparency = 1 })
+        end
+        hide(entry)
+        local frame, size = model:GetBoundingBox()
+        local x, y, width, height = projectBounds(camera, frame, size)
+        if not x then return end
+        entry.Box.Color = options.BoxColor
+        entry.Box.Position, entry.Box.Size = Vector2.new(x, y), Vector2.new(width, height)
+        entry.Box.Visible = options.BoxesOn
+        entry.Name.Color = options.BoxColor
+        entry.Name.Text = player.DisplayName or player.Name
+        entry.Name.Position = Vector2.new(x + width / 2, y - 18)
+        entry.Name.Visible = options.BoxesOn and options.NamesOn
+        if options.OutlinesOn then
+            for _, name in ipairs(bodyParts) do
+                local part = model:FindFirstChild(name)
+                if part and part:IsA("BasePart") then
+                    local px, py, pw, ph = projectBounds(camera, part.CFrame, part.Size)
+                    if px then
+                        local outline = entry.Outlines[part]
+                        if not outline then
+                            outline = make("Square", { Filled = false, Thickness = 1, ZIndex = 1, Transparency = 1 })
+                            entry.Outlines[part] = outline
+                        end
+                        outline.Color = options.OutlineColor
+                        outline.Position, outline.Size = Vector2.new(px, py), Vector2.new(pw, ph)
+                        outline.Visible = true
+                    end
+                end
+            end
+        end
+        for part, outline in pairs(entry.Outlines) do
+            if part.Parent ~= model or not options.OutlinesOn then
+                removeDrawing(outline)
+                entry.Outlines[part] = nil
+            end
+        end
     end
     function options.Apply()
         if destroyed then return end
         local seen = {}
         local camera = workspace.CurrentCamera
-        if Settings.SelectedGame == "Cold War" and camera and not anyMenuVisible()
+        if options.Available and Settings.SelectedGame == "Cold War" and camera and not anyMenuVisible()
             and (options.BoxesOn or options.OutlinesOn) then
             for _, player in ipairs(Players:GetPlayers()) do
                 local ok, model = pcall(playerModel, player)
                 if ok and model then
                     seen[player] = true
-                    local entry = entries[player]
-                    if entry and entry.Model ~= model then remove(player) entry = nil end
-                    if not entry then
-                        local box = new("Frame", {
-                            Name = "ColdWarBox", Visible = false, BackgroundTransparency = 1, BorderSizePixel = 0,
-                        }, overlay)
-                        local name = label(box, "", 13, options.BoxColor, Enum.TextXAlignment.Center)
-                        name.Name = "PlayerName"
-                        name.AnchorPoint, name.Position = Vector2.new(0.5, 1), UDim2.fromScale(0.5, 0)
-                        name.Size = UDim2.fromOffset(180, 18)
-                        name.TextStrokeTransparency = 0.25
-                        name.TextTruncate = Enum.TextTruncate.AtEnd
-                        entry = { Model = model, Box = box, Name = name,
-                            Stroke = border(box, options.BoxColor, 1.5),
-                            Highlight = new("Highlight", {
-                                Name = "RiftColdWarOutline", Adornee = model, Enabled = false,
-                                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-                                FillTransparency = 1, OutlineTransparency = 0,
-                            }, model) }
-                        entries[player] = entry
-                    end
-                    entry.Highlight.Enabled = options.OutlinesOn
-                    entry.Highlight.OutlineColor = options.OutlineColor
-                    entry.Stroke.Color = options.BoxColor
-                    entry.Name.TextColor3 = options.BoxColor
-                    entry.Name.Text = player.DisplayName or player.Name
-                    entry.Name.Visible = options.NamesOn
-                    entry.Box.Visible = false
-                    if options.BoxesOn then
-                        local projected, x, y, width, height = pcall(function()
-                            local frame, size = model:GetBoundingBox()
-                            return projectBounds(camera, frame, size)
-                        end)
-                        if projected and x then
-                            entry.Box.Position = UDim2.fromOffset(x, y)
-                            entry.Box.Size = UDim2.fromOffset(width, height)
-                            entry.Box.Visible = true
-                        end
-                    end
+                    local applied = pcall(applyPlayer, player, model, camera)
+                    if not applied then remove(player) end
                 end
             end
         end
@@ -10484,9 +10526,9 @@ function Settings.SetupColdWar()
         destroyed = true
         options.BoxesOn, options.OutlinesOn = false, false
         for player in pairs(entries) do remove(player) end
-        overlay:Destroy()
     end })
     local boxes = gameSection("Cold War", VisualsTab.Left, "ESP Boxes")
+    if not options.Available then Elements.Label(boxes, "ESP unavailable in this executor.") end
     Elements.Toggle(boxes, "ESP Boxes", false, function(on)
         options.BoxesOn = on
         options.Apply()

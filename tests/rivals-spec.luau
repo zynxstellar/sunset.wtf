@@ -1076,6 +1076,14 @@ print("PASS view unload: camera offset, mode, zoom bounds, and render binding re
 end
 
 (function()
+    local drawings={Objects={}}
+    function drawings.new(kind)
+        if drawings.FailKind==kind then error("Drawing allocation failed") end
+        local object={Kind=kind,Visible=false,Remove=function(self) self.Removed=true self.Visible=false end}
+        table.insert(drawings.Objects,object)
+        return object
+    end
+    ENV.Drawing=drawings
     Settings.SelectedGame="Cold War"
     Window.Visible=false
     for _,board in pairs(Settings.GameBoards) do board.Visible=false end
@@ -1102,53 +1110,90 @@ end
     local deadPlayer=combatPlayer(2,50,0)
     foe.Character,friend.Character,deadPlayer.Character=foe.Fighter.Entity.Model,friend.Fighter.Entity.Model,deadPlayer.Fighter.Entity.Model
     foe.Name,friend.Name,deadPlayer.Name="Enemy","Teammate","Dead"
+    local function prepareBody(model,health)
+        local head,torso=model:FindFirstChild("Head"),model:FindFirstChild("UpperTorso")
+        head.Size,torso.Size=Vector3.new(2,1,1),Vector3.new(2,2,1)
+        new("NumberValue",{Name="Health",Value=health},head)
+        new("NumberValue",{Name="Health",Value=health},torso)
+        model:FindFirstChildOfClass("Humanoid").Health=1
+    end
+    prepareBody(foe.Character,50)
+    prepareBody(friend.Character,50)
+    prepareBody(deadPlayer.Character,0)
     local savedPlayers=Players.GetPlayers
     Players.GetPlayers=function() return {LocalPlayer,foe,friend,deadPlayer} end
     local function liveColdWarVisuals()
         local boxes,outlines={},{}
-        for _,object in ipairs(created) do
-            if object.Parent and object.Name=="ColdWarBox" then table.insert(boxes,object) end
-            if object.Parent and object.Name=="RiftColdWarOutline" then table.insert(outlines,object) end
+        for _,object in ipairs(drawings.Objects) do
+            if not object.Removed and object.Kind=="Square" and object.ZIndex==2 then table.insert(boxes,object) end
+            if not object.Removed and object.Kind=="Square" and object.ZIndex==1 then table.insert(outlines,object) end
         end
         return boxes,outlines
     end
+    local function nativeState(model)
+        local state={}
+        for _,part in ipairs(model:GetDescendants()) do
+            state[part]={Parent=part.Parent,Size=part.Size,CFrame=part.CFrame,Health=part.Health,Value=part.Value}
+        end
+        return state
+    end
+    local nativeBefore=nativeState(foe.Character)
     boxesControl.SetBind(Enum.KeyCode.Q)
     UIS.InputBegan:Fire({UserInputType=Enum.UserInputType.Keyboard,KeyCode=Enum.KeyCode.Q},false)
     assert(boxesControl.Get(),"assigned Cold War keybind did not enable ESP")
     outlinesControl.Set(true)
     local boxes,outlines=liveColdWarVisuals()
-    assert(#boxes==2 and #outlines==2,"Cold War did not filter self/dead or include teammates")
-    for _,outline in ipairs(outlines) do assert(outline.Enabled and outline.FillTransparency==1) end
+    assert(#boxes==2 and #outlines==4,"Cold War did not filter limb death/self or include teammates")
+    for _,outline in ipairs(outlines) do assert(outline.Visible and not outline.Filled) end
     local boxColor,outlineColor=color(0.4,0.5,0.8),color(0.1,0.7,0.6)
     findConfig("Visuals/Cold War/ESP Boxes/Color").Set(boxColor)
     findConfig("Visuals/Cold War/Player Outlines/Color").Set(outlineColor)
     findConfig("Visuals/Cold War/ESP Boxes/Show Names").Set(false)
     for _,box in ipairs(boxes) do
-        assert(box.Visible and box.Size.X.Offset>0 and box.Size.Y.Offset>0,
+        assert(box.Visible and box.Size.X>0 and box.Size.Y>0,
             "Cold War boxes were not projected around characters")
-        assert(box:FindFirstChildOfClass("UIStroke").Color==boxColor
-            and not box:FindFirstChild("PlayerName").Visible,"box color/name settings were ignored")
+        assert(box.Color==boxColor,"box color was ignored")
     end
-    for _,outline in ipairs(outlines) do assert(outline.OutlineColor==outlineColor) end
+    for _,object in ipairs(drawings.Objects) do
+        if not object.Removed and object.Kind=="Text" then assert(not object.Visible,"name setting was ignored") end
+    end
+    for _,outline in ipairs(outlines) do assert(outline.Color==outlineColor) end
+    local nativeAfter=nativeState(foe.Character)
+    for part,state in pairs(nativeBefore) do
+        assert(nativeAfter[part],"Cold War removed a body child")
+        for key,value in pairs(state) do assert(nativeAfter[part][key]==value,"Cold War modified a body property") end
+    end
+    for part in pairs(nativeAfter) do assert(nativeBefore[part],"Cold War added an Instance to a character") end
     local oldModel=foe.Character
     local respawn=combatPlayer(2,70)
     foe.Character=respawn.Fighter.Entity.Model
+    prepareBody(foe.Character,50)
     RunService.RenderStepped:Fire(1/60)
     boxes,outlines=liveColdWarVisuals()
-    assert(#boxes==2 and #outlines==2,"respawn duplicated Cold War visuals")
-    for _,outline in ipairs(outlines) do assert(outline.Adornee~=oldModel,"outline remained on old character") end
+    assert(#boxes==2 and #outlines==4,"respawn duplicated Cold War visuals")
+    assert(not oldModel:FindFirstChild("RiftColdWarOutline"),"outline was attached to a character")
     local head=foe.Character:FindFirstChild("Head")
     head.Position=Vector3.new(4000,0,100)
+    head.CFrame=CFrame.new(head.Position)
     RunService.RenderStepped:Fire(1/60)
     boxes,outlines=liveColdWarVisuals()
     local hiddenBoxes=0
     for _,box in ipairs(boxes) do if not box.Visible then hiddenBoxes+=1 end end
-    assert(hiddenBoxes==1 and #outlines==2,"off-screen ESP box was not hidden independently from outlines")
+    local hiddenOutlines=0
+    for _,outline in ipairs(outlines) do if not outline.Visible then hiddenOutlines+=1 end end
+    assert(hiddenBoxes==1 and hiddenOutlines==2,"off-screen Drawings were not hidden")
     head.Position=Vector3.new(70,0,100)
-    friend.Character:FindFirstChildOfClass("Humanoid").Health=0
+    head.CFrame=CFrame.new(head.Position)
+    friend.Character:FindFirstChild("Head"):FindFirstChild("Health").Value=0
     RunService.RenderStepped:Fire(1/60)
     boxes,outlines=liveColdWarVisuals()
-    assert(#boxes==1 and #outlines==1,"dead Cold War player kept visuals")
+    assert(#boxes==1 and #outlines==2,"dead Cold War player kept visuals")
+    foe.Character:SetAttribute("Ragdolled",true)
+    RunService.RenderStepped:Fire(1/60)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==0 and #outlines==0,"ragdolled Cold War player kept visuals")
+    foe.Character:SetAttribute("Ragdolled",nil)
+    RunService.RenderStepped:Fire(1/60)
     board.Visible=true
     local mode=LocalPlayer.CameraMode
     onMenuVisibility()
@@ -1161,15 +1206,36 @@ end
     outlinesControl.Set(false)
     RunService.RenderStepped:Fire(1/60)
     boxes,outlines=liveColdWarVisuals()
-    assert(#boxes==1 and not outlines[1].Enabled,"outlines could not be disabled independently")
+    assert(#boxes==1 and #outlines==0,"outlines could not be disabled independently")
+    outlinesControl.Set(true)
+    boxesControl.Set(false)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#outlines==2 and not boxes[1].Visible,"body outlines required boxes to be on")
+    outlinesControl.Set(false)
     boxesControl.Set(false)
     boxes,outlines=liveColdWarVisuals()
     assert(#boxes==0 and #outlines==0,"disabled Cold War visuals remained")
+    drawings.FailKind="Text"
     boxesControl.Set(true)
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==0 and #outlines==0,"failed Drawing creation leaked partial objects")
+    drawings.FailKind=nil
+    Settings.ColdWarVisuals.Apply()
     for i=cleanupIndex,#connections do connections[i]:Disconnect() end
     Settings.ColdWarVisuals.Apply()
     boxes,outlines=liveColdWarVisuals()
     assert(#boxes==0 and #outlines==0,"Cold War unload left visuals or recreated them")
+    ENV.Drawing={}
+    local unsupportedStart=#connections+1
+    Settings.SetupColdWar()
+    assert(not Settings.ColdWarVisuals.Available,"missing Drawing API was accepted")
+    Settings.ColdWarVisuals.BoxesOn=true
+    Settings.ColdWarVisuals.OutlinesOn=true
+    Settings.ColdWarVisuals.Apply()
+    boxes,outlines=liveColdWarVisuals()
+    assert(#boxes==0 and #outlines==0,"unsupported renderer modified the scene")
+    for i=unsupportedStart,#connections do connections[i]:Disconnect() end
+    ENV.Drawing=nil
     Players.GetPlayers=savedPlayers
-    print("PASS Cold War: own Rift board/config controls, keybind, all-player boxes/outlines, colors, respawn, death, off-screen, menu and unload cleanup")
+    print("PASS Cold War Drawing: boxes/body outlines and colors, independent toggles, names/binds, limb death/ragdoll/respawn, no character edits, off-screen/menu/unload cleanup, allocation failure and missing API")
 end)()
