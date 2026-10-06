@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-esp-colors-check-k276"
+local SUNSET_BUILD = "20261006-rift-aim-check-button-k277"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9087,6 +9087,7 @@ function BedWars.BuildUI(boardGame)
 
     if isColdWar then
         specs = {
+            { "Combat", "Check Silent Aim", "Combat", "Cold War", "Silent Aim" },
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
@@ -9270,7 +9271,8 @@ function BedWars.BuildUI(boardGame)
         local control = toggleName and findControl(tabName, gameName, sectionName, toggleName)
         local box = control and control.Box or findSection(tabName, gameName, sectionName)
         if box and (not toggleName or control) then
-            local hasSettings = control == nil
+            local checkAction = isColdWar and name == "Check Silent Aim"
+            local hasSettings = control == nil and not checkAction
             if control then
                 hasSettings = type(control.GetBind) == "function"
                     and type(control.SetBind) == "function"
@@ -9346,6 +9348,10 @@ function BedWars.BuildUI(boardGame)
                 end)
             end
             card.MouseButton1Click:Connect(function()
+                if checkAction then
+                    if Settings.ColdWarAim then Settings.ColdWarAim.Check() end
+                    return
+                end
                 local mouse = UIS:GetMouseLocation()
                 local optionPosition, optionSize = options.AbsolutePosition, options.AbsoluteSize
                 if hasSettings and mouse.X >= optionPosition.X and mouse.X <= optionPosition.X + optionSize.X
@@ -10423,6 +10429,7 @@ function Settings.SetupColdWarAim(playerModel)
     function state.Restore()
         state.Destroyed = true
         aim.Enabled = false
+        if ENV.RiftCheckSilentAim == aim.Check then ENV.RiftCheckSilentAim = nil end
         restoreHandler()
         if circle then pcall(function() circle:Remove() end) circle = nil end
     end
@@ -10625,6 +10632,7 @@ function Settings.SetupColdWarAim(playerModel)
         if aim.Enabled then aim.TryInstall() else aim.Available = false restoreHandler() end
     end
     function aim.Check()
+        if state.Destroyed then return end
         print("[Rift aim check] " .. SUNSET_BUILD .. "; enabled=" .. tostring(aim.Enabled)
             .. "; firing handler=" .. tostring(api ~= nil and api[field] == wrapper))
         if aim.LoadError then print("[Rift aim check] " .. aim.LoadError) end
@@ -10633,6 +10641,7 @@ function Settings.SetupColdWarAim(playerModel)
         aim.CheckUntil, aim.CheckStart = os.clock() + 20, aim.Diagnostics.Shots
         print("[Rift aim check] Close the menu and fire three shots at an enemy inside the FOV. Observing for 20 seconds.")
     end
+    ENV.RiftCheckSilentAim = aim.Check
     function aim.Update()
         if state.Destroyed then return end
         if aim.CheckUntil and os.clock() > aim.CheckUntil then

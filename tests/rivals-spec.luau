@@ -1114,6 +1114,18 @@ end
     assert(board and board.Name=="RiftCold WarBoard" and BedWarsUI==oldBedwarsBoard,
         "Cold War did not register its own board")
     assert(Persistence.HUDFrames["Cold WarMenu"]==board,"Cold War menu position is not saved")
+    local checkButton
+    for _,object in ipairs(board:GetDescendants()) do
+        if object:IsA("TextButton") and object.Name=="Check Silent Aim" then checkButton=object end
+    end
+    assert(checkButton and checkButton.Visible and checkButton.Parent:IsA("ScrollingFrame"),
+        "Cold War diagnostic requires opening a settings panel")
+    local diagnostic=Settings.ColdWarAim.Check
+    local checkCalls=0
+    Settings.ColdWarAim.Check=function() checkCalls+=1 end
+    checkButton.MouseButton1Click:Fire()
+    assert(checkCalls==1,"direct diagnostic button did not run the Cold War check")
+    Settings.ColdWarAim.Check=diagnostic
     local foundBoxes,foundOutlines,kitColumn=false,false,false
     for _,object in ipairs(board:GetDescendants()) do
         if object:IsA("TextButton") and object.Name=="ESP Boxes" then foundBoxes=true end

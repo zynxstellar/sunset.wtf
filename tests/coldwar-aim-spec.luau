@@ -115,6 +115,7 @@ end
 -- INSERT_COLDWAR_AIM_PRODUCTION
 Settings.SetupColdWarAim(model)
 local aim=Settings.ColdWarAim
+assert(ENV.RiftCheckSilentAim==aim.Check,"standalone diagnostic shortcut missing")
 assert(requireCalls==0 and cm.Export.volley==native,"injection initialized weapon modules")
 aim.SetEnabled(true)
 assert(not aim.Available and requireCalls==0 and identity==8,"unready modules were required")
@@ -178,6 +179,7 @@ assert(cm.Export.volley==native and not aim.Available,"ambiguous module was patc
 now=6 frame() assert(aim.Available)
 ENV.SunsetColdWarAimHook.Restore()
 assert(cm.Export.volley==native and circles[1].Removed and not aim.Enabled)
+assert(ENV.RiftCheckSilentAim==nil,"unload left a stale diagnostic shortcut")
 aim.SetEnabled(true) frame() assert(cm.Export.volley==native,"unloaded handler recreated")
 Settings.SetupColdWarAim(model) local replacement=Settings.ColdWarAim replacement.SetEnabled(true)
 local first=cm.Export.volley
