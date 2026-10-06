@@ -138,15 +138,14 @@ end
 -- INSERT_COLDWAR_AIM_PRODUCTION
 Settings.SetupColdWarAim(model)
 local aim=Settings.ColdWarAim
-assert(ENV.RiftCheckSilentAim==aim.Check,"standalone diagnostic shortcut missing")
+assert(ENV.RiftCheckSilentAim==nil and aim.Check==nil,"removed diagnostic remains available")
 assert(requireCalls==0 and cm.Export.volley==native,"injection initialized weapon modules")
 aim.SetEnabled(true)
 assert(not aim.Available and requireCalls==0 and identity==8,"unready modules were required")
 loaded=true now=2 frame()
 assert(aim.Available and cm.Export.volley~=native and identity==8,"late-ready install failed")
 assert(serviceCalls>0,"Cold War did not resolve storage through the Roblox service API")
-controls["Cold War/Silent Aim/Check Silent Aim"].Click()
-assert(messages[1]:find("firing handler=true"),"diagnostic omitted actual handler state")
+assert(controls["Cold War/Silent Aim/Check Silent Aim"]==nil,"removed diagnostic button remains")
 local tool=object("Rifle","Tool")
 local origin=Vector3.new()
 local directions={Vector3.new(0,0,1),Vector3.new(0.03,0.01,1),Metadata="native metadata"}
@@ -169,7 +168,7 @@ for _=1,3 do
     assert(received[5][2]==received[5][1],"reference volley directions were not updated together")
 end
 assert(calls==3 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
-assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3 and #messages>=6,"firing diagnostic did not observe shots")
+assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3,"firing counters did not observe shots")
 nativeYield=true
 local firingThread=coroutine.create(function()
     for _=1,3 do
@@ -235,6 +234,4 @@ Settings.SetupColdWarAim(model) local replacement=Settings.ColdWarAim replacemen
 local first=cm.Export.volley
 Settings.SetupColdWarAim(model)
 assert(cm.Export.volley==native and not replacement.Enabled,"reinjection stacked handlers")
-Settings.ColdWarAim.Check() now+=21 frame()
-assert(messages[#messages]:find("No calls reached"),"diagnostic did not report an inactive firing path")
 print("PASS Cold War Silent Aim: deferred modules, native array update and ballistic landing, repeated yielding calls with UI permission denied in weapon thread, drop/lead, target filters, read-only arrays, native errors, disable/unload/reinjection")

@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-menu-thread-fix-k281"
+local SUNSET_BUILD = "20261006-rift-coldwar-check-removed-k282"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9087,7 +9087,6 @@ function BedWars.BuildUI(boardGame)
 
     if isColdWar then
         specs = {
-            { "Combat", "Check Silent Aim", "Combat", "Cold War", "Silent Aim" },
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
@@ -9271,8 +9270,7 @@ function BedWars.BuildUI(boardGame)
         local control = toggleName and findControl(tabName, gameName, sectionName, toggleName)
         local box = control and control.Box or findSection(tabName, gameName, sectionName)
         if box and (not toggleName or control) then
-            local checkAction = isColdWar and name == "Check Silent Aim"
-            local hasSettings = control == nil and not checkAction
+            local hasSettings = control == nil
             if control then
                 hasSettings = type(control.GetBind) == "function"
                     and type(control.SetBind) == "function"
@@ -9348,10 +9346,6 @@ function BedWars.BuildUI(boardGame)
                 end)
             end
             card.MouseButton1Click:Connect(function()
-                if checkAction then
-                    if Settings.ColdWarAim then Settings.ColdWarAim.Check() end
-                    return
-                end
                 local mouse = UIS:GetMouseLocation()
                 local optionPosition, optionSize = options.AbsolutePosition, options.AbsoluteSize
                 if hasSettings and mouse.X >= optionPosition.X and mouse.X <= optionPosition.X + optionSize.X
@@ -10405,6 +10399,7 @@ function Settings.SetupColdWarAim(playerModel)
     if type(previous) == "table" and type(previous.Restore) == "function" then
         pcall(previous.Restore)
     end
+    ENV.RiftCheckSilentAim = nil
     local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", WallCheck = true,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false }
     aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
@@ -10429,7 +10424,6 @@ function Settings.SetupColdWarAim(playerModel)
     function state.Restore()
         state.Destroyed = true
         aim.Enabled = false
-        if ENV.RiftCheckSilentAim == aim.Check then ENV.RiftCheckSilentAim = nil end
         restoreHandler()
         if circle then pcall(function() circle:Remove() end) circle = nil end
     end
@@ -10610,9 +10604,6 @@ function Settings.SetupColdWarAim(playerModel)
                     diagnostic.LastReason = "Aim calculation failed: " .. tostring(result)
                 else diagnostic.LastReason = reason or "No usable aim direction" end
             end
-            if aim.CheckUntil and os.clock() <= aim.CheckUntil and diagnostic.Shots - aim.CheckStart < 8 then
-                print("[Rift aim check] shot " .. diagnostic.Shots .. ": " .. diagnostic.LastReason)
-            end
             -- Keep the native firing call on its original continuation path.
             -- Only aim calculation above is protected; firing owns its yields/errors.
             return native(tool, muzzle, bullet, origin, directions, opts, ...)
@@ -10637,28 +10628,11 @@ function Settings.SetupColdWarAim(playerModel)
         aim.Enabled = on == true and not state.Destroyed
         if aim.Enabled then aim.TryInstall() else aim.Available = false restoreHandler() end
     end
-    function aim.Check()
-        if state.Destroyed then return end
-        print("[Rift aim check] " .. SUNSET_BUILD .. "; enabled=" .. tostring(aim.Enabled)
-            .. "; firing handler=" .. tostring(api ~= nil and api[field] == wrapper))
-        if aim.LoadError then print("[Rift aim check] " .. aim.LoadError) end
-        print("[Rift aim check] shots=" .. aim.Diagnostics.Shots .. "; redirected=" .. aim.Diagnostics.Redirected
-            .. "; aim errors=" .. aim.Diagnostics.Errors .. "; " .. aim.Diagnostics.LastReason)
-        aim.CheckUntil, aim.CheckStart = os.clock() + 20, aim.Diagnostics.Shots
-        print("[Rift aim check] Close the menu and fire three shots at an enemy inside the FOV. Observing for 20 seconds.")
-    end
-    ENV.RiftCheckSilentAim = aim.Check
     function aim.Update()
         if state.Destroyed then return end
         -- The native weapon thread cannot access gethui/CoreGui instances.
         -- Read our UI here and give firing only the cached Lua boolean.
         aim.MenuOpen = anyMenuVisible()
-        if aim.CheckUntil and os.clock() > aim.CheckUntil then
-            print("[Rift aim check] Finished: observed " .. (aim.Diagnostics.Shots - aim.CheckStart)
-                .. " firing calls. " .. (aim.Diagnostics.Shots == aim.CheckStart
-                    and "No calls reached Rift's firing handler; check the module error above." or aim.Diagnostics.LastReason))
-            aim.CheckUntil = nil
-        end
         if aim.Enabled and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
         local camera = workspace.CurrentCamera
         local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not aim.MenuOpen
@@ -10681,7 +10655,6 @@ function Settings.SetupColdWarAim(playerModel)
     local section = gameSection("Cold War", AimTab.Left, "Silent Aim")
     Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Nearest" }, "Head", function(value) aim.AimPart = value end)
     aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
-    Elements.Button(section, "Check Silent Aim", aim.Check)
     Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
     Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
