@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261005-rift-coldwar-startup-k272"
+local SUNSET_BUILD = "20261005-rift-coldwar-ui-k273"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -155,10 +155,38 @@ local RivalsKillChat = { Enabled = false, Cooldown = 2, Queue = {} }
 
 
 
+function Settings.ParentColdWarUI(gui)
+    local function attach(root)
+        if typeof(root) ~= "Instance" then return false end
+        local ok, attached = pcall(function()
+            gui.Parent = root
+            return gui.Parent == root
+        end)
+        if ok and attached then Settings.ColdWarUIParent = root return true end
+        return false
+    end
+    if attach(Settings.ColdWarUIParent) then return end
+    local hidden = type(ENV.gethui) == "function" and ENV.gethui
+        or type(gethui) == "function" and gethui or nil
+    if hidden then
+        local ok, root = pcall(hidden)
+        if ok and attach(root) then return end
+    end
+    local ok, root = pcall(game.GetService, game, "CoreGui")
+    if ok and attach(root) then return end
+    gui:Destroy()
+    error("Rift Cold War UI needs an accessible gethui() or CoreGui container.")
+end
+
 local function new(class, props, parent)
     local i = Instance.new(class)
     for k, v in pairs(props) do i[k] = v end
-    i.Parent = parent
+    if Settings.IsColdWar and class == "ScreenGui" and parent == PlayerGui then
+        Settings.ParentColdWarUI(i)
+        track({ Disconnect = function() i:Destroy() end })
+    else
+        i.Parent = parent
+    end
     return i
 end
 

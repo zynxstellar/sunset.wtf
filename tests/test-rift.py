@@ -95,6 +95,12 @@ def main():
         coldwar_path = temp / 'coldwar-startup-spec.luau'
         coldwar_path.write_text(coldwar_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(coldwar_path)], check=True)
+        ui_host_spec = (ROOT / 'tests' / 'ui-host-spec.luau').read_text(encoding='utf-8')
+        ui_host_spec = ui_host_spec.replace('-- INSERT_UI_HOST_PRODUCTION',
+            between(inner, 'function Settings.ParentColdWarUI(', '\nlocal function border'))
+        ui_host_path = temp / 'ui-host-spec.luau'
+        ui_host_path.write_text(ui_host_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(ui_host_path)], check=True)
         rivals_chunks = [
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
