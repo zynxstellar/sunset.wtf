@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261005-rift-coldwar-aim-k275"
+local SUNSET_BUILD = "20261006-rift-esp-colors-check-k276"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9536,8 +9536,9 @@ end
 local function rivalsModuleLoaded(module)
     -- Only use modules already initialized by the game. Starting them from Rift can
     -- race PlayerDataController and poison Roblox's cached require result.
-    if type(getloadedmodules) ~= "function" then return false end
-    local ok, loaded = pcall(getloadedmodules)
+    local enumerate = type(ENV.getloadedmodules) == "function" and ENV.getloadedmodules or getloadedmodules
+    if type(enumerate) ~= "function" then return false end
+    local ok, loaded = pcall(enumerate)
     return ok and type(loaded) == "table" and table.find(loaded, module) ~= nil
 end
 
@@ -10400,6 +10401,7 @@ function Settings.SetupColdWarAim(playerModel)
     end
     local aim = { Enabled = false, AimPart = "Head", WallCheck = true,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false }
+    aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
     local state = { Destroyed = false }
     ENV.SunsetColdWarAimHook = state
@@ -10425,9 +10427,12 @@ function Settings.SetupColdWarAim(playerModel)
         if circle then pcall(function() circle:Remove() end) circle = nil end
     end
     track({ Disconnect = state.Restore })
-    local function loadedRequire(module)
-        if not module or not module:IsA("ModuleScript") or not rivalsModuleLoaded(module) then
-            error("Wait for Cold War to finish loading before enabling Silent Aim", 0)
+    local function loadedRequire(module, path)
+        if not module or not module:IsA("ModuleScript") then error("Missing module: " .. path, 0) end
+        if not rivalsModuleLoaded(module) then
+            local enumerate = type(ENV.getloadedmodules) == "function" and ENV.getloadedmodules or getloadedmodules
+            error("Module not confirmed initialized: " .. path
+                .. (type(enumerate) ~= "function" and "; getloadedmodules is unavailable in this executor" or "; wait for the game to finish loading"), 0)
         end
         local getIdentity = getthreadidentity or getidentity
         local setIdentity = setthreadidentity or setidentity
@@ -10479,9 +10484,9 @@ function Settings.SetupColdWarAim(playerModel)
             BulletIndex = bullet, Origin = origin, Direction = direction, Owner = LocalPlayer })
         if type(params) ~= "table" or type(params.Weapon) ~= "table"
             or type(params.Weapon.MuzzleSpeed) ~= "number" or params.Weapon.MuzzleSpeed <= 0
-            or params.Weapon.Explosive or not params.RaycastParams then return end
+            or params.Weapon.Explosive or not params.RaycastParams then return nil, "Weapon parameters unavailable or unsupported" end
         local localTeam = LocalPlayer.Team and LocalPlayer.Team.Name
-        if localTeam ~= "NATO" and localTeam ~= "PACT" then return end
+        if localTeam ~= "NATO" and localTeam ~= "PACT" then return nil, "Your team is not NATO or PACT" end
         local center = camera.ViewportSize * 0.5
         local candidates = {}
         for _, player in ipairs(Players:GetPlayers()) do
@@ -10514,6 +10519,7 @@ function Settings.SetupColdWarAim(playerModel)
             end
         end
         table.sort(candidates, function(a, b) return a.Distance < b.Distance end)
+        if #candidates == 0 then return nil, "No eligible enemy inside the FOV and distance limit" end
         for i = 1, math.min(3, #candidates) do
             local candidate = candidates[i]
             local root = candidate.Model:FindFirstChild("HumanoidRootPart") or candidate.Part
@@ -10527,6 +10533,7 @@ function Settings.SetupColdWarAim(playerModel)
                 return selected
             end
         end
+        return nil, "No clear ballistic path to the selected targets"
     end
     local function redirected(directions, selected)
         -- Rotate the volley together so shotgun spread and direction magnitudes survive.
@@ -10552,9 +10559,9 @@ function Settings.SetupColdWarAim(playerModel)
         local sources = ballistics and ballistics:FindFirstChild("Sources")
         local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
         local client = scripts and scripts:FindFirstChild("BallisticsClient")
-        local tr = loadedRequire(ballistics and ballistics:FindFirstChild("Trajectory"))
-        local ws = loadedRequire(sources and sources:FindFirstChild("WeaponSource"))
-        local cf = loadedRequire(client and client:FindFirstChild("ClientFire"))
+        local tr = loadedRequire(ballistics and ballistics:FindFirstChild("Trajectory"), "ReplicatedStorage.Shared.Ballistics.Trajectory")
+        local ws = loadedRequire(sources and sources:FindFirstChild("WeaponSource"), "ReplicatedStorage.Shared.Ballistics.Sources.WeaponSource")
+        local cf = loadedRequire(client and client:FindFirstChild("ClientFire"), "PlayerScripts.BallisticsClient.ClientFire")
         if type(tr) ~= "table" or type(tr.new) ~= "function" or type(tr.GetTimeForDistance) ~= "function"
             or type(tr.GetPositionAtTime) ~= "function" or type(ws) ~= "table"
             or type(ws.toFireParams) ~= "function" or type(cf) ~= "table" then
@@ -10573,14 +10580,27 @@ function Settings.SetupColdWarAim(playerModel)
         api, field, original = cf, key, cf[key]
         local native = original
         wrapper = function(tool, muzzle, bullet, origin, directions, opts, ...)
+            local diagnostic = aim.Diagnostics
+            diagnostic.Shots = diagnostic.Shots + 1
+            diagnostic.LastReason = "Shot passed through: disabled, menu open, or unsupported firing arguments"
             if aim.Enabled and not state.Destroyed and Settings.SelectedGame == "Cold War"
                 and not anyMenuVisible() and opts == nil and typeof(tool) == "Instance"
                 and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
-                local ok, result = pcall(function()
-                    local selected = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
-                    return selected and redirected(directions, selected)
+                local ok, result, reason = pcall(function()
+                    local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
+                    return selected and redirected(directions, selected), why
                 end)
-                if ok and result then directions = result end
+                if ok and result then
+                    directions = result
+                    diagnostic.Redirected = diagnostic.Redirected + 1
+                    diagnostic.LastReason = "Shot direction updated; damage still requires server acceptance"
+                elseif not ok then
+                    diagnostic.Errors = diagnostic.Errors + 1
+                    diagnostic.LastReason = "Aim calculation failed: " .. tostring(result)
+                else diagnostic.LastReason = reason or "No usable aim direction" end
+            end
+            if aim.CheckUntil and os.clock() <= aim.CheckUntil and diagnostic.Shots - aim.CheckStart < 8 then
+                print("[Rift aim check] shot " .. diagnostic.Shots .. ": " .. diagnostic.LastReason)
             end
             return native(tool, muzzle, bullet, origin, directions, opts, ...)
         end
@@ -10604,8 +10624,23 @@ function Settings.SetupColdWarAim(playerModel)
         aim.Enabled = on == true and not state.Destroyed
         if aim.Enabled then aim.TryInstall() else aim.Available = false restoreHandler() end
     end
+    function aim.Check()
+        print("[Rift aim check] " .. SUNSET_BUILD .. "; enabled=" .. tostring(aim.Enabled)
+            .. "; firing handler=" .. tostring(api ~= nil and api[field] == wrapper))
+        if aim.LoadError then print("[Rift aim check] " .. aim.LoadError) end
+        print("[Rift aim check] shots=" .. aim.Diagnostics.Shots .. "; redirected=" .. aim.Diagnostics.Redirected
+            .. "; errors=" .. aim.Diagnostics.Errors .. "; " .. aim.Diagnostics.LastReason)
+        aim.CheckUntil, aim.CheckStart = os.clock() + 20, aim.Diagnostics.Shots
+        print("[Rift aim check] Close the menu and fire three shots at an enemy inside the FOV. Observing for 20 seconds.")
+    end
     function aim.Update()
         if state.Destroyed then return end
+        if aim.CheckUntil and os.clock() > aim.CheckUntil then
+            print("[Rift aim check] Finished: observed " .. (aim.Diagnostics.Shots - aim.CheckStart)
+                .. " firing calls. " .. (aim.Diagnostics.Shots == aim.CheckStart
+                    and "No calls reached Rift's firing handler; check the module error above." or aim.Diagnostics.LastReason))
+            aim.CheckUntil = nil
+        end
         if aim.Enabled and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
         local camera = workspace.CurrentCamera
         local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not anyMenuVisible()
@@ -10628,6 +10663,7 @@ function Settings.SetupColdWarAim(playerModel)
     local section = gameSection("Cold War", AimTab.Left, "Silent Aim")
     Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Nearest" }, "Head", function(value) aim.AimPart = value end)
     aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
+    Elements.Button(section, "Check Silent Aim", aim.Check)
     Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
     Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
@@ -10643,6 +10679,13 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
         VisibleOnly = false, DimHidden = true, MaxDistance = 1000, TextSize = 13,
         VehiclesOn = true, EmptyVehicles = false,
+        UsePlayerColors = true, VisibilityInterval = 1 / 60,
+        NameColor = Color3.fromRGB(240, 240, 240), ClassColor = Color3.fromRGB(240, 240, 240),
+        InfoColor = Color3.fromRGB(240, 240, 240), FlagsColor = Color3.fromRGB(255, 214, 90),
+        TracerColor = Color3.fromRGB(139, 92, 246), SkeletonColor = Color3.fromRGB(77, 224, 208),
+        HeadDotColor = Color3.fromRGB(255, 86, 86), VehicleColor = Color3.fromRGB(255, 160, 60),
+        BorderColor = Color3.fromRGB(0, 0, 0), HealthLowColor = Color3.fromRGB(255, 70, 70),
+        HealthHighColor = Color3.fromRGB(90, 235, 110), HealthBackgroundColor = Color3.fromRGB(15, 15, 20),
         BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 214, 90),
         TeamColor = Color3.fromRGB(90, 160, 255), OutlineColor = Color3.fromRGB(77, 224, 208) }
     Settings.PlayerESP = Settings.PlayerESP or {}
@@ -10732,7 +10775,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             local ok, hit = pcall(workspace.Raycast, workspace, camera.CFrame.Position,
                 head.Position - camera.CFrame.Position, visibilityParams)
             if not ok then return false end
-            cache = { Model = model, Visible = not hit or hit.Instance:IsDescendantOf(model), Next = os.clock() + 0.12 }
+            cache = { Model = model, Visible = not hit or hit.Instance:IsDescendantOf(model), Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
         return (teammate or not options.VisibleOnly or cache.Visible), teammate, distance, cache.Visible
@@ -10774,7 +10817,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         entry.Box.Color, entry.Box.Transparency = color, alpha
         entry.Box.Position, entry.Box.Size = Vector2.new(x, y), Vector2.new(width, height)
         entry.Box.Visible = options.BoxesOn and options.DrawBoxes
-        entry.Name.Color, entry.Name.Transparency, entry.Name.Size = color, alpha, options.TextSize
+        entry.Name.Color, entry.Name.Transparency, entry.Name.Size = options.UsePlayerColors and color or options.NameColor, alpha, options.TextSize
         entry.Name.Text = player.DisplayName or player.Name
         entry.Name.Position = Vector2.new(x + width / 2, y - options.TextSize - 3)
         entry.Name.Visible = options.BoxesOn and options.NamesOn
@@ -10785,13 +10828,14 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         if options.BoxesOn and options.DrawBoxes then
             local shadow = shape("BoxBorder", "Square", { Filled = false, Thickness = 3, ZIndex = 0 })
             shadow.Position, shadow.Size = entry.Box.Position, entry.Box.Size
-            shadow.Color, shadow.Transparency, shadow.Visible = Color3.fromRGB(0, 0, 0), 0.6 * alpha, true
+            shadow.Color, shadow.Transparency, shadow.Visible = options.BorderColor, 0.6 * alpha, true
         end
         local function text(key, value, px, py, enabled)
             if not options.BoxesOn or not enabled or value == "" then return end
             local object = shape(key, "Text", { Center = key ~= "Flags", Outline = true, ZIndex = 3 })
             object.Text, object.Position = value, Vector2.new(px, py)
-            object.Color, object.Size, object.Transparency, object.Visible = color, options.TextSize, alpha, true
+            local colors = { Role = options.ClassColor, Info = options.InfoColor, Flags = options.FlagsColor }
+            object.Color, object.Size, object.Transparency, object.Visible = options.UsePlayerColors and color or colors[key], options.TextSize, alpha, true
         end
         local hp, maximum = 0, 0
         local headHealth, torsoHealth
@@ -10818,9 +10862,9 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             local fraction = math.clamp(hp / maximum, 0, 1)
             local bg = shape("HealthBg", "Square", { Filled = true, ZIndex = 4 })
             local bar = shape("Health", "Square", { Filled = true, ZIndex = 5 })
-            bg.Position, bg.Size, bg.Color = Vector2.new(x - 6, y), Vector2.new(3, height), Color3.fromRGB(15, 15, 20)
+            bg.Position, bg.Size, bg.Color = Vector2.new(x - 6, y), Vector2.new(3, height), options.HealthBackgroundColor
             bar.Position, bar.Size = Vector2.new(x - 6, y + height * (1 - fraction)), Vector2.new(3, height * fraction)
-            bar.Color = Color3.fromRGB(255, 70, 70):Lerp(Color3.fromRGB(90, 235, 110), fraction)
+            bar.Color = options.HealthLowColor:Lerp(options.HealthHighColor, fraction)
             bg.Transparency, bar.Transparency, bg.Visible, bar.Visible = alpha, alpha, true, fraction > 0
         end
         local role = player:GetAttribute("ClassName")
@@ -10863,7 +10907,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             if pa.Z <= 0 or pb.Z <= 0 then return end
             local object = shape(key, "Line", { Thickness = 1, ZIndex = 3 })
             object.From, object.To = Vector2.new(pa.X, pa.Y), Vector2.new(pb.X, pb.Y)
-            object.Color, object.Transparency, object.Visible = color, alpha, true
+            object.Color, object.Transparency, object.Visible = options.UsePlayerColors and color or options.SkeletonColor, alpha, true
         end
         if options.BoxesOn and options.SkeletonOn then
             local pairsOfParts = { { "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" },
@@ -10881,14 +10925,14 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         if options.BoxesOn and options.TracersOn then
             local tracer = shape("Tracer", "Line", { Thickness = 1, ZIndex = 3 })
             tracer.From, tracer.To = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y), Vector2.new(x + width / 2, y + height)
-            tracer.Color, tracer.Transparency, tracer.Visible = color, alpha, true
+            tracer.Color, tracer.Transparency, tracer.Visible = options.UsePlayerColors and color or options.TracerColor, alpha, true
         end
         if options.BoxesOn and options.HeadDotOn then
             local screen = camera:WorldToViewportPoint(head.Position)
             if screen.Z > 0 then
                 local dot = shape("HeadDot", "Circle", { Filled = true, NumSides = 24, ZIndex = 3 })
                 dot.Position, dot.Radius = Vector2.new(screen.X, screen.Y), math.max(2, height * 0.07)
-                dot.Color, dot.Transparency, dot.Visible = color, alpha, true
+                dot.Color, dot.Transparency, dot.Visible = options.UsePlayerColors and color or options.HeadDotColor, alpha, true
             end
         end
         if options.OutlinesOn then
@@ -10956,7 +11000,8 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
                     end
                     object.Text = tostring(model:GetAttribute("VehicleType") or model.Name) .. "  " .. math.floor(distance) .. "m"
                     object.Position, object.Size = Vector2.new(screen.X, screen.Y), options.TextSize
-                    object.Color, object.Visible = team == mine and options.TeamColor or options.BoxColor, true
+                    object.Color, object.Visible = options.UsePlayerColors
+                        and (team == mine and options.TeamColor or options.BoxColor) or options.VehicleColor, true
                     used[model] = true
                 end)
             end
@@ -10999,6 +11044,24 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     end)
     visiblePicker = Elements.ColorPicker(boxes, "Visible Color", options.VisibleColor, function(color) options.VisibleColor = color options.Apply() end)
     Elements.ColorPicker(boxes, "Team Color", options.TeamColor, function(color) options.TeamColor = color options.Apply() end)
+    local playerColors = Elements.Toggle(boxes, "Use Player Colors", true, function(on) options.UsePlayerColors = on options.Apply() end)
+    for _, spec in ipairs({ { "Name Color", "NameColor" }, { "Class Color", "ClassColor" },
+        { "Info Color", "InfoColor" }, { "Status Color", "FlagsColor" }, { "Tracer Color", "TracerColor" },
+        { "Skeleton Color", "SkeletonColor" }, { "Head Dot Color", "HeadDotColor" },
+        { "Border Color", "BorderColor" }, { "Low Health Color", "HealthLowColor" },
+        { "Full Health Color", "HealthHighColor" }, { "Health Background Color", "HealthBackgroundColor" } }) do
+        local key = spec[2]
+        Elements.ColorPicker(boxes, spec[1], options[key], function(color)
+            options[key] = color
+            if key ~= "BorderColor" and not key:find("Health") then playerColors.Set(false) end
+            options.Apply()
+        end)
+    end
+    Elements.Slider(boxes, "Visibility Refresh", 0, 120, 16, "ms", function(value)
+        options.VisibilityInterval = value / 1000
+        table.clear(visibility)
+        options.Apply()
+    end)
     for _, spec in ipairs({ { "Draw Boxes", "DrawBoxes" }, { "Health Bar", "HealthOn" },
         { "Show Class", "ClassOn" }, { "Distance and Weapon", "InfoOn" }, { "Status Flags", "FlagsOn" },
         { "Limb Health", "LimbsOn" }, { "Skeleton", "SkeletonOn" }, { "Tracers", "TracersOn" },
@@ -11012,6 +11075,9 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     if gameName ~= "Cold War" then options.VehiclesOn = false return options, playerModel end
     Elements.Toggle(boxes, "Vehicles", true, function(on) options.VehiclesOn = on options.Apply() end)
     Elements.Toggle(boxes, "Empty Vehicles", false, function(on) options.EmptyVehicles = on options.Apply() end)
+    Elements.ColorPicker(boxes, "Vehicle Color", options.VehicleColor, function(color)
+        options.VehicleColor = color playerColors.Set(false) options.Apply()
+    end)
     local outlines = gameSection(gameName, VisualsTab.Left, "Player Outlines")
     Elements.Toggle(outlines, "Player Outlines", false, function(on)
         options.OutlinesOn = on

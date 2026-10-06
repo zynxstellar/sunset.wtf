@@ -272,6 +272,11 @@ end
 function Elements.ColorPicker(p,t,d,cb) return addControl(p,t,"color",d,cb) end
 function Elements.TextBox(p,t,placeholder,cb,d) return addControl(p,t,"text",d,cb) end
 Elements.Label=label
+function Elements.Button(parent,text,callback)
+    local button=new("TextButton",{Text=text},parent)
+    button.MouseButton1Click:Connect(callback)
+    return button
+end
 local BRAND,SUNSET_BUILD="RIFT","test-k262"
 local RIFT_KILL_MESSAGE="RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local hooks,hookInstalls,originalCalls={},0,{}
@@ -1343,6 +1348,34 @@ end)();
         assert(#visible("Square",2)==0,"maximum ESP distance ignored") set("Max Distance",1000)
         local cacheCasts=#casts options.Apply() options.Apply()
         assert(#casts==cacheCasts,"visibility rays were not cached")
+        clockNow+=0.02 options.Apply()
+        assert(#casts>cacheCasts,"default visibility refresh still waits 120ms")
+        set("Visibility Refresh",0)
+        cacheCasts=#casts options.Apply()
+        assert(#casts>cacheCasts,"zero visibility interval did not update every pass")
+        set("Visibility Refresh",16)
+        local palette={}
+        for i,name in ipairs({"Name Color","Class Color","Info Color","Status Color","Tracer Color",
+            "Skeleton Color","Head Dot Color","Border Color","Low Health Color","Full Health Color","Health Background Color"}) do
+            palette[name]=color(i/20,0.2,0.3)
+            set(name,palette[name])
+        end
+        assert(not options.UsePlayerColors,"choosing an element color did not disable inherited player colors")
+        local nameFound=false
+        for _,o in ipairs(visible("Text")) do
+            if o.Text=="ESPEnemy" then assert(o.Color==palette["Name Color"]) nameFound=true end
+            if o.Text=="Sniper" then assert(o.Color==palette["Class Color"]) end
+            if o.Text:find("Rifle") then assert(o.Color==palette["Info Color"]) end
+            if o.Text=="DOWNED" then assert(o.Color==palette["Status Color"]) end
+        end
+        assert(nameFound,"colored name label missing")
+        for _,o in ipairs(visible("Line")) do
+            assert(o.Color==palette[o.From.Y==Camera.ViewportSize.Y and "Tracer Color" or "Skeleton Color"])
+        end
+        for _,o in ipairs(visible("Circle")) do assert(o.Color==palette["Head Dot Color"]) end
+        assert(visible("Square",0)[1].Color==palette["Border Color"])
+        assert(visible("Square",4)[1].Color==palette["Health Background Color"])
+        assert(visible("Square",5)[1].Color==palette["Low Health Color"])
         if gameName=="Cold War" then
             local folder=new("Folder",{Name="Vehicles"})
             local vehicle=new("Model",{Name="Tank"},folder)
@@ -1350,8 +1383,12 @@ end)();
             local root=new("BasePart",{Name="RootPart",Position=Vector3.new(40,0,100)},vehicle)
             workspace.FindFirstChild=function(_,name) return name=="Vehicles" and folder or nil end
             options.Apply()
+            local vehicleColor=color(0.7,0.2,0.9)
+            set("Vehicle Color",vehicleColor)
             local labeled=false
-            for _,o in ipairs(visible("Text")) do labeled=labeled or o.Text:find("APC")~=nil end
+            for _,o in ipairs(visible("Text")) do
+                if o.Text:find("APC") then labeled=true assert(o.Color==vehicleColor) end
+            end
             assert(labeled,"Cold War vehicle label missing")
             set("Vehicles",false)
             for _,o in ipairs(visible("Text")) do assert(not o.Text:find("APC"),"disabled vehicle label remained") end

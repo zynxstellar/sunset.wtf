@@ -22,6 +22,9 @@ local function object(name,class,parent)
     return o
 end
 local Settings={SelectedGame="Cold War"}
+local SUNSET_BUILD="test-k276"
+local messages={}
+local function print(message) table.insert(messages,message) end
 local ENV={Drawing={}}
 local circles={}
 function ENV.Drawing.new(kind)
@@ -51,6 +54,7 @@ end
 function Elements.Toggle(s,n,d,f) return control(s,n,d,f) end
 function Elements.Dropdown(s,n,items,d,f) return control(s,n,d,f) end
 function Elements.Slider(s,n,min,max,d,units,f) return control(s,n,d,f) end
+function Elements.Button(s,n,f) controls[s.."/"..n]={Click=f} end
 local workspace={Children={},CurrentCamera={ViewportSize=Vector2.new(1920,1080)}}
 function workspace.CurrentCamera:WorldToViewportPoint(p) return Vector3.new(960+p.X,540-p.Y,p.Z),p.Z>0 end
 local wall,raycasts,rayFailure=nil,0,false
@@ -116,6 +120,8 @@ aim.SetEnabled(true)
 assert(not aim.Available and requireCalls==0 and identity==8,"unready modules were required")
 loaded=true now=2 frame()
 assert(aim.Available and cm.Export.volley~=native and identity==8,"late-ready install failed")
+controls["Cold War/Silent Aim/Check Silent Aim"].Click()
+assert(messages[1]:find("firing handler=true"),"diagnostic omitted actual handler state")
 local tool=object("Rifle","Tool")
 local origin=Vector3.new()
 local directions={Vector3.new(0,0,1),Vector3.new(0.03,0.01,1),Metadata="native metadata"}
@@ -132,6 +138,7 @@ for _=1,3 do
     assert(math.abs(received[5][1]:Dot(received[5][2])-directions[1]:Dot(directions[2]))<1e-6,"spread changed")
 end
 assert(calls==3 and directions[1].X==0 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
+assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3 and #messages>=6,"firing diagnostic did not observe shots")
 controls["Cold War/Silent Aim/Aim Part"]:Set("Torso") fire()
 assert(received[5][1].Y==0,"torso selection ignored")
 aim.AimPart="Head" gravity=100 fire()
@@ -144,6 +151,7 @@ fire() assert(received[5]==directions,"wall check bent a blocked shot")
 aim.WallCheck=false fire() assert(received[5]~=directions)
 aim.WallCheck=true wall=nil
 aim.Radius=5 fire() assert(received[5]==directions,"FOV exclusion failed")
+assert(aim.Diagnostics.LastReason:find("FOV"),"FOV failure missing from diagnostic")
 aim.Radius=150 aim.MaxDistance=25 fire() assert(received[5]==directions,"range exclusion failed")
 aim.MaxDistance=1000 enemy.Dead=true fire() assert(received[5]==directions,"dead player targeted") enemy.Dead=false
 local force=object("Shield","ForceField",enemy.Character)
@@ -155,6 +163,7 @@ menu=true fire() assert(received[5]==directions) menu=false
 fire({Replay=true}) assert(received[5]==directions,"non-native options altered")
 params.Weapon.Explosive=true fire() assert(received[5]==directions) params.Weapon.Explosive=false
 rayFailure=true fire() assert(received[5]==directions,"resolver error suppressed normal firing") rayFailure=false
+assert(aim.Diagnostics.Errors>0 and aim.Diagnostics.LastReason:find("cast failed"),"resolver error was hidden from diagnostic")
 nativeFailure=true local ok,err=pcall(fire) assert(not ok and tostring(err):find("native failure")) nativeFailure=false
 aim.FOVVisible=true frame()
 assert(circles[1].Visible and circles[1].Radius==150 and circles[1].Position.X==960)
@@ -174,4 +183,6 @@ Settings.SetupColdWarAim(model) local replacement=Settings.ColdWarAim replacemen
 local first=cm.Export.volley
 Settings.SetupColdWarAim(model)
 assert(cm.Export.volley==native and not replacement.Enabled,"reinjection stacked handlers")
+Settings.ColdWarAim.Check() now+=21 frame()
+assert(messages[#messages]:find("No calls reached"),"diagnostic did not report an inactive firing path")
 print("PASS Cold War Silent Aim: deferred/loaded modules and identity, repeated native calls/returns/errors, spread/input preservation, drop/lead, teams/death/shields/downed/FOV/range/walls/menu, options/errors pass through, disable/unload/reinjection and foreign handler ownership")
