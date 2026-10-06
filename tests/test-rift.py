@@ -83,7 +83,20 @@ def main():
         handoff = inner[inner.index('ENV.SunsetLoading.Status.Text = detectedGame'):]
         assert 'Settings.CompleteStartup(ENV.SunsetLoading, detectedGame)' in handoff
         assert 'task.delay' not in handoff and 'task.wait' not in handoff
+        coldwar_spec = (ROOT / 'tests' / 'coldwar-startup-spec.luau').read_text(encoding='utf-8')
+        coldwar_spec = coldwar_spec.replace('-- INSERT_BEDWARS_RUNTIME',
+            between(inner, 'function Settings.SetupBedWarsRuntime()', '\nif Settings.IsColdWar then\n    -- There are no BedWars'))
+        coldwar_spec = coldwar_spec.replace('-- INSERT_GAME_RUNTIME_DISPATCH',
+            between(inner, 'if Settings.IsColdWar then\n    -- There are no BedWars', '\nlocal Fun ='))
+        coldwar_spec = coldwar_spec.replace('-- INSERT_TARGET_DISPATCH',
+            between(inner, 'if not Settings.IsColdWar then\n    track(workspace.DescendantAdded', '\nlocal function modelPart'))
+        coldwar_spec = coldwar_spec.replace('-- INSERT_ASSET_PRODUCTION',
+            between(inner, 'local riftAssetCache =', '\nlocal function riftTrashFallback'))
+        coldwar_path = temp / 'coldwar-startup-spec.luau'
+        coldwar_path.write_text(coldwar_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(coldwar_path)], check=True)
         rivals_chunks = [
+            between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),
             between(inner, 'local function refreshBedWarsPlayers()', '\nlocal function refreshBedWarsMap()'),
@@ -119,7 +132,7 @@ def main():
         fly_path = temp / 'fly-spec.luau'
         fly_path.write_text(fly_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(fly_path)], check=True)
-        startup = between(inner, 'if detectedGame then\n    Persistence.Restore',
+        startup = between(inner, '    Persistence.Restore(detectedGame, menuKeyControl)',
                           '\nENV.SunsetLoading.Status.Text')
         assert 'AutoReinject.Toggle.Set(false)' not in startup
         unload = between(inner, 'ENV.SunsetUnload = function()', '\nprint(BRAND')

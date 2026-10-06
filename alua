@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261005-rift-loading-handoff-k271"
+local SUNSET_BUILD = "20261005-rift-coldwar-startup-k272"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -119,6 +119,7 @@ local RefreshConfigList
 
 
 local Settings = {
+    IsColdWar     = game.PlaceId == 13687899540 or game.GameId == 4750561026,
     GameBoards     = {},
     MenuKey        = Enum.KeyCode.RightShift,
     FlyEnabled     = false,
@@ -193,6 +194,12 @@ local function riftAsset(filename)
     if typeof(isfile) == "function" then
         local ok, result = pcall(isfile, path)
         exists = ok and result == true
+    end
+    -- Cold War can use the drawn icons immediately. Its startup must not wait
+    -- for optional artwork downloads or ask the executor to open missing files.
+    if Settings.IsColdWar and not exists then
+        riftAssetCache[filename] = false
+        return nil
     end
     if not exists and typeof(writefile) == "function" then
         local ok, bytes = pcall(function()
@@ -292,6 +299,13 @@ ENV.SunsetLoading.Fill = new("Frame", {
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
 TweenService:Create(ENV.SunsetLoading.Fill, TweenInfo.new(1.2, Enum.EasingStyle.Quad,
     Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.88, 1) }):Play()
+function Settings.StartupStage(message)
+    if not Settings.IsColdWar then return end
+    print("[Rift startup " .. SUNSET_BUILD .. "] " .. message)
+    local loading = ENV.SunsetLoading
+    if loading and loading.Status and loading.Status.Parent then loading.Status.Text = message end
+end
+Settings.StartupStage("Loading menu controls...")
 
 local Window = new("Frame", {
     Name = "Window", Visible = false,
@@ -1457,8 +1471,10 @@ local function registerTargetPart(part)
     local model = part:FindFirstAncestorOfClass("Model")
     if model then TargetModels[model] = true end
 end
-track(workspace.DescendantAdded:Connect(registerTargetPart))
-for _, descendant in ipairs(workspace:GetDescendants()) do registerTargetPart(descendant) end
+if not Settings.IsColdWar then
+    track(workspace.DescendantAdded:Connect(registerTargetPart))
+    for _, descendant in ipairs(workspace:GetDescendants()) do registerTargetPart(descendant) end
+end
 local function modelPart(model, name)
     local direct = model:FindFirstChild(name)
     if direct and direct:IsA("BasePart") then return direct end
@@ -2869,6 +2885,8 @@ BedWars = {
     Session = { Seconds = 0, Kills = 0, Beds = 0, Wins = 0, Games = 0,
         LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
 }
+Settings.StartupStage("Preparing Cold War...")
+function Settings.SetupBedWarsRuntime()
 do
     BedWars.NotifyGui = new("ScreenGui", {
         Name = "RiftNotifications", ResetOnSpawn = false,
@@ -8169,6 +8187,15 @@ do
     end
 end
 
+end -- Settings.SetupBedWarsRuntime
+if Settings.IsColdWar then
+    -- There are no BedWars modules to restore in this game. In particular,
+    -- avoid running BedWars.Stop's attribute and native controller writes.
+    function BedWars.Stop() BedWars.Running = false end
+else
+    Settings.SetupBedWarsRuntime()
+end
+
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
     Color = Color3.fromRGB(255, 116, 82), Active = {},
     OrbitOn = false, OrbitRadius = 3, OrbitSpeed = 2,
@@ -10346,6 +10373,7 @@ if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
 end
 
 function Settings.SetupColdWar()
+    Settings.StartupStage("Loading Cold War visuals...")
     local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true,
         BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
     Settings.ColdWarVisuals = options
@@ -10454,6 +10482,7 @@ function Settings.SetupColdWar()
     end)
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
+    Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
 end
 if game.PlaceId == 13687899540 or game.GameId == 4750561026 then Settings.SetupColdWar() end
@@ -10659,6 +10688,7 @@ do
     end
 end
 if detectedGame then
+    Settings.StartupStage("Restoring Cold War settings...")
     Persistence.Restore(detectedGame, menuKeyControl)
     Persistence.Start()
     track(LocalPlayer.OnTeleport:Connect(function(state)
