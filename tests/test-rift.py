@@ -72,6 +72,17 @@ def main():
         startup_path = temp / 'startup-spec.luau'
         startup_path.write_text(startup_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(startup_path)], check=True)
+        loading_spec = (ROOT / 'tests' / 'loading-spec.luau').read_text(encoding='utf-8')
+        loading_spec = loading_spec.replace('-- INSERT_LOADING_PRODUCTION',
+            between(inner, 'function Settings.CompleteStartup(', '\nlocal supportedGames'))
+        loading_spec = loading_spec.replace('-- INSERT_HOOK_POLICY',
+            between(inner, 'local canHook =', '\nlocal savedCamType'))
+        loading_path = temp / 'loading-spec.luau'
+        loading_path.write_text(loading_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(loading_path)], check=True)
+        handoff = inner[inner.index('ENV.SunsetLoading.Status.Text = detectedGame'):]
+        assert 'Settings.CompleteStartup(ENV.SunsetLoading, detectedGame)' in handoff
+        assert 'task.delay' not in handoff and 'task.wait' not in handoff
         rivals_chunks = [
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),
