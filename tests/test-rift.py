@@ -101,6 +101,12 @@ def main():
         ui_host_path = temp / 'ui-host-spec.luau'
         ui_host_path.write_text(ui_host_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(ui_host_path)], check=True)
+        aim_spec = (ROOT / 'tests' / 'coldwar-aim-spec.luau').read_text(encoding='utf-8')
+        aim_spec = aim_spec.replace('-- INSERT_COLDWAR_AIM_PRODUCTION',
+            between(inner, 'function Settings.SetupColdWarAim(', '\nfunction Settings.SetupPlayerESP('))
+        aim_path = temp / 'coldwar-aim-spec.luau'
+        aim_path.write_text(aim_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(aim_path)], check=True)
         rivals_chunks = [
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
@@ -111,11 +117,11 @@ def main():
             between(inner, 'local savedCamType, savedCamMode, camOffset',
                     '\ntrack(Window:GetPropertyChangedSignal("Visible")'),
             between(inner, 'function BedWars.BuildUI(boardGame)',
-                    '\nif game.PlaceId == 6872265039'),
+                    '\nlocal function rivalsModuleLoaded('),
             between(inner, 'local function rivalsModuleLoaded(',
-                    '\nif game.PlaceId == 17625359962'),
-            between(inner, 'function Settings.SetupColdWar()',
-                    '\nif game.PlaceId == 13687899540'),
+                    '\nfunction Settings.SetupColdWarAim('),
+            between(inner, 'function Settings.SetupColdWarAim(',
+                    '\nif game.PlaceId == 6872265039'),
         ]
         rivals_spec = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8')
         rivals_spec = rivals_spec.replace('-- INSERT_RIVALS_PRODUCTION', '\n'.join(rivals_chunks))

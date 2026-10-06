@@ -186,6 +186,14 @@ local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
     IsMouseButtonPressed=function(_,button) return aimMouseHeld and button==Enum.UserInputType.MouseButton2 end,
     GetMouseLocation=function() return Vector2.new(100,100) end}
 local ENV={}
+local allDrawings={Objects={}}
+function allDrawings.new(kind)
+    local object={Kind=kind,Visible=false,Remove=function(self) self.Removed=true self.Visible=false end}
+    table.insert(allDrawings.Objects,object)
+    return object
+end
+ENV.Drawing=allDrawings
+local ESP={Stop=function() end}
 local useScriptable=true
 local function anyMenuVisible()
     for _,board in pairs(Settings.GameBoards) do if board.Parent and board.Visible then return true end end
@@ -921,16 +929,23 @@ local function liveVisuals()
     local outlines,boxes={},{}
     for _,o in ipairs(created) do
         if o.Name=="RiftPlayerOutline" and o.Parent then table.insert(outlines,o) end
-        if o.Name=="EnemyBox" and o.Parent then table.insert(boxes,o) end
+    end
+    for _,o in ipairs(allDrawings.Objects) do
+        if o.Kind=="Square" and o.ZIndex==2 and not o.Removed then table.insert(boxes,o) end
     end
     return outlines,boxes
 end
 local highlights,boxes=liveVisuals()
 assert(#highlights==3 and #boxes==3,"visuals did not include every living non-local player")
 for _,entry in ipairs(highlights) do assert(entry.OutlineColor==outlineColor) end
-assert(boxes[1].Visible and boxes[1].Size.X.Offset==4 and boxes[1].Size.Y.Offset==6,
+assert(boxes[1].Visible and boxes[1].Size.X==4 and boxes[1].Size.Y==6,
     "ESP box did not use projected model bounds")
-assert(boxes[1]:FindFirstChildOfClass("UIStroke").Color==boxColor,"box color did not update")
+local enemyColored=false
+for _,box in ipairs(boxes) do
+    assert(box.Color==boxColor or box.Color==Settings.PlayerESP.Rivals.TeamColor,"ESP color did not update")
+    enemyColored=enemyColored or box.Color==boxColor
+end
+assert(enemyColored,"enemy box color was ignored")
 local humanoid=enemy.Fighter.Entity.Model:FindFirstChildOfClass("Humanoid")
 humanoid.Health=0
 RunService.RenderStepped:Fire(1/60)
@@ -1155,7 +1170,9 @@ end
         assert(box.Color==boxColor,"box color was ignored")
     end
     for _,object in ipairs(drawings.Objects) do
-        if not object.Removed and object.Kind=="Text" then assert(not object.Visible,"name setting was ignored") end
+        if not object.Removed and object.Kind=="Text" and (object.Text=="Enemy" or object.Text=="Teammate") then
+            assert(not object.Visible,"name setting was ignored")
+        end
     end
     for _,outline in ipairs(outlines) do assert(outline.Color==outlineColor) end
     local nativeAfter=nativeState(foe.Character)
@@ -1238,4 +1255,119 @@ end
     ENV.Drawing=nil
     Players.GetPlayers=savedPlayers
     print("PASS Cold War Drawing: boxes/body outlines and colors, independent toggles, names/binds, limb death/ragdoll/respawn, no character edits, off-screen/menu/unload cleanup, allocation failure and missing API")
+end)();
+
+(function()
+    local savedPlayers,oldDrawing=Players.GetPlayers,ENV.Drawing
+    local savedFind=workspace.FindFirstChild
+    local oldLocalTeam=LocalPlayer.Team
+    LocalPlayer.Team={Name="NATO"}
+    local foe=combatPlayer(2,30)
+    local friend=combatPlayer(1,10)
+    foe.Team,friend.Team={Name="PACT"},LocalPlayer.Team
+    foe.Character,friend.Character=foe.Fighter.Entity.Model,friend.Fighter.Entity.Model
+    foe.Name,friend.Name="ESPEnemy","ESPFriend"
+    function foe:GetAttribute(name) return name=="TeamID" and 2 or name=="ClassType" and "Sniper" or nil end
+    function friend:GetAttribute(name) return name=="TeamID" and 1 or nil end
+    for _,p in ipairs({foe,friend}) do
+        local head,torso=p.Character:FindFirstChild("Head"),p.Character:FindFirstChild("UpperTorso")
+        head.Size,torso.Size=Vector3.new(2,1,1),Vector3.new(2,2,1)
+        local health=new("NumberValue",{Name="Health",Value=20},head)
+        health:SetAttribute("MaxHealth",100)
+        local torsoHealth=new("NumberValue",{Name="Health",Value=20},torso)
+        torsoHealth:SetAttribute("MaxHealth",100)
+        p.Character:FindFirstChildOfClass("Humanoid").MaxHealth=100
+    end
+    new("Tool",{Name="Rifle"},foe.Character)
+    local cv=new("Folder",{Name="CharacterValues"},foe.Character)
+    new("BoolValue",{Name="Unconscious",Value=true},cv)
+    Players.GetPlayers=function() return {LocalPlayer,foe,friend} end
+    Window.Visible=false
+    for _,board in pairs(Settings.GameBoards) do board.Visible=false end
+    raycastFailure,raycastResult=false,nil
+    for _,gameName in ipairs({"Cold War","Rivals","BedWars"}) do
+        local drawings={Objects={}}
+        function drawings.new(kind)
+            local object={Kind=kind,Visible=false,Remove=function(self) self.Removed=true self.Visible=false end}
+            table.insert(drawings.Objects,object) return object
+        end
+        ENV.Drawing=drawings Settings.SelectedGame=gameName
+        local cleanupStart=#connections+1
+        local configStart=#ConfigControls+1
+        local options=Settings.SetupPlayerESP(gameName,gameName=="Rivals" and function(p) return p.Character end or nil)
+        local function set(name,value)
+            for i=configStart,#ConfigControls do
+                local c=ConfigControls[i]
+                if c.Key=="Visuals/"..gameName.."/ESP Boxes/"..name then c.Set(value) return end
+            end
+            error("missing ESP control "..gameName.."/"..name)
+        end
+        local function visible(kind,z)
+            local objects={}
+            for _,o in ipairs(drawings.Objects) do
+                if not o.Removed and o.Visible and o.Kind==kind and (not z or o.ZIndex==z) then table.insert(objects,o) end
+            end
+            return objects
+        end
+        set("ESP Boxes",true) set("Tracers",true) set("Skeleton",true) set("Head Dot",true)
+        assert(#visible("Square",2)==2 and #visible("Line")==4 and #visible("Circle")==2,
+            gameName.." did not share boxes, skeletons, tracers and head dots")
+        local bar=visible("Square",5)[1]
+        assert(bar and math.abs(bar.Size.Y-1.2)<1e-6,"limb max health was ignored")
+        local class,weapon,downed=false,false,false
+        for _,o in ipairs(visible("Text")) do
+            class=class or o.Text=="Sniper"
+            weapon=weapon or o.Text:find("Rifle")~=nil
+            downed=downed or o.Text=="DOWNED"
+        end
+        assert(class and weapon and downed,"ESP metadata was missing")
+        local leg=new("BasePart",{Name="Left Leg",Position=Vector3.new(15,-2,100),Size=Vector3.new(1,2,1)},foe.Character)
+        options.Apply()
+        local wide=false
+        for _,box in ipairs(visible("Square",2)) do wide=wide or box.Size.X>=15 end
+        assert(wide,"head-to-foot ESP box did not follow a sideways/prone body")
+        table.remove(foe.Character.children,table.find(foe.Character.children,leg)) leg:Destroy()
+        options.Apply()
+        set("Draw Boxes",false)
+        assert(#visible("Square",2)==0 and #visible("Line")==4,"box style disabled independent overlays")
+        set("Draw Boxes",true) set("Show Teammates",false)
+        assert(#visible("Square",2)==1 and #visible("Line")==2,"team visibility ignored")
+        local wall={IsDescendantOf=function() return false end}
+        raycastResult={Instance=wall} clockNow+=1 options.Apply()
+        assert(visible("Square",2)[1].Transparency==0.55,"hidden enemy was not dimmed")
+        set("Visible Only",true)
+        assert(#visible("Square",2)==0 and #visible("Line")==0 and #visible("Text")==0,"hidden enemy retained ESP")
+        raycastResult=nil clockNow+=1 options.Apply()
+        assert(#visible("Square",2)==1 and #visible("Line")==2,"visible enemy was not restored")
+        set("Max Distance",25)
+        assert(#visible("Square",2)==0,"maximum ESP distance ignored") set("Max Distance",1000)
+        local cacheCasts=#casts options.Apply() options.Apply()
+        assert(#casts==cacheCasts,"visibility rays were not cached")
+        if gameName=="Cold War" then
+            local folder=new("Folder",{Name="Vehicles"})
+            local vehicle=new("Model",{Name="Tank"},folder)
+            vehicle:SetAttribute("CrewTeam","PACT") vehicle:SetAttribute("VehicleType","APC")
+            local root=new("BasePart",{Name="RootPart",Position=Vector3.new(40,0,100)},vehicle)
+            workspace.FindFirstChild=function(_,name) return name=="Vehicles" and folder or nil end
+            options.Apply()
+            local labeled=false
+            for _,o in ipairs(visible("Text")) do labeled=labeled or o.Text:find("APC")~=nil end
+            assert(labeled,"Cold War vehicle label missing")
+            set("Vehicles",false)
+            for _,o in ipairs(visible("Text")) do assert(not o.Text:find("APC"),"disabled vehicle label remained") end
+            workspace.FindFirstChild=savedFind
+        end
+        Window.Visible=true options.Apply()
+        assert(#visible("Square")==0 and #visible("Line")==0 and #visible("Text")==0,"ESP covered menu")
+        Window.Visible=false options.Apply()
+        set("ESP Boxes",false)
+        assert(#visible("Square")==0 and #visible("Line")==0 and #visible("Text")==0,"disable leaked ESP")
+        set("ESP Boxes",true)
+        for i=cleanupStart,#connections do connections[i]:Disconnect() end
+        options.Apply()
+        for _,o in ipairs(drawings.Objects) do assert(o.Removed,"unload leaked Drawing") end
+    end
+    Players.GetPlayers,ENV.Drawing,workspace.FindFirstChild=savedPlayers,oldDrawing,savedFind
+    LocalPlayer.Team=oldLocalTeam
+    print("PASS shared ESP: Cold War/Rivals/BedWars boxes, health/class/weapon/status, skeletons/tracers/head dots, independent styles, enemy/team colors, wall visibility/dimming/range, cached rays, vehicles, menu/disable/unload")
 end)()

@@ -129,6 +129,25 @@ do
     Settings.SelectedGame="Rivals"
 end
 print("PASS Cold War config: separate file, visual selection/names/keybind restore, other-game isolation")
+do
+    local previousControls=ConfigControls
+    local oldSnapshot,oldSnapshots=ENV.SunsetSettingsSnapshot,ENV.SunsetSettingsSnapshots
+    local active,names,bind=false,true,nil
+    ConfigControls={
+        {Key="Visuals/BedWars/ESP Boxes/ESP Boxes",Kind="toggle",Get=function() return active end,
+            Set=function(v) active=v end,SetBind=function(v) bind=v end},
+        {Key="Visuals/BedWars/ESP Boxes/Show Names",Kind="toggle",Get=function() return names end,Set=function(v) names=v end},
+    }
+    ENV.SunsetSettingsSnapshot={Game="BedWars",Version=5,Controls={
+        {Key="Visuals/All/ESP Boxes/ESP",Kind="toggle",Value=true,Bind="Q"},
+        {Key="Visuals/All/ESP Boxes/Show Names",Kind="toggle",Value=false},
+    }}
+    assert(Persistence.Restore("BedWars") and active and not names and bind==Enum.KeyCode.Q,
+        "old BedWars ESP selection/name/bind lost during scope migration")
+    ConfigControls=previousControls
+    ENV.SunsetSettingsSnapshot,ENV.SunsetSettingsSnapshots=oldSnapshot,oldSnapshots
+end
+print("PASS BedWars ESP migration: legacy shared scope retains enabled selection, names and keybind")
 local previousControls=ConfigControls
 local preset,accent,outlineEnabled,outlineBind="Rift",nil,false,nil
 local Color3={fromRGB=function(r,g,b) return {R=r/255,G=g/255,B=b/255} end}

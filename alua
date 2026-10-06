@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261005-rift-coldwar-drawing-k274"
+local SUNSET_BUILD = "20261005-rift-coldwar-aim-k275"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -768,6 +768,10 @@ do
         local pendingToggles = {}
         for _, item in ipairs(data.Controls) do
             local key = item.Key and item.Key:gsub("Visuals/Rivals/Enemy Outlines/", "Visuals/Rivals/Player Outlines/")
+            if gameName == "BedWars" and key then
+                key = key:gsub("^Visuals/All/ESP Boxes/", "Visuals/BedWars/ESP Boxes/")
+                if key == "Visuals/BedWars/ESP Boxes/ESP" then key = "Visuals/BedWars/ESP Boxes/ESP Boxes" end
+            end
             if key == "Visuals/Rivals/Player Outlines/Enemy Outlines" then key = "Visuals/Rivals/Player Outlines/Player Outlines" end
             local control = key and byKey[key]
             if gameName == "BedWars" and item.Kind == "number"
@@ -2226,15 +2230,6 @@ end
 
 
 do
-    local s = makeSection(VisualsTab.Left, "ESP Boxes")
-    s.Parent.LayoutOrder = 1
-    Elements.Toggle(s, "ESP", false, function(on)
-        Settings.EspEnabled = on
-        if on then ESP.Start() else ESP.Stop() end
-    end)
-    Elements.ColorPicker(s, "Color", Settings.EspBoxColor, function(c) Settings.EspBoxColor = c end)
-    Elements.Line(s)
-    bedWarsNamesToggle = Elements.Toggle(s, "Show Names", true, function(on) Settings.EspNames = on end)
     local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
     atmosphere.Parent.LayoutOrder = 2
     Elements.Toggle(atmosphere, "Enabled", false, setAtmosphereEnabled, nil, true)
@@ -2724,6 +2719,9 @@ do
             if control.Key then byKey[control.Key] = control end
         end
         local legacyKeys = {
+            ["Visuals/All/ESP Boxes/ESP"] = "Visuals/BedWars/ESP Boxes/ESP Boxes",
+            ["Visuals/All/ESP Boxes/Color"] = "Visuals/BedWars/ESP Boxes/Color",
+            ["Visuals/All/ESP Boxes/Show Names"] = "Visuals/BedWars/ESP Boxes/Show Names",
             ["Combat/Rivals/Silent Aim/FOV Radius"] = "Visuals/Rivals/FOV Circle/Radius",
             ["Combat/BedWars/Combat/Kill Aura"] = "Combat/BedWars/Kill Aura/Kill Aura",
             ["Combat/BedWars/Combat/Target Priority"] = "Combat/BedWars/Kill Aura/Target Priority",
@@ -5039,7 +5037,9 @@ local function refreshBedWarsPlayers()
             local model = player.Character
             local humanoid = model and model:FindFirstChildOfClass("Humanoid")
             if player ~= LocalPlayer and model and humanoid and humanoid.Health > 0
-                and model:IsDescendantOf(workspace) then
+                and model:IsDescendantOf(workspace)
+                and (not Settings.PlayerESP or not Settings.PlayerESP.BedWars
+                    or Settings.PlayerESP.BedWars.Allow(player, model, workspace.CurrentCamera)) then
                 seen[model] = true
                 setBedWarsMark("Players", model, BedWars.PlayerOutlineColor)
             end
@@ -9043,7 +9043,7 @@ function BedWars.BuildUI(boardGame)
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
         { "Player", "Zoom Unlocker", "Player", "BedWars", "Zoom Unlocker", "Zoom Unlocker" },
         { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
-        { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
+        { "Visuals", "ESP Boxes", "Visuals", "BedWars", "ESP Boxes", "ESP Boxes" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
         { "Visuals", "Name Tags", "Visuals", "BedWars", "Name Tags", "Name Tags" },
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
@@ -9087,6 +9087,8 @@ function BedWars.BuildUI(boardGame)
 
     if isColdWar then
         specs = {
+            { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
+            { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
             { "Visuals", "Player Outlines", "Visuals", "Cold War", "Player Outlines", "Player Outlines" },
             { "Sunset", "Module List", "Sunset", "Cold War", "Module List", "Module List" },
@@ -9528,9 +9530,6 @@ function BedWars.BuildUI(boardGame)
     }, header)
     makeDraggable(board, dragHandle)
 end
-if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
-    BedWars.BuildUI()
-end
 
 
 
@@ -9698,6 +9697,11 @@ function RivalsAim.Setup()
         local humanoid = model:FindFirstChildOfClass("Humanoid")
         if humanoid and humanoid.Health <= 0 then return end
         return entity
+    end
+    function RivalsAim.VisualModel(player)
+        if not controller then return end
+        local entity = enemyEntity(player, controller.LocalFighter, true)
+        return entity and entity.Model
     end
     local function closestTarget(localFighter, options)
         options = options or RivalsAim
@@ -10045,7 +10049,8 @@ function RivalsAim.Setup()
             and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn) then
             for _, player in ipairs(Players:GetPlayers()) do
                 local ok, entity = pcall(enemyEntity, player, fighter, true)
-                if ok and entity then
+                if ok and entity and (not Settings.PlayerESP or not Settings.PlayerESP.Rivals
+                    or Settings.PlayerESP.Rivals.Allow(player, entity.Model, camera)) then
                     local model = entity.Model
                     seen[model] = true
                     local entry = visualEntries[model]
@@ -10066,7 +10071,8 @@ function RivalsAim.Setup()
                     entry.Highlight.OutlineColor = RivalsVisuals.OutlineColor
                     entry.Stroke.Color = RivalsVisuals.BoxColor
                     entry.Box.Visible = false
-                    if RivalsVisuals.BoxesOn then
+                    if RivalsVisuals.BoxesOn and (not Settings.PlayerESP or not Settings.PlayerESP.Rivals
+                        or not Settings.PlayerESP.Rivals.Available) then
                         local projected, x, y, width, height = pcall(function()
                             local frame, size = model:GetBoundingBox()
                             return projectBounds(camera, frame, size)
@@ -10303,13 +10309,7 @@ function RivalsAim.BuildUI()
     Elements.ColorPicker(outlines, "Color", RivalsVisuals.OutlineColor, function(color)
         RivalsVisuals.OutlineColor = color
     end)
-    local boxes = gameSection("Rivals", VisualsTab.Left, "ESP Boxes")
-    Elements.Toggle(boxes, "ESP Boxes", false, function(on)
-        RivalsVisuals.BoxesOn = on
-    end)
-    Elements.ColorPicker(boxes, "Color", RivalsVisuals.BoxColor, function(color)
-        RivalsVisuals.BoxColor = color
-    end)
+    Settings.SetupPlayerESP("Rivals", RivalsAim.VisualModel)
     local targetHUD = gameSection("Rivals", VisualsTab.Left, "Target HUD")
     Elements.Toggle(targetHUD, "Target HUD", false, function(on)
         RivalsVisuals.TargetHUDOn = on
@@ -10392,19 +10392,262 @@ function RivalsAim.BuildUI()
     BedWars.BuildUI("Rivals")
 end
 
-if game.PlaceId == 17625359962 or game.GameId == 6035872082 then
-    RivalsView.Setup()
-    RivalsSpeed.Setup()
-    RivalsFOV.Setup()
-    RivalsAim.Setup()
-    RivalsAim.BuildUI()
+
+function Settings.SetupColdWarAim(playerModel)
+    local previous = ENV.SunsetColdWarAimHook
+    if type(previous) == "table" and type(previous.Restore) == "function" then
+        pcall(previous.Restore)
+    end
+    local aim = { Enabled = false, AimPart = "Head", WallCheck = true,
+        Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false }
+    Settings.ColdWarAim = aim
+    local state = { Destroyed = false }
+    ENV.SunsetColdWarAimHook = state
+    local api, field, original, wrapper, trajectory, weaponSource
+    local pending, nextRetry = false, 0
+    local drawing = type(ENV.Drawing) == "table" and ENV.Drawing or Drawing
+    local circle
+    local function vector(v)
+        if typeof(v) ~= "Vector3" then return false end
+        for _, n in ipairs({ v.X, v.Y, v.Z }) do
+            if n ~= n or math.abs(n) == math.huge then return false end
+        end
+        return v.Magnitude > 1e-6
+    end
+    local function restoreHandler()
+        if api and api[field] == wrapper then api[field] = original end
+        api, field, original, wrapper = nil, nil, nil, nil
+    end
+    function state.Restore()
+        state.Destroyed = true
+        aim.Enabled = false
+        restoreHandler()
+        if circle then pcall(function() circle:Remove() end) circle = nil end
+    end
+    track({ Disconnect = state.Restore })
+    local function loadedRequire(module)
+        if not module or not module:IsA("ModuleScript") or not rivalsModuleLoaded(module) then
+            error("Wait for Cold War to finish loading before enabling Silent Aim", 0)
+        end
+        local getIdentity = getthreadidentity or getidentity
+        local setIdentity = setthreadidentity or setidentity
+        if type(getIdentity) ~= "function" or type(setIdentity) ~= "function" then
+            return require(module)
+        end
+        local identity = getIdentity()
+        setIdentity(2)
+        local result = table.pack(pcall(require, module))
+        local restored, err = pcall(setIdentity, identity)
+        if not restored then error(err, 0) end
+        if not result[1] then error(result[2], 0) end
+        return result[2]
+    end
+    local function makeTrajectory(origin, direction, weapon)
+        return trajectory.new({ Origin = origin, Direction = direction,
+            MuzzleSpeed = weapon.MuzzleSpeed, K = weapon.K })
+    end
+    local function solve(origin, target, weapon, velocity)
+        local tr = makeTrajectory(origin, Vector3.new(0, 0, -1), weapon)
+        local time = trajectory.GetTimeForDistance(tr, (target - origin).Magnitude)
+        local delta
+        for _ = 1, 6 do
+            if type(time) ~= "number" or time ~= time or time <= 0 or time > 10 then return end
+            delta = target + velocity * time - origin + Vector3.new(0, tr.Gravity * 0.5 * time * time, 0)
+            if not vector(delta) then return end
+            time = trajectory.GetTimeForDistance(tr, delta.Magnitude)
+        end
+        if type(time) == "number" and time == time and time > 0 and time <= 10 then
+            return delta.Unit, time
+        end
+    end
+    local function clearArc(origin, direction, time, params, model)
+        if not aim.WallCheck then return true end
+        local tr = makeTrajectory(origin, direction, params.Weapon)
+        local last = origin
+        for i = 1, 12 do
+            local position = trajectory.GetPositionAtTime(tr, time * i / 12)
+            local hit = workspace:Raycast(last, position - last, params.RaycastParams)
+            if hit then return hit.Instance:IsDescendantOf(model) end
+            last = position
+        end
+        return true
+    end
+    function aim.Resolve(tool, muzzle, bullet, origin, direction)
+        local camera = workspace.CurrentCamera
+        if not camera or not vector(direction) then return end
+        local params = weaponSource.toFireParams({ Tool = tool, MuzzleIndex = muzzle,
+            BulletIndex = bullet, Origin = origin, Direction = direction, Owner = LocalPlayer })
+        if type(params) ~= "table" or type(params.Weapon) ~= "table"
+            or type(params.Weapon.MuzzleSpeed) ~= "number" or params.Weapon.MuzzleSpeed <= 0
+            or params.Weapon.Explosive or not params.RaycastParams then return end
+        local localTeam = LocalPlayer.Team and LocalPlayer.Team.Name
+        if localTeam ~= "NATO" and localTeam ~= "PACT" then return end
+        local center = camera.ViewportSize * 0.5
+        local candidates = {}
+        for _, player in ipairs(Players:GetPlayers()) do
+            local team = player.Team and player.Team.Name
+            if player ~= LocalPlayer and team ~= localTeam and (team == "NATO" or team == "PACT") then
+                local model = playerModel(player)
+                if model and not model:FindFirstChildOfClass("ForceField") then
+                    local values = model:FindFirstChild("CharacterValues")
+                    local unconscious = values and values:FindFirstChild("Unconscious")
+                    if not unconscious or unconscious.Value ~= true then
+                        local names = aim.AimPart == "Nearest" and { "Head", "Torso", "UpperTorso" }
+                            or aim.AimPart == "Torso" and { "Torso", "UpperTorso" } or { "Head" }
+                        local bestPart, bestDistance
+                        for _, name in ipairs(names) do
+                            local part = model:FindFirstChild(name)
+                            if part and part:IsA("BasePart") and (part.Position - origin).Magnitude <= aim.MaxDistance then
+                                local screen, onScreen = camera:WorldToViewportPoint(part.Position)
+                                local distance = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+                                if onScreen and screen.Z > 0 and distance <= aim.Radius
+                                    and (not bestDistance or distance < bestDistance) then
+                                    bestPart, bestDistance = part, distance
+                                end
+                            end
+                        end
+                        if bestPart then
+                            table.insert(candidates, { Model = model, Part = bestPart, Distance = bestDistance })
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(candidates, function(a, b) return a.Distance < b.Distance end)
+        for i = 1, math.min(3, #candidates) do
+            local candidate = candidates[i]
+            local root = candidate.Model:FindFirstChild("HumanoidRootPart") or candidate.Part
+            local velocity = Vector3.new()
+            if aim.Prediction then
+                local v = root.AssemblyLinearVelocity
+                if vector(v) and v.Magnitude <= 80 then velocity = v end
+            end
+            local selected, time = solve(origin, candidate.Part.Position, params.Weapon, velocity)
+            if selected and clearArc(origin, selected, time, params, candidate.Model) then
+                return selected
+            end
+        end
+    end
+    local function redirected(directions, selected)
+        -- Rotate the volley together so shotgun spread and direction magnitudes survive.
+        local from, to = directions[1].Unit, selected.Unit
+        local axis = from:Cross(to)
+        local sine, cosine = axis.Magnitude, math.clamp(from:Dot(to), -1, 1)
+        if sine < 1e-6 and cosine < 0 then
+            axis = from:Cross(math.abs(from.X) < 0.9 and Vector3.new(1, 0, 0) or Vector3.new(0, 1, 0)).Unit
+        elseif sine >= 1e-6 then axis = axis.Unit end
+        local result = table.clone(directions)
+        for i, value in ipairs(directions) do
+            if not vector(value) then return end
+            result[i] = sine < 1e-6 and cosine > 0 and value
+                or value * cosine + axis:Cross(value) * sine + axis * (axis:Dot(value) * (1 - cosine))
+        end
+        return result
+    end
+    local function install()
+        if api and api[field] == wrapper then return true end
+        restoreHandler()
+        local shared = ReplicatedStorage:FindFirstChild("Shared")
+        local ballistics = shared and shared:FindFirstChild("Ballistics")
+        local sources = ballistics and ballistics:FindFirstChild("Sources")
+        local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+        local client = scripts and scripts:FindFirstChild("BallisticsClient")
+        local tr = loadedRequire(ballistics and ballistics:FindFirstChild("Trajectory"))
+        local ws = loadedRequire(sources and sources:FindFirstChild("WeaponSource"))
+        local cf = loadedRequire(client and client:FindFirstChild("ClientFire"))
+        if type(tr) ~= "table" or type(tr.new) ~= "function" or type(tr.GetTimeForDistance) ~= "function"
+            or type(tr.GetPositionAtTime) ~= "function" or type(ws) ~= "table"
+            or type(ws.toFireParams) ~= "function" or type(cf) ~= "table" then
+            error("Cold War firing modules are unavailable", 0)
+        end
+        local key
+        for name, value in pairs(cf) do
+            if name ~= "fire" and type(value) == "function" then
+                if key then error("Cold War firing interface has changed", 0) end
+                key = name
+            end
+        end
+        if not key then error("Cold War firing interface is unavailable", 0) end
+        if not aim.Enabled or state.Destroyed then return false end
+        trajectory, weaponSource = tr, ws
+        api, field, original = cf, key, cf[key]
+        local native = original
+        wrapper = function(tool, muzzle, bullet, origin, directions, opts, ...)
+            if aim.Enabled and not state.Destroyed and Settings.SelectedGame == "Cold War"
+                and not anyMenuVisible() and opts == nil and typeof(tool) == "Instance"
+                and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
+                local ok, result = pcall(function()
+                    local selected = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
+                    return selected and redirected(directions, selected)
+                end)
+                if ok and result then directions = result end
+            end
+            return native(tool, muzzle, bullet, origin, directions, opts, ...)
+        end
+        api[field] = wrapper
+        return true
+    end
+    function aim.TryInstall()
+        if pending or not aim.Enabled or state.Destroyed then return end
+        pending = true
+        nextRetry = os.clock() + 1
+        task.spawn(function()
+            local ok, result = pcall(install)
+            pending = false
+            aim.Available = ok and result == true
+            local message = not ok and tostring(result) or nil
+            if message and message ~= aim.LoadError then warn("[Rift] Silent Aim: " .. message) end
+            aim.LoadError = message
+        end)
+    end
+    function aim.SetEnabled(on)
+        aim.Enabled = on == true and not state.Destroyed
+        if aim.Enabled then aim.TryInstall() else aim.Available = false restoreHandler() end
+    end
+    function aim.Update()
+        if state.Destroyed then return end
+        if aim.Enabled and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
+        local camera = workspace.CurrentCamera
+        local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not anyMenuVisible()
+        if visible and not circle and type(drawing) == "table" and type(drawing.new) == "function" then
+            local ok, object = pcall(drawing.new, "Circle")
+            if ok then circle = object end
+        end
+        if circle then
+            local ok = pcall(function()
+                circle.Visible = visible == true
+                circle.Filled, circle.Thickness, circle.NumSides = false, 1.5, 96
+                circle.Transparency, circle.Color = 1, Color3.fromRGB(139, 92, 246)
+                circle.Radius = aim.Radius
+                if camera then circle.Position = camera.ViewportSize * 0.5 end
+            end)
+            if not ok then pcall(function() circle:Remove() end) circle = nil end
+        end
+    end
+    track(RunService.RenderStepped:Connect(aim.Update))
+    local section = gameSection("Cold War", AimTab.Left, "Silent Aim")
+    Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Nearest" }, "Head", function(value) aim.AimPart = value end)
+    aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
+    Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
+    Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
+    Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
+    local fov = gameSection("Cold War", VisualsTab.Left, "FOV Circle")
+    Elements.Toggle(fov, "FOV Circle", false, function(on) aim.FOVVisible = on aim.Update() end)
+    Elements.Slider(fov, "Radius", 50, 1500, 150, " px", function(value) aim.Radius = value aim.Update() end)
 end
 
-function Settings.SetupColdWar()
-    Settings.StartupStage("Loading Cold War visuals...")
-    local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true,
-        BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
-    Settings.ColdWarVisuals = options
+function Settings.SetupPlayerESP(gameName, resolveModel)
+    if gameName == "Cold War" then Settings.StartupStage("Loading Cold War visuals...") end
+    local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true, DrawBoxes = true,
+        HealthOn = true, ClassOn = true, InfoOn = true, FlagsOn = true, LimbsOn = false,
+        SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
+        VisibleOnly = false, DimHidden = true, MaxDistance = 1000, TextSize = 13,
+        VehiclesOn = true, EmptyVehicles = false,
+        BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 214, 90),
+        TeamColor = Color3.fromRGB(90, 160, 255), OutlineColor = Color3.fromRGB(77, 224, 208) }
+    Settings.PlayerESP = Settings.PlayerESP or {}
+    Settings.PlayerESP[gameName] = options
+    if gameName == "Cold War" then Settings.ColdWarVisuals = options end
     local drawing = type(ENV.Drawing) == "table" and ENV.Drawing or Drawing
     options.Available = type(drawing) == "table" and type(drawing.new) == "function"
     local bodyParts = { "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
@@ -10412,6 +10655,12 @@ function Settings.SetupColdWar()
         "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg",
         "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot" }
     local entries = {}
+    local vehicles = {}
+    local visibility = setmetatable({}, { __mode = "k" })
+    local metersPerStud = 0.28
+    local visibilityParams = RaycastParams.new()
+    visibilityParams.FilterType = Enum.RaycastFilterType.Exclude
+    visibilityParams.IgnoreWater = true
     local destroyed = false
     local function make(kind, properties)
         local object = drawing.new(kind)
@@ -10430,16 +10679,18 @@ function Settings.SetupColdWar()
         if not entry then return end
         removeDrawing(entry.Box)
         removeDrawing(entry.Name)
+        for _, object in pairs(entry.Extras) do removeDrawing(object) end
         for _, outline in pairs(entry.Outlines) do removeDrawing(outline) end
         entries[player] = nil
     end
     local function hide(entry)
         entry.Box.Visible, entry.Name.Visible = false, false
         for _, outline in pairs(entry.Outlines) do outline.Visible = false end
+        for _, object in pairs(entry.Extras) do object.Visible = false end
     end
     local function playerModel(player)
         if player == LocalPlayer then return end
-        local model = player.Character
+        local model = resolveModel and resolveModel(player) or player.Character
         if not model or not model:IsDescendantOf(workspace) then return end
         if model:GetAttribute("Ragdolled") == true then return end
         local head = model:FindFirstChild("Head")
@@ -10459,26 +10710,187 @@ function Settings.SetupColdWar()
         end
         return model
     end
+    function options.Allow(player, model, camera)
+        if not camera then return false end
+        local head = model:FindFirstChild("Head")
+        if not head or not head:IsA("BasePart") then return false end
+        local distance = (head.Position - camera.CFrame.Position).Magnitude * metersPerStud
+        if distance > options.MaxDistance then return false end
+        local teammate = LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team
+        if gameName == "Rivals" then
+            local mine, theirs = LocalPlayer:GetAttribute("TeamID"), player:GetAttribute("TeamID")
+            if mine ~= nil and theirs ~= nil then teammate = mine == theirs end
+        end
+        if teammate and not options.ShowTeammates then return false end
+        local cache = visibility[player]
+        if not cache or cache.Model ~= model or os.clock() >= cache.Next then
+            local filter = { camera }
+            if LocalPlayer.Character then table.insert(filter, LocalPlayer.Character) end
+            local ignore = type(workspace.FindFirstChild) == "function" and workspace:FindFirstChild("Ignore")
+            if ignore then table.insert(filter, ignore) end
+            visibilityParams.FilterDescendantsInstances = filter
+            local ok, hit = pcall(workspace.Raycast, workspace, camera.CFrame.Position,
+                head.Position - camera.CFrame.Position, visibilityParams)
+            if not ok then return false end
+            cache = { Model = model, Visible = not hit or hit.Instance:IsDescendantOf(model), Next = os.clock() + 0.12 }
+            visibility[player] = cache
+        end
+        return (teammate or not options.VisibleOnly or cache.Visible), teammate, distance, cache.Visible
+    end
     local function applyPlayer(player, model, camera)
         local entry = entries[player]
         if entry and entry.Model ~= model then remove(player) entry = nil end
         if not entry then
-            entry = { Model = model, Outlines = {} }
+            entry = { Model = model, Outlines = {}, Extras = {}, HealthMaximum = {} }
             entries[player] = entry
             entry.Box = make("Square", { Filled = false, Thickness = 1.5, ZIndex = 2, Transparency = 1 })
             entry.Name = make("Text", { Size = 13, Center = true, Outline = true, ZIndex = 3, Transparency = 1 })
         end
         hide(entry)
-        local frame, size = model:GetBoundingBox()
-        local x, y, width, height = projectBounds(camera, frame, size)
+        local head = model:FindFirstChild("Head")
+        local allowed, teammate, distance, visible = options.Allow(player, model, camera)
+        if not allowed then return end
+        local color = teammate and options.TeamColor or visible and options.VisibleColor or options.BoxColor
+        local alpha = not teammate and not visible and options.DimHidden and 0.55 or 1
+        local x, y, width, height
+        local left = model:FindFirstChild("Left Leg") or model:FindFirstChild("LeftFoot")
+        local right = model:FindFirstChild("Right Leg") or model:FindFirstChild("RightFoot")
+        local foot = left and right and (left.Position.Y <= right.Position.Y and left or right) or left or right
+        if foot and foot:IsA("BasePart") then
+            local top = camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.3, 0))
+            local bottom = camera:WorldToViewportPoint(foot.Position - Vector3.new(0, foot.Size.Y / 2, 0))
+            if top.Z > 0 and bottom.Z > 0 then
+                height = math.abs(bottom.Y - top.Y)
+                width = math.max(height * 0.5, math.abs(bottom.X - top.X))
+                x, y = (top.X + bottom.X) / 2 - width / 2, math.min(top.Y, bottom.Y)
+                if width < 1 or height < 1 or x + width < 0 or y + height < 0
+                    or x > camera.ViewportSize.X or y > camera.ViewportSize.Y then x = nil end
+            end
+        else
+            local frame, size = model:GetBoundingBox()
+            x, y, width, height = projectBounds(camera, frame, size)
+        end
         if not x then return end
-        entry.Box.Color = options.BoxColor
+        entry.Box.Color, entry.Box.Transparency = color, alpha
         entry.Box.Position, entry.Box.Size = Vector2.new(x, y), Vector2.new(width, height)
-        entry.Box.Visible = options.BoxesOn
-        entry.Name.Color = options.BoxColor
+        entry.Box.Visible = options.BoxesOn and options.DrawBoxes
+        entry.Name.Color, entry.Name.Transparency, entry.Name.Size = color, alpha, options.TextSize
         entry.Name.Text = player.DisplayName or player.Name
-        entry.Name.Position = Vector2.new(x + width / 2, y - 18)
+        entry.Name.Position = Vector2.new(x + width / 2, y - options.TextSize - 3)
         entry.Name.Visible = options.BoxesOn and options.NamesOn
+        local function shape(key, kind, properties)
+            if not entry.Extras[key] then entry.Extras[key] = make(kind, properties) end
+            return entry.Extras[key]
+        end
+        if options.BoxesOn and options.DrawBoxes then
+            local shadow = shape("BoxBorder", "Square", { Filled = false, Thickness = 3, ZIndex = 0 })
+            shadow.Position, shadow.Size = entry.Box.Position, entry.Box.Size
+            shadow.Color, shadow.Transparency, shadow.Visible = Color3.fromRGB(0, 0, 0), 0.6 * alpha, true
+        end
+        local function text(key, value, px, py, enabled)
+            if not options.BoxesOn or not enabled or value == "" then return end
+            local object = shape(key, "Text", { Center = key ~= "Flags", Outline = true, ZIndex = 3 })
+            object.Text, object.Position = value, Vector2.new(px, py)
+            object.Color, object.Size, object.Transparency, object.Visible = color, options.TextSize, alpha, true
+        end
+        local hp, maximum = 0, 0
+        local headHealth, torsoHealth
+        for _, name in ipairs(bodyParts) do
+            local part = model:FindFirstChild(name)
+            local health = part and part:FindFirstChild("Health")
+            if health and health:IsA("NumberValue") then
+                local value = math.max(0, health.Value)
+                local cap = health:GetAttribute("MaxHealth")
+                if type(cap) ~= "number" or cap <= 0 then
+                    cap = math.max(value, entry.HealthMaximum[part] or 0)
+                end
+                entry.HealthMaximum[part] = cap
+                hp, maximum = hp + value, maximum + cap
+                if name == "Head" then headHealth = value end
+                if name == "Torso" or name == "UpperTorso" then torsoHealth = value end
+            end
+        end
+        if maximum == 0 then
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            if humanoid then hp, maximum = humanoid.Health, humanoid.MaxHealth or 0 end
+        end
+        if options.BoxesOn and options.HealthOn and maximum > 0 then
+            local fraction = math.clamp(hp / maximum, 0, 1)
+            local bg = shape("HealthBg", "Square", { Filled = true, ZIndex = 4 })
+            local bar = shape("Health", "Square", { Filled = true, ZIndex = 5 })
+            bg.Position, bg.Size, bg.Color = Vector2.new(x - 6, y), Vector2.new(3, height), Color3.fromRGB(15, 15, 20)
+            bar.Position, bar.Size = Vector2.new(x - 6, y + height * (1 - fraction)), Vector2.new(3, height * fraction)
+            bar.Color = Color3.fromRGB(255, 70, 70):Lerp(Color3.fromRGB(90, 235, 110), fraction)
+            bg.Transparency, bar.Transparency, bg.Visible, bar.Visible = alpha, alpha, true, fraction > 0
+        end
+        local role = player:GetAttribute("ClassName")
+        if type(role) ~= "string" or role == "" then role = player:GetAttribute("ClassType") end
+        if type(role) == "string" then
+            for _ = 1, 3 do
+                for _, prefix in ipairs({ "EastGerman", "WestGer", "NavySeals", "DeltaForce", "Soviet", "Polish",
+                    "Czech", "French", "Spetsnaz", "Reserve", "VDV", "VMF", "GRU", "US", "UK", "NG" }) do
+                    if role:sub(1, #prefix) == prefix and #role > #prefix then role = role:sub(#prefix + 1) end
+                end
+            end
+        end
+        text("Role", type(role) == "string" and role or "", x + width / 2, y - options.TextSize * 2 - 5, options.ClassOn)
+        local info = {}
+        if options.InfoOn then
+            table.insert(info, tostring(math.floor(distance)) .. "m")
+            local tool = model:FindFirstChildOfClass("Tool")
+            if tool then table.insert(info, tool.Name) else
+                for _, child in ipairs(model:GetChildren()) do
+                    if child:IsA("Model") and child.Name:sub(-5) == "Model" then
+                        table.insert(info, child.Name:sub(1, -6)) break
+                    end
+                end
+            end
+        end
+        if options.LimbsOn then
+            table.insert(info, "H" .. tostring(math.floor(headHealth or 0)) .. " T" .. tostring(math.floor(torsoHealth or 0)))
+        end
+        text("Info", table.concat(info, "  "), x + width / 2, y + height + 2, options.InfoOn or options.LimbsOn)
+        local flags = {}
+        local values = model:FindFirstChild("CharacterValues")
+        local unconscious = values and values:FindFirstChild("Unconscious")
+        if unconscious and unconscious.Value == true then table.insert(flags, "DOWNED") end
+        if model:FindFirstChildOfClass("ForceField") then table.insert(flags, "SPAWN") end
+        if model:GetAttribute("DisguiseName") ~= nil then table.insert(flags, "DISGUISED") end
+        if model:GetAttribute("InVehicle") ~= nil then table.insert(flags, "VEHICLE") end
+        text("Flags", table.concat(flags, "\n"), x + width + 4, y, options.FlagsOn)
+        local function line(key, a, b)
+            local pa, pb = camera:WorldToViewportPoint(a), camera:WorldToViewportPoint(b)
+            if pa.Z <= 0 or pb.Z <= 0 then return end
+            local object = shape(key, "Line", { Thickness = 1, ZIndex = 3 })
+            object.From, object.To = Vector2.new(pa.X, pa.Y), Vector2.new(pb.X, pb.Y)
+            object.Color, object.Transparency, object.Visible = color, alpha, true
+        end
+        if options.BoxesOn and options.SkeletonOn then
+            local pairsOfParts = { { "Head", "Torso" }, { "Torso", "Left Arm" }, { "Torso", "Right Arm" },
+                { "Torso", "Left Leg" }, { "Torso", "Right Leg" }, { "Head", "UpperTorso" },
+                { "UpperTorso", "LowerTorso" }, { "UpperTorso", "LeftUpperArm" }, { "LeftUpperArm", "LeftLowerArm" },
+                { "LeftLowerArm", "LeftHand" }, { "UpperTorso", "RightUpperArm" }, { "RightUpperArm", "RightLowerArm" },
+                { "RightLowerArm", "RightHand" }, { "LowerTorso", "LeftUpperLeg" }, { "LeftUpperLeg", "LeftLowerLeg" },
+                { "LeftLowerLeg", "LeftFoot" }, { "LowerTorso", "RightUpperLeg" }, { "RightUpperLeg", "RightLowerLeg" },
+                { "RightLowerLeg", "RightFoot" } }
+            for i, pair in ipairs(pairsOfParts) do
+                local a, b = model:FindFirstChild(pair[1]), model:FindFirstChild(pair[2])
+                if a and b and a:IsA("BasePart") and b:IsA("BasePart") then line("Bone" .. i, a.Position, b.Position) end
+            end
+        end
+        if options.BoxesOn and options.TracersOn then
+            local tracer = shape("Tracer", "Line", { Thickness = 1, ZIndex = 3 })
+            tracer.From, tracer.To = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y), Vector2.new(x + width / 2, y + height)
+            tracer.Color, tracer.Transparency, tracer.Visible = color, alpha, true
+        end
+        if options.BoxesOn and options.HeadDotOn then
+            local screen = camera:WorldToViewportPoint(head.Position)
+            if screen.Z > 0 then
+                local dot = shape("HeadDot", "Circle", { Filled = true, NumSides = 24, ZIndex = 3 })
+                dot.Position, dot.Radius = Vector2.new(screen.X, screen.Y), math.max(2, height * 0.07)
+                dot.Color, dot.Transparency, dot.Visible = color, alpha, true
+            end
+        end
         if options.OutlinesOn then
             for _, name in ipairs(bodyParts) do
                 local part = model:FindFirstChild(name)
@@ -10508,7 +10920,7 @@ function Settings.SetupColdWar()
         if destroyed then return end
         local seen = {}
         local camera = workspace.CurrentCamera
-        if options.Available and Settings.SelectedGame == "Cold War" and camera and not anyMenuVisible()
+        if options.Available and Settings.SelectedGame == gameName and camera and not anyMenuVisible()
             and (options.BoxesOn or options.OutlinesOn) then
             for _, player in ipairs(Players:GetPlayers()) do
                 local ok, model = pcall(playerModel, player)
@@ -10520,28 +10932,87 @@ function Settings.SetupColdWar()
             end
         end
         for player in pairs(entries) do if not seen[player] then remove(player) end end
+        local vehicleFolder = type(workspace.FindFirstChild) == "function" and workspace:FindFirstChild("Vehicles")
+        local used = {}
+        if options.Available and options.BoxesOn and options.VehiclesOn and vehicleFolder and camera
+            and gameName == "Cold War" and Settings.SelectedGame == gameName and not anyMenuVisible() then
+            for _, model in ipairs(vehicleFolder:GetChildren()) do
+                pcall(function()
+                    local crew = model:GetAttribute("CrewTeam")
+                    local team = crew or model:GetAttribute("Team")
+                    local root = model:FindFirstChild("RootPart") or model.PrimaryPart
+                    local mine = LocalPlayer.Team and LocalPlayer.Team.Name
+                    if not model:IsA("Model") or model:GetAttribute("Wrecked") == true or not root
+                        or not root:IsA("BasePart") or (not crew and not options.EmptyVehicles)
+                        or (team ~= "NATO" and team ~= "PACT") or (team == mine and not options.ShowTeammates) then return end
+                    local distance = (root.Position - camera.CFrame.Position).Magnitude * metersPerStud
+                    if distance > options.MaxDistance then return end
+                    local screen, onScreen = camera:WorldToViewportPoint(root.Position + Vector3.new(0, 4, 0))
+                    if not onScreen or screen.Z <= 0 then return end
+                    local object = vehicles[model]
+                    if not object then
+                        object = make("Text", { Center = true, Outline = true, ZIndex = 3, Transparency = 1 })
+                        vehicles[model] = object
+                    end
+                    object.Text = tostring(model:GetAttribute("VehicleType") or model.Name) .. "  " .. math.floor(distance) .. "m"
+                    object.Position, object.Size = Vector2.new(screen.X, screen.Y), options.TextSize
+                    object.Color, object.Visible = team == mine and options.TeamColor or options.BoxColor, true
+                    used[model] = true
+                end)
+            end
+        end
+        for model, object in pairs(vehicles) do
+            if not used[model] then removeDrawing(object) vehicles[model] = nil end
+        end
     end
     track(RunService.RenderStepped:Connect(options.Apply))
     track({ Disconnect = function()
         destroyed = true
         options.BoxesOn, options.OutlinesOn = false, false
         for player in pairs(entries) do remove(player) end
+        for model, object in pairs(vehicles) do removeDrawing(object) vehicles[model] = nil end
     end })
-    local boxes = gameSection("Cold War", VisualsTab.Left, "ESP Boxes")
+    local boxes = gameSection(gameName, VisualsTab.Left, "ESP Boxes")
+    local visiblePicker
     if not options.Available then Elements.Label(boxes, "ESP unavailable in this executor.") end
     Elements.Toggle(boxes, "ESP Boxes", false, function(on)
         options.BoxesOn = on
+        if gameName == "Rivals" then RivalsVisuals.BoxesOn = on end
+        if gameName == "BedWars" then
+            Settings.EspEnabled = on
+            if on and not options.Available then ESP.Start() else ESP.Stop() end
+        end
         options.Apply()
     end)
     Elements.ColorPicker(boxes, "Color", options.BoxColor, function(color)
         options.BoxColor = color
+        options.VisibleColor = color
+        if visiblePicker then visiblePicker.Set(color) end
+        if gameName == "Rivals" then RivalsVisuals.BoxColor = color end
+        if gameName == "BedWars" then Settings.EspBoxColor = color end
         options.Apply()
     end)
     Elements.Toggle(boxes, "Show Names", true, function(on)
         options.NamesOn = on
+        if gameName == "BedWars" then Settings.EspNames = on end
         options.Apply()
     end)
-    local outlines = gameSection("Cold War", VisualsTab.Left, "Player Outlines")
+    visiblePicker = Elements.ColorPicker(boxes, "Visible Color", options.VisibleColor, function(color) options.VisibleColor = color options.Apply() end)
+    Elements.ColorPicker(boxes, "Team Color", options.TeamColor, function(color) options.TeamColor = color options.Apply() end)
+    for _, spec in ipairs({ { "Draw Boxes", "DrawBoxes" }, { "Health Bar", "HealthOn" },
+        { "Show Class", "ClassOn" }, { "Distance and Weapon", "InfoOn" }, { "Status Flags", "FlagsOn" },
+        { "Limb Health", "LimbsOn" }, { "Skeleton", "SkeletonOn" }, { "Tracers", "TracersOn" },
+        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" }, { "Visible Only", "VisibleOnly" },
+        { "Dim Hidden", "DimHidden" } }) do
+        local key = spec[2]
+        Elements.Toggle(boxes, spec[1], options[key], function(on) options[key] = on options.Apply() end)
+    end
+    Elements.Slider(boxes, "Max Distance", 25, 5000, 1000, "m", function(value) options.MaxDistance = value options.Apply() end)
+    Elements.Slider(boxes, "Text Size", 12, 24, 13, " px", function(value) options.TextSize = value options.Apply() end)
+    if gameName ~= "Cold War" then options.VehiclesOn = false return options, playerModel end
+    Elements.Toggle(boxes, "Vehicles", true, function(on) options.VehiclesOn = on options.Apply() end)
+    Elements.Toggle(boxes, "Empty Vehicles", false, function(on) options.EmptyVehicles = on options.Apply() end)
+    local outlines = gameSection(gameName, VisualsTab.Left, "Player Outlines")
     Elements.Toggle(outlines, "Player Outlines", false, function(on)
         options.OutlinesOn = on
         options.Apply()
@@ -10550,10 +11021,26 @@ function Settings.SetupColdWar()
         options.OutlineColor = color
         options.Apply()
     end)
+    return options, playerModel
+end
+
+function Settings.SetupColdWar()
+    local options, playerModel = Settings.SetupPlayerESP("Cold War")
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
+    Settings.SetupColdWarAim(playerModel)
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
+end
+if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
+    Settings.SetupPlayerESP("BedWars")
+    BedWars.BuildUI()
+elseif game.PlaceId == 17625359962 or game.GameId == 6035872082 then
+    RivalsView.Setup()
+    RivalsSpeed.Setup()
+    RivalsFOV.Setup()
+    RivalsAim.Setup()
+    RivalsAim.BuildUI()
 end
 if game.PlaceId == 13687899540 or game.GameId == 4750561026 then Settings.SetupColdWar() end
 
