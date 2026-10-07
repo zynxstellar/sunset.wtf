@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-visuals-chance-k283"
+local SUNSET_BUILD = "20261006-rift-coldwar-flight-k284"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9088,6 +9088,7 @@ function BedWars.BuildUI(boardGame)
     if isColdWar then
         specs = {
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
+            { "Movement", "Fly", "Movement", "Cold War", "Fly", "Fly" },
             { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
             { "Visuals", "Player Outlines", "Visuals", "Cold War", "Player Outlines", "Player Outlines" },
@@ -11210,6 +11211,17 @@ function Settings.SetupColdWar()
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
+    local flight = gameSection("Cold War", MainTab.Left, "Fly")
+    Elements.Toggle(flight, "Fly", false, function(on)
+        Settings.FlyEnabled = on
+        if on then Fly.Start() else Fly.Stop() end
+    end)
+    Elements.Slider(flight, "Speed", 10, 750, 50, "studs/s", function(value)
+        Settings.FlySpeed = value
+    end)
+    Elements.Slider(flight, "Coast On Disable", 0, 100, 50, "%", function(value)
+        Settings.FlyCoast = value / 100
+    end)
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
 end
