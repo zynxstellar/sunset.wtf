@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-reload-bar-k290"
+local SUNSET_BUILD = "20261006-rift-coldwar-ammo-k291"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9090,6 +9090,7 @@ function BedWars.BuildUI(boardGame)
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
             { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
+            { "Misc", "Spinbot", "Misc", "Cold War", "Spinbot", "Spinbot" },
             { "Visuals", "Reload Timer", "Visuals", "Cold War", "Reload Timer", "Reload Timer" },
             { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
@@ -10550,7 +10551,7 @@ function Settings.SetupColdWarAim(playerModel)
                 if part and part:IsA("BasePart") then
                     local selected, time = solve(origin, part.Position, params.Weapon, velocity)
                     if selected and clearArc(origin, selected, time, params, candidate.Model, velocity) then
-                        return selected
+                        return selected, nil, candidate.Model, part
                     end
                 end
             end
@@ -11221,7 +11222,8 @@ end
 function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
-    local auto = { ShootEnabled = false, ReloadEnabled = false, TimerEnabled = false, Current = nil }
+    local auto = { ShootEnabled = false, ReloadEnabled = false, TimerEnabled = false,
+        AmmoSaverEnabled = true, BurstRounds = 2, BurstPause = 0.25, Current = nil }
     Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
     local api, wielder
     local originals, wrappers = {}, {}
@@ -11354,12 +11356,19 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if not camera then return false end
         local aim = Settings.ColdWarAim
         if aim and aim.Enabled then
-            if not aim.Available then return false end
+            if not aim.Available or aim.HitChance <= 0 then return false end
             local bullet = muzzle:getBulletIndex()
             local attachment = muzzle.viewmodelAttachment or muzzle.attachment
             if not bullet or not attachment then return false end
-            return aim.Resolve(object.tool, object.currentMuzzleIndex, bullet,
-                attachment.WorldPosition, camera.CFrame.LookVector) ~= nil
+            local origin = attachment.WorldPosition
+            local direction, _, targetModel, targetPart = aim.Resolve(object.tool,
+                object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector)
+            if not direction or not targetModel or not targetPart then return false end
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = { LocalPlayer.Character, camera, workspace:FindFirstChild("Ignore") }
+            local hit = workspace:Raycast(origin, targetPart.Position - origin, params)
+            return not hit or hit.Instance:IsDescendantOf(targetModel)
         end
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
@@ -11437,6 +11446,12 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         local rate = config and tonumber(config.Firerate) or 600
         local interval = 60 / math.clamp(rate or 600, 1, 6000)
         if mode:find("burst", 1, true) then interval *= tonumber(mode:match("%d+")) or 3 end
+        if held and automatic and auto.AmmoSaverEnabled
+            and now - heldAt >= interval * (auto.BurstRounds - 0.5) then
+            release()
+            nextPull = now + auto.BurstPause
+            return
+        end
         if held and not automatic and now - heldAt >= interval then
             release() nextPull = now + 0.05 return
         end
@@ -11470,6 +11485,16 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if not on then release() end
         if not on and not auto.ReloadEnabled and not auto.TimerEnabled then detach() end
     end)
+    Elements.Toggle(shoot, "Ammo Saver", true, function(on)
+        auto.AmmoSaverEnabled = on
+        if not on then nextPull = 0 end
+    end)
+    Elements.Slider(shoot, "Burst Rounds", 1, 4, 2, " rounds", function(value)
+        auto.BurstRounds = value
+    end)
+    Elements.Slider(shoot, "Burst Pause", 100, 750, 250, "ms", function(value)
+        auto.BurstPause = value / 1000
+    end)
     local reload = gameSection("Cold War", AimTab.Left, "Auto Reload")
     Elements.Toggle(reload, "Auto Reload", false, function(on)
         auto.ReloadEnabled = on
@@ -11486,12 +11511,15 @@ end
 function Settings.SetupColdWarVisibility()
     local options = { NoFog = false, FullBright = false }
     Settings.ColdWarVisibility = options
-    local originalFog, originalBright, atmosphere, density
+    local originalFog, originalBright, atmosphere, density, haze
     local destroyed, nextRefresh = false, 0
     local function restoreFog()
         if originalFog ~= nil then Lighting.FogEnd = originalFog originalFog = nil end
-        if atmosphere and atmosphere.Parent and density ~= nil then atmosphere.Density = density end
-        atmosphere, density = nil, nil
+        if atmosphere and atmosphere.Parent and density ~= nil then
+            atmosphere.Density = density
+            atmosphere.Haze = haze
+        end
+        atmosphere, density, haze = nil, nil, nil
     end
     local function restoreBright()
         if originalBright then
@@ -11508,11 +11536,19 @@ function Settings.SetupColdWarVisibility()
             if originalFog == nil then originalFog = Lighting.FogEnd end
             local current = Lighting:FindFirstChildOfClass("Atmosphere")
             if current ~= atmosphere then
-                if atmosphere and atmosphere.Parent and density ~= nil then atmosphere.Density = density end
-                atmosphere, density = current, current and current.Density or nil
+                if atmosphere and atmosphere.Parent and density ~= nil then
+                    atmosphere.Density = density
+                    atmosphere.Haze = haze
+                end
+                atmosphere, density, haze = current, current and current.Density or nil,
+                    current and current.Haze or nil
             end
             Lighting.FogEnd = 1000000
-            if atmosphere then atmosphere.Density = 0 end
+            if atmosphere then
+                -- A zero-density atmosphere can briefly render a black sky while the game updates it.
+                atmosphere.Density = 0.01
+                atmosphere.Haze = 0
+            end
         else restoreFog() end
         if options.FullBright then
             if not originalBright then
@@ -11549,6 +11585,7 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarVisibility()
     Settings.SetupColdWarAutoWeapons(playerModel)
+    buildSpinbot(gameSection("Cold War", MiscTab.Left, "Spinbot"))
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
 end

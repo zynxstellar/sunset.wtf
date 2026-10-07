@@ -1119,13 +1119,16 @@ end
         if object:IsA("TextButton") and object.Name=="Check Silent Aim" then checkButton=object end
     end
     assert(checkButton==nil,"removed Cold War diagnostic card remains")
-    local foundBoxes,foundOutlines,kitColumn=false,false,false
+    local foundBoxes,foundOutlines,foundSpinbot,kitColumn=false,false,false,false
     for _,object in ipairs(board:GetDescendants()) do
         if object:IsA("TextButton") and object.Name=="ESP Boxes" then foundBoxes=true end
         if object:IsA("TextButton") and object.Name=="Player Outlines" then foundOutlines=true end
+        if object:IsA("TextButton") and object.Name=="Spinbot" then foundSpinbot=true end
         if object.Name=="KIT" then kitColumn=true end
     end
-    assert(foundBoxes and foundOutlines and not kitColumn,"Cold War visuals missing or BedWars kit controls leaked")
+    assert(foundBoxes and foundOutlines and foundSpinbot and not kitColumn,
+        "Cold War visuals or Spinbot missing, or BedWars kit controls leaked")
+    assert(findConfig("Misc/Cold War/Spinbot/Spinbot"),"Cold War Spinbot settings were not created")
     local boxesControl=findConfig("Visuals/Cold War/ESP Boxes/ESP Boxes")
     local outlinesControl=findConfig("Visuals/Cold War/Player Outlines/Player Outlines")
     assert(not boxesControl.Get() and not outlinesControl.Get() and not boxesControl.GetBind(),

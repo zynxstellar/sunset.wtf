@@ -80,26 +80,26 @@ connections[#connections].Disconnect()
 assert(secondCamera.FieldOfView==80 and #trails.Paths==0,"unload leaked FOV or trails")
 fire() trails.Update() assert(#trails.Queue==0,"unloaded observer recorded shots")
 print("PASS Cold War visuals: bounded trails, first collision, fade/expiry, disable/unload cleanup, FOV camera replacement and game switching")
-local currentAtmosphere={Parent=true,Density=0.4}
+local currentAtmosphere={Parent=true,Density=0.4,Haze=2}
 local Lighting={FogEnd=500,Brightness=1,Ambient="dim",OutdoorAmbient="dark",GlobalShadows=true,
     FindFirstChildOfClass=function() return currentAtmosphere end}
 -- INSERT_VISIBILITY
 Settings.SetupColdWarVisibility()
 local visibility=Settings.ColdWarVisibility
 controls["Visibility/No Fog"].Set(true)
-assert(Lighting.FogEnd==1000000 and currentAtmosphere.Density==0)
+assert(Lighting.FogEnd==1000000 and currentAtmosphere.Density==0.01 and currentAtmosphere.Haze==0)
 controls["Visibility/Full Bright"].Set(true)
 assert(Lighting.Brightness==4 and not Lighting.GlobalShadows)
-local replacement={Parent=true,Density=0.6}
+local replacement={Parent=true,Density=0.6,Haze=3}
 currentAtmosphere=replacement visibility.Update()
-assert(replacement.Density==0,"replacement atmosphere retained fog")
+assert(replacement.Density==0.01 and replacement.Haze==0,"replacement atmosphere retained fog")
 controls["Visibility/No Fog"].Set(false)
-assert(Lighting.FogEnd==500 and replacement.Density==0.6 and Lighting.Brightness==4)
+assert(Lighting.FogEnd==500 and replacement.Density==0.6 and replacement.Haze==3 and Lighting.Brightness==4)
 controls["Visibility/No Fog"].Set(true)
 Settings.SelectedGame="Rivals" visibility.Update()
-assert(Lighting.FogEnd==500 and Lighting.Brightness==1 and replacement.Density==0.6)
+assert(Lighting.FogEnd==500 and Lighting.Brightness==1 and replacement.Density==0.6 and replacement.Haze==3)
 Settings.SelectedGame="Cold War" visibility.Update()
 assert(Lighting.FogEnd==1000000 and Lighting.Brightness==4)
 connections[#connections].Disconnect()
-assert(Lighting.FogEnd==500 and Lighting.Brightness==1 and Lighting.GlobalShadows and replacement.Density==0.6)
+assert(Lighting.FogEnd==500 and Lighting.Brightness==1 and Lighting.GlobalShadows and replacement.Density==0.6 and replacement.Haze==3)
 print("PASS Cold War visibility: fog, brightness, atmosphere replacement, game switch, unload restoration")

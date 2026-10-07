@@ -149,6 +149,9 @@ assert(serviceCalls>0,"Cold War did not resolve storage through the Roblox servi
 assert(controls["Cold War/Silent Aim/Check Silent Aim"]==nil,"removed diagnostic button remains")
 local tool=object("Rifle","Tool")
 local origin=Vector3.new()
+local _,_,resolvedModel,resolvedPart=aim.Resolve(object("Rifle","Tool"),2,3,origin,Vector3.new(0,0,1))
+assert(resolvedModel==enemy.Character and resolvedPart==enemy.Character:FindFirstChild("Head"),
+    "Auto Shoot did not receive the selected model and part for its ground check")
 local directions={Vector3.new(0,0,1),Vector3.new(0.03,0.01,1),Metadata="native metadata"}
 local readonlyDirections=false
 local function fire(opts)

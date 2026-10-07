@@ -7,7 +7,7 @@ local function instance(name,parent)
     return obj
 end
 local function typeof(v) return type(v)=="table" and v.Kind or type(v) end
-local vecmeta={__mul=function(a,b) return a end}
+local vecmeta={__mul=function(a,b) return a end,__sub=function(a,b) return a end}
 local vector=setmetatable({},vecmeta)
 local storage=instance("Storage")
 local client=instance("Client",storage)
@@ -57,7 +57,7 @@ local function require(module)
     return module==weaponModule and weapon or wielder
 end
 local ENV={getgc=function() return {current} end}
-local Settings={SelectedGame="Cold War",ColdWarAim={Enabled=false,MaxDistance=1000}}
+local Settings={SelectedGame="Cold War",ColdWarAim={Enabled=false,MaxDistance=1000,HitChance=100}}
 local tasks={}
 local task={spawn=function(fn) table.insert(tasks,fn) end}
 local function finishTasks() local q=tasks tasks={} for _,f in ipairs(q) do f() end end
@@ -80,11 +80,13 @@ local controls={}
 local AimTab={Left={}}
 local VisualsTab={Left={}}
 local function gameSection(_,_,name) return name end
-local Elements={Toggle=function(s,n,d,fn) controls[n]=fn end}
+local Elements={Toggle=function(s,n,d,fn) controls[n]=fn end,
+    Slider=function(s,n,min,max,default,suffix,fn) controls[n]=fn end}
 local function model(player) return not player.Dead and player.Character end
 -- INSERT_AUTO_WEAPONS
 Settings.SetupColdWarAutoWeapons(model)
 local auto=Settings.ColdWarAutoWeapons
+controls["Ammo Saver"](false)
 local function step() now+=0.1 auto.Update() assert(identity==8,"native action leaked identity") end
 step() assert(requireCount==0,"disabled modules were initialized")
 controls["Auto Shoot"](true) step() assert(requireCount==0)
@@ -116,8 +118,14 @@ empty=false loaded=true mode="Auto"
 local beforeAim=starts
 Settings.ColdWarAim.Enabled=true Settings.ColdWarAim.Available=true
 local aimTarget=false
-Settings.ColdWarAim.Resolve=function(t,mi,bi,o,d) assert(t==tool and mi==1 and bi==1) return aimTarget and vector or nil end
+Settings.ColdWarAim.Resolve=function(t,mi,bi,o,d)
+    assert(t==tool and mi==1 and bi==1)
+    if aimTarget then return vector,nil,enemyModel,{Position=vector} end
+end
 step() assert(starts==beforeAim,"missing Silent Aim target triggered a shot")
+aimTarget=true hit=instance("Ground") step()
+assert(starts==beforeAim,"Auto Shoot fired through the ground")
+hit=instance("Head",enemyModel)
 aimTarget=true step() assert(starts==beforeAim+1,"Silent Aim target did not trigger")
 controls["Auto Shoot"](false)
 local nativeEquip=weapon.equip
@@ -138,6 +146,7 @@ local count=starts step() assert(starts==count,"unloaded automation ran")
 weapon.equip=nativeEquip
 ENV.getgc=nil
 Settings.SetupColdWarAutoWeapons(model) auto=Settings.ColdWarAutoWeapons
+controls["Ammo Saver"](false)
 controls["Auto Shoot"](true) now+=2 step()
 assert(auto.Current==nil,"instance was invented without enumeration")
 local result=table.pack(weapon.equip(current))
@@ -160,5 +169,11 @@ now+=1 step() assert(math.abs(auto.ReloadRemaining-0.9)<0.01,"reload timer did n
 assert(coroutine.resume(reloadThread))
 step() assert(auto.TimerEnabled and auto.Current==current,"completed reload disrupted weapon capture")
 controls["Reload Timer"](false)
+controls["Ammo Saver"](true)
+local priorStops=stops
+for _=1,4 do step() end
+assert(stops>priorStops,"Ammo Saver did not release an automatic burst")
+local priorStarts=starts
+step() assert(starts==priorStarts,"Ammo Saver ignored the burst pause")
 auto.Restore()
 print("PASS auto weapons: deferred loaded modules, existing/equipped gun capture, native returns/yields, auto/semi trigger, target/team/wall/menu/input filters, chamber/reserve checks, reload throttle/cancellation, identity restoration, foreign-hook-safe unload")
