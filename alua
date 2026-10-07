@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-visuals-k287"
+local SUNSET_BUILD = "20261006-rift-classic-esp-k288"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10691,7 +10691,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true, DrawBoxes = true,
         HealthOn = true, ClassOn = true, InfoOn = true, FlagsOn = true, LimbsOn = false,
         SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
-        VisibleOnly = false, DimHidden = false, MaxDistance = 1000, UnlimitedDistance = false, TextSize = 13,
+        VisibleOnly = false, DimHidden = true, MaxDistance = 1000, TextSize = 13,
         VehiclesOn = true, EmptyVehicles = false,
         UsePlayerColors = true, VisibilityInterval = 1 / 60,
         NameColor = Color3.fromRGB(240, 240, 240), ClassColor = Color3.fromRGB(240, 240, 240),
@@ -10700,8 +10700,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         HeadDotColor = Color3.fromRGB(255, 86, 86), VehicleColor = Color3.fromRGB(255, 160, 60),
         BorderColor = Color3.fromRGB(0, 0, 0), HealthLowColor = Color3.fromRGB(255, 70, 70),
         HealthHighColor = Color3.fromRGB(90, 235, 110), HealthBackgroundColor = Color3.fromRGB(15, 15, 20),
-        BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 86, 86),
-        HiddenColor = Color3.fromRGB(255, 214, 90),
+        BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 214, 90),
         TeamColor = Color3.fromRGB(90, 160, 255), OutlineColor = Color3.fromRGB(77, 224, 208) }
     Settings.PlayerESP = Settings.PlayerESP or {}
     Settings.PlayerESP[gameName] = options
@@ -10773,7 +10772,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         local head = model:FindFirstChild("Head")
         if not head or not head:IsA("BasePart") then return false end
         local distance = (head.Position - camera.CFrame.Position).Magnitude * metersPerStud
-        if not options.UnlimitedDistance and distance > options.MaxDistance then return false end
+        if distance > options.MaxDistance then return false end
         local teammate = LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team
         if gameName == "Rivals" then
             local mine, theirs = LocalPlayer:GetAttribute("TeamID"), player:GetAttribute("TeamID")
@@ -10789,11 +10788,11 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             visibilityParams.FilterDescendantsInstances = filter
             local ok, hit = pcall(workspace.Raycast, workspace, camera.CFrame.Position,
                 head.Position - camera.CFrame.Position, visibilityParams)
-            cache = { Model = model, Visible = ok and (not hit or hit.Instance:IsDescendantOf(model)),
-                Next = os.clock() + options.VisibilityInterval }
+            if not ok then return false end
+            cache = { Model = model, Visible = not hit or hit.Instance:IsDescendantOf(model), Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
-        return true, teammate, distance, cache.Visible
+        return (teammate or not options.VisibleOnly or cache.Visible), teammate, distance, cache.Visible
     end
     local function applyPlayer(player, model, camera)
         local entry = entries[player]
@@ -10808,7 +10807,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         local head = model:FindFirstChild("Head")
         local allowed, teammate, distance, visible = options.Allow(player, model, camera)
         if not allowed then return end
-        local color = teammate and options.TeamColor or visible and options.VisibleColor or options.HiddenColor
+        local color = teammate and options.TeamColor or visible and options.VisibleColor or options.BoxColor
         local alpha = not teammate and not visible and options.DimHidden and 0.55 or 1
         local x, y, width, height
         local left = model:FindFirstChild("Left Leg") or model:FindFirstChild("LeftFoot")
@@ -11005,7 +11004,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
                         or not root:IsA("BasePart") or (not crew and not options.EmptyVehicles)
                         or (team ~= "NATO" and team ~= "PACT") or (team == mine and not options.ShowTeammates) then return end
                     local distance = (root.Position - camera.CFrame.Position).Magnitude * metersPerStud
-                    if not options.UnlimitedDistance and distance > options.MaxDistance then return end
+                    if distance > options.MaxDistance then return end
                     local screen, onScreen = camera:WorldToViewportPoint(root.Position + Vector3.new(0, 4, 0))
                     if not onScreen or screen.Z <= 0 then return end
                     local object = vehicles[model]
@@ -11058,7 +11057,6 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         options.Apply()
     end)
     visiblePicker = Elements.ColorPicker(boxes, "Visible Color", options.VisibleColor, function(color) options.VisibleColor = color options.Apply() end)
-    Elements.ColorPicker(boxes, "Hidden Color", options.HiddenColor, function(color) options.HiddenColor = color options.Apply() end)
     Elements.ColorPicker(boxes, "Team Color", options.TeamColor, function(color) options.TeamColor = color options.Apply() end)
     local playerColors = Elements.Toggle(boxes, "Use Player Colors", true, function(on) options.UsePlayerColors = on options.Apply() end)
     for _, spec in ipairs({ { "Name Color", "NameColor" }, { "Class Color", "ClassColor" },
@@ -11081,16 +11079,12 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     for _, spec in ipairs({ { "Draw Boxes", "DrawBoxes" }, { "Health Bar", "HealthOn" },
         { "Show Class", "ClassOn" }, { "Distance and Weapon", "InfoOn" }, { "Status Flags", "FlagsOn" },
         { "Limb Health", "LimbsOn" }, { "Skeleton", "SkeletonOn" }, { "Tracers", "TracersOn" },
-        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" },
+        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" }, { "Visible Only", "VisibleOnly" },
         { "Dim Hidden", "DimHidden" } }) do
         local key = spec[2]
         Elements.Toggle(boxes, spec[1], options[key], function(on) options[key] = on options.Apply() end)
     end
-    Elements.Slider(boxes, "Max Distance", 25, 20000, 1000, "m", function(value) options.MaxDistance = value options.Apply() end)
-    Elements.Toggle(boxes, "Unlimited Distance", false, function(on)
-        options.UnlimitedDistance = on
-        options.Apply()
-    end)
+    Elements.Slider(boxes, "Max Distance", 25, 5000, 1000, "m", function(value) options.MaxDistance = value options.Apply() end)
     Elements.Slider(boxes, "Text Size", 12, 24, 13, " px", function(value) options.TextSize = value options.Apply() end)
     if gameName ~= "Cold War" then options.VehiclesOn = false return options, playerModel end
     Elements.Toggle(boxes, "Vehicles", true, function(on) options.VehiclesOn = on options.Apply() end)
