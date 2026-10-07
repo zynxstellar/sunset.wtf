@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-classic-esp-k288"
+local SUNSET_BUILD = "20261006-rift-esp-visibility-k289"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11043,6 +11043,10 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         end
         options.Apply()
     end)
+    Elements.Toggle(boxes, "Visible Only", false, function(on)
+        options.VisibleOnly = on
+        options.Apply()
+    end)
     Elements.ColorPicker(boxes, "Color", options.BoxColor, function(color)
         options.BoxColor = color
         options.VisibleColor = color
@@ -11079,7 +11083,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     for _, spec in ipairs({ { "Draw Boxes", "DrawBoxes" }, { "Health Bar", "HealthOn" },
         { "Show Class", "ClassOn" }, { "Distance and Weapon", "InfoOn" }, { "Status Flags", "FlagsOn" },
         { "Limb Health", "LimbsOn" }, { "Skeleton", "SkeletonOn" }, { "Tracers", "TracersOn" },
-        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" }, { "Visible Only", "VisibleOnly" },
+        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" },
         { "Dim Hidden", "DimHidden" } }) do
         local key = spec[2]
         Elements.Toggle(boxes, spec[1], options[key], function(on) options[key] = on options.Apply() end)
