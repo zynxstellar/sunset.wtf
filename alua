@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-ammo-k291"
+local SUNSET_BUILD = "20261006-rift-coldwar-show-all-k292"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10692,7 +10692,8 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true, DrawBoxes = true,
         HealthOn = true, ClassOn = true, InfoOn = true, FlagsOn = true, LimbsOn = false,
         SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
-        VisibleOnly = false, DimHidden = true, MaxDistance = 1000, TextSize = 13,
+        VisibleOnly = false, ShowAllPlayers = gameName == "Cold War",
+        DimHidden = true, MaxDistance = 1000, TextSize = 13,
         VehiclesOn = true, EmptyVehicles = false,
         UsePlayerColors = true, VisibilityInterval = 1 / 60,
         NameColor = Color3.fromRGB(240, 240, 240), ClassColor = Color3.fromRGB(240, 240, 240),
@@ -10773,13 +10774,13 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         local head = model:FindFirstChild("Head")
         if not head or not head:IsA("BasePart") then return false end
         local distance = (head.Position - camera.CFrame.Position).Magnitude * metersPerStud
-        if distance > options.MaxDistance then return false end
+        if not options.ShowAllPlayers and distance > options.MaxDistance then return false end
         local teammate = LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team
         if gameName == "Rivals" then
             local mine, theirs = LocalPlayer:GetAttribute("TeamID"), player:GetAttribute("TeamID")
             if mine ~= nil and theirs ~= nil then teammate = mine == theirs end
         end
-        if teammate and not options.ShowTeammates then return false end
+        if teammate and not options.ShowAllPlayers and not options.ShowTeammates then return false end
         local cache = visibility[player]
         if not cache or cache.Model ~= model or os.clock() >= cache.Next then
             local filter = { camera }
@@ -10789,11 +10790,13 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             visibilityParams.FilterDescendantsInstances = filter
             local ok, hit = pcall(workspace.Raycast, workspace, camera.CFrame.Position,
                 head.Position - camera.CFrame.Position, visibilityParams)
-            if not ok then return false end
-            cache = { Model = model, Visible = not hit or hit.Instance:IsDescendantOf(model), Next = os.clock() + options.VisibilityInterval }
+            if not ok and options.VisibleOnly then return false end
+            cache = { Model = model, Visible = ok and (not hit or hit.Instance:IsDescendantOf(model)),
+                Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
-        return (teammate or not options.VisibleOnly or cache.Visible), teammate, distance, cache.Visible
+        return (not options.VisibleOnly or cache.Visible or (gameName ~= "Cold War" and teammate)),
+            teammate, distance, cache.Visible
     end
     local function applyPlayer(player, model, camera)
         local entry = entries[player]
@@ -11044,6 +11047,12 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         end
         options.Apply()
     end)
+    if gameName == "Cold War" then
+        Elements.Toggle(boxes, "Show All Players", true, function(on)
+            options.ShowAllPlayers = on
+            options.Apply()
+        end)
+    end
     Elements.Toggle(boxes, "Visible Only", false, function(on)
         options.VisibleOnly = on
         options.Apply()

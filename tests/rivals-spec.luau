@@ -1344,6 +1344,11 @@ end)();
         set("Draw Boxes",false)
         assert(#visible("Square",2)==0 and #visible("Line")==4,"box style disabled independent overlays")
         set("Draw Boxes",true) set("Show Teammates",false)
+        if gameName=="Cold War" then
+            assert(options.ShowAllPlayers and #visible("Square",2)==2,
+                "Show All did not include the loaded teammate")
+            set("Show All Players",false)
+        end
         assert(#visible("Square",2)==1 and #visible("Line")==2,"team visibility ignored")
         local wall={IsDescendantOf=function() return false end}
         raycastResult={Instance=wall} clockNow+=1 options.Apply()
@@ -1353,7 +1358,18 @@ end)();
         raycastResult=nil clockNow+=1 options.Apply()
         assert(#visible("Square",2)==1 and #visible("Line")==2,"visible enemy was not restored")
         set("Max Distance",25)
-        assert(#visible("Square",2)==0,"maximum ESP distance ignored") set("Max Distance",1000)
+        assert(#visible("Square",2)==0,"maximum ESP distance ignored")
+        if gameName=="Cold War" then
+            set("Show All Players",true)
+            assert(#visible("Square",2)==2,"Show All did not bypass distance and teammate filters")
+            raycastResult={Instance=wall} clockNow+=1 options.Apply()
+            assert(#visible("Square",2)==0,"Visible Only did not filter blocked players with Show All on")
+            set("Visible Only",false)
+            assert(#visible("Square",2)==2,"Show All did not show loaded players through terrain")
+            raycastResult=nil clockNow+=1 options.Apply()
+            set("Show All Players",false)
+        end
+        set("Max Distance",1000)
         local cacheCasts=#casts options.Apply() options.Apply()
         assert(#casts==cacheCasts,"visibility rays were not cached")
         clockNow+=0.02 options.Apply()
