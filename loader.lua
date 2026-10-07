@@ -1,6 +1,6 @@
 -- Update both release values together when publishing a new client build.
-local expectedBuild = "20261006-rift-esp-visibility-k289"
-local sourceUrl = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/36ebd4ae3fd4da505f7ef9179f322a315ff9c05c/alua"
+local expectedBuild = "20261006-rift-reload-bar-k290"
+local sourceUrl = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/6f65eaee61f80c26db3ba25b8daee8b587865342/alua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
 assert(ok and type(source) == "string", "RIFT: current build download failed: " .. tostring(source))
