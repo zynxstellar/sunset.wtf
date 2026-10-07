@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-esp-visibility-k289"
+local SUNSET_BUILD = "20261006-rift-reload-bar-k290"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11231,17 +11231,17 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     local valid
     local function timerUI()
         if timerFrame or not Gui or type(new) ~= "function" then return end
-        timerFrame = new("Frame", { Name = "ColdWarReloadTimer", Size = UDim2.fromOffset(132, 28),
-            BackgroundColor3 = Color3.fromRGB(15, 18, 31), BackgroundTransparency = 0.12,
+        timerFrame = new("Frame", { Name = "ColdWarReloadTimer", Size = UDim2.fromOffset(132, 25),
+            BackgroundTransparency = 1,
             BorderSizePixel = 0, Visible = false, ZIndex = 1000 }, Gui)
-        timerLabel = new("TextLabel", { Name = "TimeLeft", Size = UDim2.new(1, 0, 0, 20),
-            BackgroundTransparency = 1, Text = "", TextColor3 = Color3.fromRGB(238, 238, 248),
+        timerLabel = new("TextLabel", { Name = "Reloading", Size = UDim2.new(1, 0, 0, 17),
+            BackgroundTransparency = 1, Text = "RELOADING", TextColor3 = Color3.fromRGB(238, 238, 248),
             TextSize = 12, Font = Enum.Font.GothamMedium, ZIndex = 1001 }, timerFrame)
-        local bar = new("Frame", { Name = "Track", Position = UDim2.fromOffset(5, 21),
-            Size = UDim2.new(1, -10, 0, 3), BackgroundColor3 = Color3.fromRGB(45, 49, 69),
+        local bar = new("Frame", { Name = "Track", Position = UDim2.fromOffset(0, 20),
+            Size = UDim2.new(1, 0, 0, 3), BackgroundColor3 = Color3.fromRGB(255, 70, 70),
             BorderSizePixel = 0, ZIndex = 1001 }, timerFrame)
-        timerFill = new("Frame", { Name = "Progress", Size = UDim2.fromScale(1, 1),
-            BackgroundColor3 = Color3.fromRGB(139, 92, 246), BorderSizePixel = 0,
+        timerFill = new("Frame", { Name = "Progress", Size = UDim2.fromScale(0, 1),
+            BackgroundColor3 = Color3.fromRGB(255, 70, 70), BorderSizePixel = 0,
             ZIndex = 1002 }, bar)
     end
     local function updateTimer(object, now)
@@ -11267,9 +11267,9 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if timerFrame then
             local pointer = UIS:GetMouseLocation()
             timerFrame.Position = UDim2.fromOffset(pointer.X - 66, pointer.Y + 24)
-            timerLabel.Text = auto.ReloadRemaining > 0
-                and string.format("RELOADING  %.1fs", auto.ReloadRemaining) or "RELOADING  finishing..."
-            timerFill.Size = UDim2.fromScale(math.clamp(auto.ReloadRemaining / timerDuration, 0, 1), 1)
+            local progress = math.clamp(1 - auto.ReloadRemaining / timerDuration, 0, 1)
+            timerFill.Size = UDim2.fromScale(progress, 1)
+            timerFill.BackgroundColor3 = Color3.fromRGB(255, 70, 70):Lerp(Color3.fromRGB(70, 230, 110), progress)
             timerFrame.Visible = true
         end
     end
