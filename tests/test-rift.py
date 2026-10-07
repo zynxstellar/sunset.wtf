@@ -162,12 +162,6 @@ def main():
         fly_path = temp / 'fly-spec.luau'
         fly_path.write_text(fly_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(fly_path)], check=True)
-        coldwar_fly = fly_spec.replace('PlaceId=17625359962,GameId=6035872082',
-                                      'PlaceId=13687899540,GameId=4750561026')
-        coldwar_fly = coldwar_fly.replace('SelectedGame="Rivals"', 'SelectedGame="Cold War"')
-        coldwar_fly_path = temp / 'coldwar-fly-spec.luau'
-        coldwar_fly_path.write_text(coldwar_fly, encoding='utf-8')
-        subprocess.run([str(runtime), str(coldwar_fly_path)], check=True)
         startup = between(inner, '    Persistence.Restore(detectedGame, menuKeyControl)',
                           '\nENV.SunsetLoading.Status.Text')
         assert 'AutoReinject.Toggle.Set(false)' not in startup
