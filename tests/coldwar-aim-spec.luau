@@ -208,6 +208,10 @@ fire() assert(received[5][1].X>(enemy.Character.Children.Head.Position-origin).U
 enemy.Character.Children.HumanoidRootPart.AssemblyLinearVelocity=Vector3.new()
 wall=object("Wall","BasePart",workspace)
 fire() assert(directions[1].X==0,"wall check bent a blocked shot")
+aim.Wallbang=true fire() assert(directions[1].X==0,"nonpenetrating weapon bent a blocked shot")
+params.Weapon.PenetrationPower=10
+fire() assert(directions[1].X>0,"penetrating weapon was not aimed through cover")
+aim.Wallbang=false fire() assert(directions[1].X==0,"disabled wallbang redirected through cover")
 aim.WallCheck=false fire() assert(directions[1].X>0)
 aim.WallCheck=true wall=nil
 aim.Radius=5 fire() assert(directions[1].X==0,"FOV exclusion failed")

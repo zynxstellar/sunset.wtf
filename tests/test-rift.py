@@ -121,7 +121,9 @@ def main():
         subprocess.run([str(runtime), str(aim_path)], check=True)
         extras_spec = (ROOT / 'tests' / 'visual-extras-spec.luau').read_text(encoding='utf-8')
         extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
-            between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWar()'))
+            between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarAutoWeapons('))
+        extras_spec = extras_spec.replace('-- INSERT_VISIBILITY',
+            between(inner, 'function Settings.SetupColdWarVisibility()', '\nfunction Settings.SetupColdWar()'))
         extras_path = temp / 'visual-extras-spec.luau'
         extras_path.write_text(extras_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(extras_path)], check=True)

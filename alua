@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-auto-weapons-k286"
+local SUNSET_BUILD = "20261006-rift-coldwar-visuals-k287"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9090,9 +9090,11 @@ function BedWars.BuildUI(boardGame)
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
             { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
+            { "Visuals", "Reload Timer", "Visuals", "Cold War", "Reload Timer", "Reload Timer" },
             { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
             { "Visuals", "Player Outlines", "Visuals", "Cold War", "Player Outlines", "Player Outlines" },
+            { "Visuals", "Visibility", "Visuals", "Cold War", "Visibility", "No Fog" },
             { "Sunset", "Module List", "Sunset", "Cold War", "Module List", "Module List" },
             { "Sunset", "Configs", "Sunset", "All", "Configs" },
             { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
@@ -10402,7 +10404,7 @@ function Settings.SetupColdWarAim(playerModel)
         pcall(previous.Restore)
     end
     ENV.RiftCheckSilentAim = nil
-    local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", WallCheck = true,
+    local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", WallCheck = true, Wallbang = false,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false, HitChance = 100 }
     aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
@@ -10477,6 +10479,11 @@ function Settings.SetupColdWarAim(playerModel)
             local position = trajectory.GetPositionAtTime(tr, sampleTime) - velocity * sampleTime
             local hit = workspace:Raycast(last, position - last, params.RaycastParams)
             if hit then
+                if aim.Wallbang and type(params.Weapon.PenetrationPower) == "number"
+                    and params.Weapon.PenetrationPower > 0 and not hit.Instance:IsDescendantOf(model) then
+                    -- Let the native projectile caster decide whether this surface can be pierced.
+                    return true
+                end
                 return hit.Instance:IsDescendantOf(model) and table.find({ "Head", "Torso", "Left Arm",
                     "Right Arm", "Left Leg", "Right Leg", "UpperTorso", "LowerTorso" }, hit.Instance.Name) ~= nil
             end
@@ -10670,6 +10677,7 @@ function Settings.SetupColdWarAim(playerModel)
     Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Nearest" }, "Head", function(value) aim.AimPart = value end)
     aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
     Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
+    Elements.Toggle(section, "Wallbang", false, function(on) aim.Wallbang = on end)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
     Elements.Slider(section, "Hit Chance", 0, 100, 100, "%", function(value) aim.HitChance = value end)
     Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
@@ -10683,7 +10691,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true, DrawBoxes = true,
         HealthOn = true, ClassOn = true, InfoOn = true, FlagsOn = true, LimbsOn = false,
         SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
-        VisibleOnly = false, DimHidden = true, MaxDistance = 1000, TextSize = 13,
+        VisibleOnly = false, DimHidden = false, MaxDistance = 1000, UnlimitedDistance = false, TextSize = 13,
         VehiclesOn = true, EmptyVehicles = false,
         UsePlayerColors = true, VisibilityInterval = 1 / 60,
         NameColor = Color3.fromRGB(240, 240, 240), ClassColor = Color3.fromRGB(240, 240, 240),
@@ -10692,7 +10700,8 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         HeadDotColor = Color3.fromRGB(255, 86, 86), VehicleColor = Color3.fromRGB(255, 160, 60),
         BorderColor = Color3.fromRGB(0, 0, 0), HealthLowColor = Color3.fromRGB(255, 70, 70),
         HealthHighColor = Color3.fromRGB(90, 235, 110), HealthBackgroundColor = Color3.fromRGB(15, 15, 20),
-        BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 214, 90),
+        BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 86, 86),
+        HiddenColor = Color3.fromRGB(255, 214, 90),
         TeamColor = Color3.fromRGB(90, 160, 255), OutlineColor = Color3.fromRGB(77, 224, 208) }
     Settings.PlayerESP = Settings.PlayerESP or {}
     Settings.PlayerESP[gameName] = options
@@ -10764,7 +10773,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         local head = model:FindFirstChild("Head")
         if not head or not head:IsA("BasePart") then return false end
         local distance = (head.Position - camera.CFrame.Position).Magnitude * metersPerStud
-        if distance > options.MaxDistance then return false end
+        if not options.UnlimitedDistance and distance > options.MaxDistance then return false end
         local teammate = LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team
         if gameName == "Rivals" then
             local mine, theirs = LocalPlayer:GetAttribute("TeamID"), player:GetAttribute("TeamID")
@@ -10780,11 +10789,11 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             visibilityParams.FilterDescendantsInstances = filter
             local ok, hit = pcall(workspace.Raycast, workspace, camera.CFrame.Position,
                 head.Position - camera.CFrame.Position, visibilityParams)
-            if not ok then return false end
-            cache = { Model = model, Visible = not hit or hit.Instance:IsDescendantOf(model), Next = os.clock() + options.VisibilityInterval }
+            cache = { Model = model, Visible = ok and (not hit or hit.Instance:IsDescendantOf(model)),
+                Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
-        return (teammate or not options.VisibleOnly or cache.Visible), teammate, distance, cache.Visible
+        return true, teammate, distance, cache.Visible
     end
     local function applyPlayer(player, model, camera)
         local entry = entries[player]
@@ -10799,7 +10808,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         local head = model:FindFirstChild("Head")
         local allowed, teammate, distance, visible = options.Allow(player, model, camera)
         if not allowed then return end
-        local color = teammate and options.TeamColor or visible and options.VisibleColor or options.BoxColor
+        local color = teammate and options.TeamColor or visible and options.VisibleColor or options.HiddenColor
         local alpha = not teammate and not visible and options.DimHidden and 0.55 or 1
         local x, y, width, height
         local left = model:FindFirstChild("Left Leg") or model:FindFirstChild("LeftFoot")
@@ -10996,7 +11005,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
                         or not root:IsA("BasePart") or (not crew and not options.EmptyVehicles)
                         or (team ~= "NATO" and team ~= "PACT") or (team == mine and not options.ShowTeammates) then return end
                     local distance = (root.Position - camera.CFrame.Position).Magnitude * metersPerStud
-                    if distance > options.MaxDistance then return end
+                    if not options.UnlimitedDistance and distance > options.MaxDistance then return end
                     local screen, onScreen = camera:WorldToViewportPoint(root.Position + Vector3.new(0, 4, 0))
                     if not onScreen or screen.Z <= 0 then return end
                     local object = vehicles[model]
@@ -11049,6 +11058,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         options.Apply()
     end)
     visiblePicker = Elements.ColorPicker(boxes, "Visible Color", options.VisibleColor, function(color) options.VisibleColor = color options.Apply() end)
+    Elements.ColorPicker(boxes, "Hidden Color", options.HiddenColor, function(color) options.HiddenColor = color options.Apply() end)
     Elements.ColorPicker(boxes, "Team Color", options.TeamColor, function(color) options.TeamColor = color options.Apply() end)
     local playerColors = Elements.Toggle(boxes, "Use Player Colors", true, function(on) options.UsePlayerColors = on options.Apply() end)
     for _, spec in ipairs({ { "Name Color", "NameColor" }, { "Class Color", "ClassColor" },
@@ -11071,12 +11081,16 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     for _, spec in ipairs({ { "Draw Boxes", "DrawBoxes" }, { "Health Bar", "HealthOn" },
         { "Show Class", "ClassOn" }, { "Distance and Weapon", "InfoOn" }, { "Status Flags", "FlagsOn" },
         { "Limb Health", "LimbsOn" }, { "Skeleton", "SkeletonOn" }, { "Tracers", "TracersOn" },
-        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" }, { "Visible Only", "VisibleOnly" },
+        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" },
         { "Dim Hidden", "DimHidden" } }) do
         local key = spec[2]
         Elements.Toggle(boxes, spec[1], options[key], function(on) options[key] = on options.Apply() end)
     end
-    Elements.Slider(boxes, "Max Distance", 25, 5000, 1000, "m", function(value) options.MaxDistance = value options.Apply() end)
+    Elements.Slider(boxes, "Max Distance", 25, 20000, 1000, "m", function(value) options.MaxDistance = value options.Apply() end)
+    Elements.Toggle(boxes, "Unlimited Distance", false, function(on)
+        options.UnlimitedDistance = on
+        options.Apply()
+    end)
     Elements.Slider(boxes, "Text Size", 12, 24, 13, " px", function(value) options.TextSize = value options.Apply() end)
     if gameName ~= "Cold War" then options.VehiclesOn = false return options, playerModel end
     Elements.Toggle(boxes, "Vehicles", true, function(on) options.VehiclesOn = on options.Apply() end)
@@ -11209,12 +11223,58 @@ end
 function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
-    local auto = { ShootEnabled = false, ReloadEnabled = false, Current = nil }
+    local auto = { ShootEnabled = false, ReloadEnabled = false, TimerEnabled = false, Current = nil }
     Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
     local api, wielder
     local originals, wrappers = {}, {}
     local held, heldMuzzle, heldAt, nextPull, nextReload = nil, nil, 0, 0, 0
     local pendingReload, destroyed, nextInstall, nextStep, nextWarning = false, false, 0, 0, 0
+    local timerFrame, timerFill, timerLabel, timerThread, timerStart, timerDuration
+    local valid
+    local function timerUI()
+        if timerFrame or not Gui or type(new) ~= "function" then return end
+        timerFrame = new("Frame", { Name = "ColdWarReloadTimer", Size = UDim2.fromOffset(132, 28),
+            BackgroundColor3 = Color3.fromRGB(15, 18, 31), BackgroundTransparency = 0.12,
+            BorderSizePixel = 0, Visible = false, ZIndex = 1000 }, Gui)
+        timerLabel = new("TextLabel", { Name = "TimeLeft", Size = UDim2.new(1, 0, 0, 20),
+            BackgroundTransparency = 1, Text = "", TextColor3 = Color3.fromRGB(238, 238, 248),
+            TextSize = 12, Font = Enum.Font.GothamMedium, ZIndex = 1001 }, timerFrame)
+        local bar = new("Frame", { Name = "Track", Position = UDim2.fromOffset(5, 21),
+            Size = UDim2.new(1, -10, 0, 3), BackgroundColor3 = Color3.fromRGB(45, 49, 69),
+            BorderSizePixel = 0, ZIndex = 1001 }, timerFrame)
+        timerFill = new("Frame", { Name = "Progress", Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.fromRGB(139, 92, 246), BorderSizePixel = 0,
+            ZIndex = 1002 }, bar)
+    end
+    local function updateTimer(object, now)
+        if not auto.TimerEnabled or not valid(object) then
+            timerThread = nil
+            if timerFrame then timerFrame.Visible = false end
+            return
+        end
+        local muzzle = object.currentMuzzle
+        local controller = muzzle and muzzle.reloadController
+        local thread = controller and controller._thread
+        if type(thread) ~= "thread" or coroutine.status(thread) == "dead" then
+            timerThread = nil
+            if timerFrame then timerFrame.Visible = false end
+            return
+        end
+        if timerThread ~= thread then
+            timerThread, timerStart = thread, now
+            timerDuration = math.max(0.1, tonumber(muzzle.config and muzzle.config.ReloadTime) or 5)
+        end
+        auto.ReloadRemaining = math.max(0, timerDuration - (now - timerStart))
+        timerUI()
+        if timerFrame then
+            local pointer = UIS:GetMouseLocation()
+            timerFrame.Position = UDim2.fromOffset(pointer.X - 66, pointer.Y + 24)
+            timerLabel.Text = auto.ReloadRemaining > 0
+                and string.format("RELOADING  %.1fs", auto.ReloadRemaining) or "RELOADING  finishing..."
+            timerFill.Size = UDim2.fromScale(math.clamp(auto.ReloadRemaining / timerDuration, 0, 1), 1)
+            timerFrame.Visible = true
+        end
+    end
     local function nativeCall(fn, ...)
         local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
         local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
@@ -11239,7 +11299,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         api, wielder, auto.Current = nil, nil, nil
         originals, wrappers = {}, {}
     end
-    local function valid(object)
+    valid = function(object)
         local character = LocalPlayer.Character
         local hum = character and character:FindFirstChildOfClass("Humanoid")
         return type(object) == "table" and typeof(object.tool) == "Instance"
@@ -11328,7 +11388,11 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         local now = os.clock()
         if now < nextStep then return end
         nextStep = now + 0.05
-        if not auto.ShootEnabled and not auto.ReloadEnabled then if api then detach() end return end
+        if not auto.ShootEnabled and not auto.ReloadEnabled and not auto.TimerEnabled then
+            if api then detach() end
+            if timerFrame then timerFrame.Visible = false end
+            return
+        end
         if Settings.SelectedGame ~= "Cold War" or anyMenuVisible() or UIS:GetFocusedTextBox() then release() return end
         if not api then
             if now < nextInstall then return end
@@ -11338,7 +11402,8 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
             if not api then return end
         end
         local object = auto.Current
-        if not valid(object) then release() return end
+        if not valid(object) then release() updateTimer(nil, now) return end
+        updateTimer(object, now)
         local muzzle = object.currentMuzzle
         if held and (held ~= object or heldMuzzle ~= muzzle) then release() end
         if pendingReload then release() return end
@@ -11395,8 +11460,9 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     end
     function auto.Restore()
         destroyed = true
-        auto.ShootEnabled, auto.ReloadEnabled = false, false
+        auto.ShootEnabled, auto.ReloadEnabled, auto.TimerEnabled = false, false, false
         detach()
+        if timerFrame then timerFrame:Destroy() timerFrame = nil end
     end
     track(RunService.RenderStepped:Connect(auto.Update))
     track({ Disconnect = auto.Restore })
@@ -11404,13 +11470,77 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     Elements.Toggle(shoot, "Auto Shoot", false, function(on)
         auto.ShootEnabled = on
         if not on then release() end
-        if not on and not auto.ReloadEnabled then detach() end
+        if not on and not auto.ReloadEnabled and not auto.TimerEnabled then detach() end
     end)
     local reload = gameSection("Cold War", AimTab.Left, "Auto Reload")
     Elements.Toggle(reload, "Auto Reload", false, function(on)
         auto.ReloadEnabled = on
-        if not on and not auto.ShootEnabled then detach() end
+        if not on and not auto.ShootEnabled and not auto.TimerEnabled then detach() end
     end)
+    local timer = gameSection("Cold War", VisualsTab.Left, "Reload Timer")
+    Elements.Toggle(timer, "Reload Timer", false, function(on)
+        auto.TimerEnabled = on
+        if not on and timerFrame then timerFrame.Visible = false end
+        if not on and not auto.ShootEnabled and not auto.ReloadEnabled then detach() end
+    end)
+end
+
+function Settings.SetupColdWarVisibility()
+    local options = { NoFog = false, FullBright = false }
+    Settings.ColdWarVisibility = options
+    local originalFog, originalBright, atmosphere, density
+    local destroyed, nextRefresh = false, 0
+    local function restoreFog()
+        if originalFog ~= nil then Lighting.FogEnd = originalFog originalFog = nil end
+        if atmosphere and atmosphere.Parent and density ~= nil then atmosphere.Density = density end
+        atmosphere, density = nil, nil
+    end
+    local function restoreBright()
+        if originalBright then
+            Lighting.Brightness = originalBright.Brightness
+            Lighting.Ambient = originalBright.Ambient
+            Lighting.OutdoorAmbient = originalBright.OutdoorAmbient
+            Lighting.GlobalShadows = originalBright.GlobalShadows
+            originalBright = nil
+        end
+    end
+    function options.Update()
+        if destroyed or Settings.SelectedGame ~= "Cold War" then restoreFog() restoreBright() return end
+        if options.NoFog then
+            if originalFog == nil then originalFog = Lighting.FogEnd end
+            local current = Lighting:FindFirstChildOfClass("Atmosphere")
+            if current ~= atmosphere then
+                if atmosphere and atmosphere.Parent and density ~= nil then atmosphere.Density = density end
+                atmosphere, density = current, current and current.Density or nil
+            end
+            Lighting.FogEnd = 1000000
+            if atmosphere then atmosphere.Density = 0 end
+        else restoreFog() end
+        if options.FullBright then
+            if not originalBright then
+                originalBright = { Brightness = Lighting.Brightness, Ambient = Lighting.Ambient,
+                    OutdoorAmbient = Lighting.OutdoorAmbient, GlobalShadows = Lighting.GlobalShadows }
+            end
+            Lighting.Brightness = 4
+            Lighting.Ambient = Color3.fromRGB(235, 235, 235)
+            Lighting.OutdoorAmbient = Color3.fromRGB(235, 235, 235)
+            Lighting.GlobalShadows = false
+        else restoreBright() end
+    end
+    track(RunService.RenderStepped:Connect(function()
+        if os.clock() < nextRefresh then return end
+        nextRefresh = os.clock() + 0.25
+        local ok, err = pcall(options.Update)
+        if not ok then warn("[Rift] Visibility: " .. tostring(err)) end
+    end))
+    track({ Disconnect = function()
+        destroyed = true
+        options.NoFog, options.FullBright = false, false
+        restoreFog() restoreBright()
+    end })
+    local section = gameSection("Cold War", VisualsTab.Left, "Visibility")
+    Elements.Toggle(section, "No Fog", false, function(on) options.NoFog = on options.Update() end)
+    Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
 function Settings.SetupColdWar()
@@ -11419,6 +11549,7 @@ function Settings.SetupColdWar()
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
+    Settings.SetupColdWarVisibility()
     Settings.SetupColdWarAutoWeapons(playerModel)
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")

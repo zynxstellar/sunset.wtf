@@ -78,6 +78,7 @@ local connections={}
 local function track(c) table.insert(connections,c) end
 local controls={}
 local AimTab={Left={}}
+local VisualsTab={Left={}}
 local function gameSection(_,_,name) return name end
 local Elements={Toggle=function(s,n,d,fn) controls[n]=fn end}
 local function model(player) return not player.Dead and player.Character end
@@ -149,5 +150,15 @@ step() step()
 assert(#warnings==beforeWarning+1,"ammo failure escaped or spammed warnings")
 muzzle.magazine.isEmpty=previousEmpty
 weapon.unequip(current) assert(auto.Current==nil,"unequip retained active gun")
+weapon.equip(current)
+local reloadThread=coroutine.create(function() end)
+muzzle.config={ReloadTime=2}
+muzzle.reloadController={_thread=reloadThread}
+controls["Reload Timer"](true) step()
+assert(auto.ReloadRemaining==2,"reload timer did not follow the native reload thread")
+now+=1 step() assert(math.abs(auto.ReloadRemaining-0.9)<0.01,"reload timer did not count down")
+assert(coroutine.resume(reloadThread))
+step() assert(auto.TimerEnabled and auto.Current==current,"completed reload disrupted weapon capture")
+controls["Reload Timer"](false)
 auto.Restore()
 print("PASS auto weapons: deferred loaded modules, existing/equipped gun capture, native returns/yields, auto/semi trigger, target/team/wall/menu/input filters, chamber/reserve checks, reload throttle/cancellation, identity restoration, foreign-hook-safe unload")
