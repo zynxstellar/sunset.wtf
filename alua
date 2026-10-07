@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-show-all-k292"
+local SUNSET_BUILD = "20261007-rift-coldwar-instant-equip-k293"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11232,12 +11232,14 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
     local auto = { ShootEnabled = false, ReloadEnabled = false, TimerEnabled = false,
+        InstantEquipEnabled = false,
         AmmoSaverEnabled = true, BurstRounds = 2, BurstPause = 0.25, Current = nil }
     Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
     local api, wielder
     local originals, wrappers = {}, {}
     local held, heldMuzzle, heldAt, nextPull, nextReload = nil, nil, 0, 0, 0
     local pendingReload, destroyed, nextInstall, nextStep, nextWarning = false, false, 0, 0, 0
+    local instantInstalled, nextInstantInstall, nextInstantWarning = false, 0, 0
     local timerFrame, timerFill, timerLabel, timerThread, timerStart, timerDuration
     local valid
     local function timerUI()
@@ -11292,6 +11294,47 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if identity then setId(identity) end
         if not result[1] then error(result[2], 0) end
         return table.unpack(result, 2, result.n)
+    end
+    local function installInstantEquip()
+        local storage = game:GetService("ReplicatedStorage")
+        local client = storage:FindFirstChild("Client")
+        local character = client and client:FindFirstChild("Character")
+        local module = character and character:FindFirstChild("InventoryController")
+        if not module or not rivalsModuleLoaded(module) then return false end
+        local readUpvalues = debug and debug.getupvalues
+        if type(readUpvalues) ~= "function" or type(hookfunction) ~= "function" then
+            error("Instant Equip needs debug.getupvalues and hookfunction")
+        end
+        local inventory = nativeCall(require, module)
+        if type(inventory) ~= "table" or type(inventory.equip) ~= "function" then
+            error("Cold War inventory interface changed")
+        end
+        local callers = {}
+        for _, value in pairs(readUpvalues(inventory.equip)) do
+            if type(value) == "function" then table.insert(callers, value) end
+        end
+        local counts = {}
+        for _, caller in ipairs(callers) do
+            for _, value in pairs(readUpvalues(caller)) do
+                if type(value) == "function" then counts[value] = (counts[value] or 0) + 1 end
+            end
+        end
+        local holdForTrack
+        for value, count in pairs(counts) do
+            if count >= 2 then
+                if holdForTrack then error("Cold War equip timing is ambiguous") end
+                holdForTrack = value
+            end
+        end
+        if not holdForTrack then error("Cold War equip timing changed") end
+        local originalHold
+        originalHold = hookfunction(holdForTrack, function(...)
+            if auto.InstantEquipEnabled and not destroyed then return false end
+            return originalHold(...)
+        end)
+        if type(originalHold) ~= "function" then error("Could not install Instant Equip") end
+        instantInstalled = true
+        return true
     end
     local function release()
         local object = held
@@ -11404,6 +11447,14 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         local now = os.clock()
         if now < nextStep then return end
         nextStep = now + 0.05
+        if auto.InstantEquipEnabled and not instantInstalled and now >= nextInstantInstall then
+            nextInstantInstall = now + 1
+            local ok, err = pcall(installInstantEquip)
+            if not ok and now >= nextInstantWarning then
+                nextInstantWarning = now + 5
+                warn("[Rift] Instant Equip: " .. tostring(err))
+            end
+        end
         if not auto.ShootEnabled and not auto.ReloadEnabled and not auto.TimerEnabled then
             if api then detach() end
             if timerFrame then timerFrame.Visible = false end
@@ -11483,6 +11534,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     function auto.Restore()
         destroyed = true
         auto.ShootEnabled, auto.ReloadEnabled, auto.TimerEnabled = false, false, false
+        auto.InstantEquipEnabled = false
         detach()
         if timerFrame then timerFrame:Destroy() timerFrame = nil end
     end
@@ -11514,6 +11566,10 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         auto.TimerEnabled = on
         if not on and timerFrame then timerFrame.Visible = false end
         if not on and not auto.ShootEnabled and not auto.ReloadEnabled then detach() end
+    end)
+    local instant = gameSection("Cold War", AimTab.Left, "Instant Equip")
+    Elements.Toggle(instant, "Instant Equip", false, function(on)
+        auto.InstantEquipEnabled = on
     end)
 end
 

@@ -13,6 +13,7 @@ local storage=instance("Storage")
 local client=instance("Client",storage)
 local weaponModule=instance("Weapon",instance("Tools",client))
 local wielderModule=instance("Wielder",instance("Character",client))
+local inventoryModule=instance("InventoryController",client.Children.Character)
 local game={GetService=function() return storage end}
 local playerCharacter=instance("Me")
 playerCharacter.Children.Humanoid={Health=100}
@@ -45,6 +46,22 @@ function weapon.requestReload(object) reloads+=1 end
 setmetatable(current,weapon)
 local canAct=true
 local wielder={canAct=function() return canAct end}
+local function nativeHold() return true end
+local function holsterCurrent() end
+local function drawTool() end
+local inventory={equip=function() end}
+local upvalues={
+    [inventory.equip]={holsterCurrent,drawTool},
+    [holsterCurrent]={nativeHold},
+    [drawTool]={nativeHold},
+}
+local debug={getupvalues=function(fn) return upvalues[fn] or {} end}
+local hookedHold
+local function hookfunction(fn,replacement)
+    assert(fn==nativeHold)
+    hookedHold=replacement
+    return fn
+end
 local loadedModules=false
 local function rivalsModuleLoaded() return loadedModules end
 local identity=8
@@ -54,7 +71,9 @@ local requireCount=0
 local function require(module)
     assert(identity==2)
     requireCount+=1
-    return module==weaponModule and weapon or wielder
+    if module==weaponModule then return weapon end
+    if module==inventoryModule then return inventory end
+    return wielder
 end
 local ENV={getgc=function() return {current} end}
 local Settings={SelectedGame="Cold War",ColdWarAim={Enabled=false,MaxDistance=1000,HitChance=100}}
@@ -176,4 +195,13 @@ assert(stops>priorStops,"Ammo Saver did not release an automatic burst")
 local priorStarts=starts
 step() assert(starts==priorStarts,"Ammo Saver ignored the burst pause")
 auto.Restore()
+Settings.SetupColdWarAutoWeapons(model) auto=Settings.ColdWarAutoWeapons
+controls["Instant Equip"](true)
+now+=2 step()
+assert(hookedHold and hookedHold()==false,"equip animation wait was not bypassed")
+controls["Instant Equip"](false)
+assert(hookedHold()==true,"native equip timing was not restored when disabled")
+controls["Instant Equip"](true)
+auto.Restore()
+assert(hookedHold()==true,"native equip timing was not restored on unload")
 print("PASS auto weapons: deferred loaded modules, existing/equipped gun capture, native returns/yields, auto/semi trigger, target/team/wall/menu/input filters, chamber/reserve checks, reload throttle/cancellation, identity restoration, foreign-hook-safe unload")
