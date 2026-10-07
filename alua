@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261006-rift-coldwar-remove-flight-k285"
+local SUNSET_BUILD = "20261006-rift-coldwar-auto-weapons-k286"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9088,6 +9088,8 @@ function BedWars.BuildUI(boardGame)
     if isColdWar then
         specs = {
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
+            { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
+            { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
             { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
             { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
             { "Visuals", "Player Outlines", "Visuals", "Cold War", "Player Outlines", "Player Outlines" },
@@ -11204,12 +11206,220 @@ function Settings.SetupColdWarVisualExtras()
     Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "°", function(value) fov.Value = value end)
 end
 
+function Settings.SetupColdWarAutoWeapons(playerModel)
+    local previous = ENV.SunsetColdWarAutoWeapons
+    if previous and type(previous.Restore) == "function" then previous.Restore() end
+    local auto = { ShootEnabled = false, ReloadEnabled = false, Current = nil }
+    Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
+    local api, wielder
+    local originals, wrappers = {}, {}
+    local held, heldMuzzle, heldAt, nextPull, nextReload = nil, nil, 0, 0, 0
+    local pendingReload, destroyed, nextInstall, nextStep, nextWarning = false, false, 0, 0, 0
+    local function nativeCall(fn, ...)
+        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
+        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
+        if identity then setId(2) end
+        local result = table.pack(pcall(fn, ...))
+        if identity then setId(identity) end
+        if not result[1] then error(result[2], 0) end
+        return table.unpack(result, 2, result.n)
+    end
+    local function release()
+        local object = held
+        held, heldMuzzle = nil, nil
+        if object and originals.stopFiring then pcall(nativeCall, originals.stopFiring, object) end
+    end
+    local function detach()
+        release()
+        if api then
+            for key, wrapper in pairs(wrappers) do
+                if api[key] == wrapper then api[key] = originals[key] end
+            end
+        end
+        api, wielder, auto.Current = nil, nil, nil
+        originals, wrappers = {}, {}
+    end
+    local function valid(object)
+        local character = LocalPlayer.Character
+        local hum = character and character:FindFirstChildOfClass("Humanoid")
+        return type(object) == "table" and typeof(object.tool) == "Instance"
+            and object.tool.Parent == character and hum and hum.Health > 0 and object.currentMuzzle
+    end
+    local function install()
+        local storage = game:GetService("ReplicatedStorage")
+        local client = storage:FindFirstChild("Client")
+        local tools = client and client:FindFirstChild("Tools")
+        local character = client and client:FindFirstChild("Character")
+        local weaponModule = tools and tools:FindFirstChild("Weapon")
+        local wielderModule = character and character:FindFirstChild("Wielder")
+        if not weaponModule or not wielderModule or not rivalsModuleLoaded(weaponModule)
+            or not rivalsModuleLoaded(wielderModule) then return end
+        local weapon = nativeCall(require, weaponModule)
+        local owner = nativeCall(require, wielderModule)
+        for _, key in ipairs({ "equip", "unequip", "startFiring", "stopFiring", "requestReload" }) do
+            if type(weapon[key]) ~= "function" then error("Cold War weapon interface changed: " .. key) end
+        end
+        if type(owner.canAct) ~= "function" then error("Cold War action interface changed") end
+        api, wielder = weapon, owner
+        for _, key in ipairs({ "equip", "unequip", "startFiring", "requestReload" }) do
+            local native = weapon[key]
+            originals[key] = native
+            local wrapper = function(object, ...)
+                -- Native weapon callbacks only capture their Lua object; no UI access here.
+                if not destroyed then
+                    if key == "unequip" then
+                        if auto.Current == object then auto.Current = nil end
+                        if held == object then held, heldMuzzle = nil, nil end
+                    else auto.Current = object end
+                end
+                return native(object, ...)
+            end
+            wrappers[key], weapon[key] = wrapper, wrapper
+        end
+        originals.stopFiring = weapon.stopFiring
+        -- Recover an already-equipped instance without constructing a second weapon controller.
+        local enumerate = type(ENV.getgc) == "function" and ENV.getgc or getgc
+        if type(enumerate) == "function" then
+            local ok, objects = pcall(enumerate, true)
+            if ok and type(objects) == "table" then
+                for _, object in ipairs(objects) do
+                    if type(object) == "table" and getmetatable(object) == weapon and valid(object) then
+                        auto.Current = object break
+                    end
+                end
+            end
+        end
+        if not auto.Current then warn("[Rift] Auto weapons ready: equip your gun once to attach.") end
+    end
+    local function target(object, muzzle)
+        local camera = workspace.CurrentCamera
+        if not camera then return false end
+        local aim = Settings.ColdWarAim
+        if aim and aim.Enabled then
+            if not aim.Available then return false end
+            local bullet = muzzle:getBulletIndex()
+            local attachment = muzzle.viewmodelAttachment or muzzle.attachment
+            if not bullet or not attachment then return false end
+            return aim.Resolve(object.tool, object.currentMuzzleIndex, bullet,
+                attachment.WorldPosition, camera.CFrame.LookVector) ~= nil
+        end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { LocalPlayer.Character, workspace:FindFirstChild("Ignore") }
+        local hit = workspace:Raycast(camera.CFrame.Position,
+            camera.CFrame.LookVector * (aim and aim.MaxDistance or 1000), params)
+        if not hit then return false end
+        local ownTeam = LocalPlayer.Team and LocalPlayer.Team.Name
+        for _, player in ipairs(Players:GetPlayers()) do
+            local team = player.Team and player.Team.Name
+            if player ~= LocalPlayer and (team == "NATO" or team == "PACT") and team ~= ownTeam then
+                local model = playerModel(player)
+                if model and not model:FindFirstChildOfClass("ForceField") and hit.Instance:IsDescendantOf(model) then
+                    local values = model:FindFirstChild("CharacterValues")
+                    local down = values and values:FindFirstChild("Unconscious")
+                    if not down or not down.Value then return true end
+                end
+            end
+        end
+        return false
+    end
+    local function update()
+        if destroyed then return end
+        local now = os.clock()
+        if now < nextStep then return end
+        nextStep = now + 0.05
+        if not auto.ShootEnabled and not auto.ReloadEnabled then if api then detach() end return end
+        if Settings.SelectedGame ~= "Cold War" or anyMenuVisible() or UIS:GetFocusedTextBox() then release() return end
+        if not api then
+            if now < nextInstall then return end
+            nextInstall = now + 1
+            local ok, err = pcall(install)
+            if not ok then detach() warn("[Rift] Auto weapons: " .. tostring(err)) end
+            if not api then return end
+        end
+        local object = auto.Current
+        if not valid(object) then release() return end
+        local muzzle = object.currentMuzzle
+        if held and (held ~= object or heldMuzzle ~= muzzle) then release() end
+        if pendingReload then release() return end
+        local ok, canAct = pcall(nativeCall, wielder.canAct, wielder)
+        if not ok or not canAct then release() return end
+        local empty = muzzle.magazine:isEmpty() and not muzzle.chamber:isLoaded()
+        if empty then
+            release()
+            if auto.ReloadEnabled and now >= nextReload and muzzle.magazine:hasReserve() then
+                nextReload, pendingReload = now + 1, true
+                local reload = originals.requestReload
+                task.spawn(function()
+                    if not destroyed and auto.ReloadEnabled and auto.Current == object and valid(object) then
+                        local success, err = pcall(nativeCall, reload, object)
+                        if not success then warn("[Rift] Auto Reload: " .. tostring(err)) end
+                    end
+                    pendingReload = false
+                end)
+            end
+            return
+        end
+        if not auto.ShootEnabled then release() return end
+        if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+            -- The physical trigger owns its release once the user takes over.
+            held, heldMuzzle = nil, nil
+            return
+        end
+        local found, shouldShoot = pcall(target, object, muzzle)
+        if not auto.ShootEnabled or not found or not shouldShoot then release() return end
+        local mode = tostring(muzzle:getFireModeName()):lower()
+        local automatic = mode:find("auto", 1, true) ~= nil
+        local config = object.config[object.currentMuzzleIndex]
+        local rate = config and tonumber(config.Firerate) or 600
+        local interval = 60 / math.clamp(rate or 600, 1, 6000)
+        if mode:find("burst", 1, true) then interval *= tonumber(mode:match("%d+")) or 3 end
+        if held and not automatic and now - heldAt >= interval then
+            release() nextPull = now + 0.05 return
+        end
+        if not held and now >= nextPull then
+            held, heldMuzzle, heldAt = object, muzzle, now
+            local success, err = pcall(nativeCall, originals.startFiring, object)
+            if not success then release() nextPull = now + 1 warn("[Rift] Auto Shoot: " .. tostring(err)) end
+        end
+    end
+    function auto.Update()
+        local ok, err = pcall(update)
+        if not ok then
+            release()
+            if os.clock() >= nextWarning then
+                nextWarning = os.clock() + 5
+                warn("[Rift] Auto weapons paused: " .. tostring(err))
+            end
+        end
+    end
+    function auto.Restore()
+        destroyed = true
+        auto.ShootEnabled, auto.ReloadEnabled = false, false
+        detach()
+    end
+    track(RunService.RenderStepped:Connect(auto.Update))
+    track({ Disconnect = auto.Restore })
+    local shoot = gameSection("Cold War", AimTab.Left, "Auto Shoot")
+    Elements.Toggle(shoot, "Auto Shoot", false, function(on)
+        auto.ShootEnabled = on
+        if not on then release() end
+        if not on and not auto.ReloadEnabled then detach() end
+    end)
+    local reload = gameSection("Cold War", AimTab.Left, "Auto Reload")
+    Elements.Toggle(reload, "Auto Reload", false, function(on)
+        auto.ReloadEnabled = on
+        if not on and not auto.ShootEnabled then detach() end
+    end)
+end
+
 function Settings.SetupColdWar()
     local options, playerModel = Settings.SetupPlayerESP("Cold War")
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
+    Settings.SetupColdWarAutoWeapons(playerModel)
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
 end

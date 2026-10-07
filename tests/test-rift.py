@@ -125,6 +125,12 @@ def main():
         extras_path = temp / 'visual-extras-spec.luau'
         extras_path.write_text(extras_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(extras_path)], check=True)
+        auto_spec = (ROOT / 'tests' / 'auto-weapons-spec.luau').read_text(encoding='utf-8')
+        auto_spec = auto_spec.replace('-- INSERT_AUTO_WEAPONS',
+            between(inner, 'function Settings.SetupColdWarAutoWeapons(', '\nfunction Settings.SetupColdWar()'))
+        auto_path = temp / 'auto-weapons-spec.luau'
+        auto_path.write_text(auto_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(auto_path)], check=True)
         rivals_chunks = [
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
