@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-coldwar-shot-check-k298"
+local SUNSET_BUILD = "20261007-rift-project-delta-k299"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -438,11 +438,13 @@ local function onMenuVisibility()
             MouseBehavior = UIS.MouseBehavior,
             MouseIconEnabled = UIS.MouseIconEnabled,
         }
-        if Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War" then
+        if Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War"
+            and Settings.SelectedGame ~= "Project Delta" then
             savedCamMode = LocalPlayer.CameraMode
             LocalPlayer.CameraMode = Enum.CameraMode.Classic
         end
-        if useScriptable and Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War" then
+        if useScriptable and Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War"
+            and Settings.SelectedGame ~= "Project Delta" then
             savedCamType = Camera.CameraType
             local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             camOffset = root and root.CFrame:ToObjectSpace(Camera.CFrame) or nil
@@ -458,7 +460,8 @@ track(Window:GetPropertyChangedSignal("Visible"):Connect(onMenuVisibility))
 
 local function forceUnlock()
     if not anyMenuVisible() then return end
-    if useScriptable and Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War" then
+    if useScriptable and Settings.SelectedGame ~= "Rivals" and Settings.SelectedGame ~= "Cold War"
+        and Settings.SelectedGame ~= "Project Delta" then
         if Camera.CameraType ~= Enum.CameraType.Scriptable then
             Camera.CameraType = Enum.CameraType.Scriptable
         end
@@ -634,7 +637,9 @@ function Persistence.ControlApplies(control, gameName)
     local tab, scope = control.Key:match("^([^/]+)/([^/]+)/")
     if scope == gameName then return true end
     if scope ~= "All" then return false end
-    if gameName == "Rivals" or gameName == "Cold War" then return tab == "Sunset" end
+    if gameName == "Rivals" or gameName == "Cold War" or gameName == "Project Delta" then
+        return tab == "Sunset"
+    end
     if control.Key:match("^Player/All/Third Person/") then return true end
     return not control.Box or not table.find(bedWarsHiddenSections, control.Box)
 end
@@ -8468,7 +8473,8 @@ function BedWars.BuildUI(boardGame)
     boardGame = boardGame or "BedWars"
     local isRivals = boardGame == "Rivals"
     local isColdWar = boardGame == "Cold War"
-    local categoryOrder = (isRivals or isColdWar)
+    local isProjectDelta = boardGame == "Project Delta"
+    local categoryOrder = (isRivals or isColdWar or isProjectDelta)
         and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
         or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
     local boardWidth = 20 + #categoryOrder * 215
@@ -8858,7 +8864,7 @@ function BedWars.BuildUI(boardGame)
                     bindButton.TextScaled = false
                     bindButton.TextSize = 10
                 end
-                if (isRivals or isColdWar) and toggleName then
+                if (isRivals or isColdWar or isProjectDelta) and toggleName then
                     row.Size = UDim2.new(1, 0, 0, 22)
                     local checkbox = row:FindFirstChildOfClass("Frame")
                     if checkbox then
@@ -8871,7 +8877,7 @@ function BedWars.BuildUI(boardGame)
                     toggleName.TextTruncate = Enum.TextTruncate.AtEnd
                     toggleName.TextYAlignment = Enum.TextYAlignment.Center
                 end
-                if (isRivals or isColdWar) and bindButton and bindButton.Visible then
+                if (isRivals or isColdWar or isProjectDelta) and bindButton and bindButton.Visible then
                     bindButton.AnchorPoint = Vector2.new(1, 0.5)
                     bindButton.Position = UDim2.new(1, 0, 0.5, 0)
                     bindButton.Size = UDim2.fromOffset(40, 16)
@@ -9085,7 +9091,21 @@ function BedWars.BuildUI(boardGame)
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
 
-    if isColdWar then
+    if isProjectDelta then
+        specs = {
+            { "Visuals", "ESP Boxes", "Visuals", "Project Delta", "ESP Boxes", "ESP Boxes" },
+            { "Visuals", "Player Outlines", "Visuals", "Project Delta", "Player Outlines", "Player Outlines" },
+            { "Visuals", "FOV", "Visuals", "Project Delta", "FOV", "FOV" },
+            { "Visuals", "Visibility", "Visuals", "Project Delta", "Visibility", "No Fog" },
+            { "Sunset", "Module List", "Sunset", "Project Delta", "Module List", "Module List" },
+            { "Sunset", "Configs", "Sunset", "All", "Configs" },
+            { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+            { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
+            { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
+            { "Sunset", "Colors", "Sunset", "All", "Colors" },
+            { "Sunset", "Menu Key", "Sunset", "All", "Main" },
+        }
+    elseif isColdWar then
         specs = {
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
@@ -10715,7 +10735,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     local options = { BoxesOn = false, OutlinesOn = false, NamesOn = true, DrawBoxes = true,
         HealthOn = true, ClassOn = true, InfoOn = true, FlagsOn = true, LimbsOn = false,
         SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
-        VisibleOnly = false, ShowAllPlayers = gameName == "Cold War",
+        VisibleOnly = false, ShowAllPlayers = gameName == "Cold War" or gameName == "Project Delta",
         DimHidden = true, MaxDistance = 1000, TextSize = 13,
         VehiclesOn = true, EmptyVehicles = false,
         UsePlayerColors = true, VisibilityInterval = 1 / 60,
@@ -10818,7 +10838,8 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
                 Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
-        return (not options.VisibleOnly or cache.Visible or (gameName ~= "Cold War" and teammate)),
+        return (not options.VisibleOnly or cache.Visible or
+            ((gameName == "Rivals" or gameName == "BedWars") and teammate)),
             teammate, distance, cache.Visible
     end
     local function applyPlayer(player, model, camera)
@@ -11070,7 +11091,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         end
         options.Apply()
     end)
-    if gameName == "Cold War" then
+    if gameName == "Cold War" or gameName == "Project Delta" then
         Elements.Toggle(boxes, "Show All Players", true, function(on)
             options.ShowAllPlayers = on
             options.Apply()
@@ -11859,9 +11880,11 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     end)
 end
 
-function Settings.SetupColdWarVisibility()
+function Settings.SetupColdWarVisibility(gameName)
+    gameName = gameName or "Cold War"
     local options = { NoFog = false, FullBright = false }
-    Settings.ColdWarVisibility = options
+    if gameName == "Cold War" then Settings.ColdWarVisibility = options
+    else Settings.ProjectDeltaVisibility = options end
     local originalFog, originalBright, atmosphere, density, haze
     local destroyed, nextRefresh = false, 0
     local function restoreFog()
@@ -11882,7 +11905,7 @@ function Settings.SetupColdWarVisibility()
         end
     end
     function options.Update()
-        if destroyed or Settings.SelectedGame ~= "Cold War" then restoreFog() restoreBright() return end
+        if destroyed or Settings.SelectedGame ~= gameName then restoreFog() restoreBright() return end
         if options.NoFog then
             if originalFog == nil then originalFog = Lighting.FogEnd end
             local current = Lighting:FindFirstChildOfClass("Atmosphere")
@@ -11923,7 +11946,7 @@ function Settings.SetupColdWarVisibility()
         options.NoFog, options.FullBright = false, false
         restoreFog() restoreBright()
     end })
-    local section = gameSection("Cold War", VisualsTab.Left, "Visibility")
+    local section = gameSection(gameName, VisualsTab.Left, "Visibility")
     Elements.Toggle(section, "No Fog", false, function(on) options.NoFog = on options.Update() end)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
@@ -11942,6 +11965,49 @@ function Settings.SetupColdWar()
     Settings.StartupStage("Building Cold War menu...")
     BedWars.BuildUI("Cold War")
 end
+function Settings.SetupProjectDelta()
+    local options = Settings.SetupPlayerESP("Project Delta")
+    local outlines = gameSection("Project Delta", VisualsTab.Left, "Player Outlines")
+    Elements.Toggle(outlines, "Player Outlines", false, function(on)
+        options.OutlinesOn = on
+        options.Apply()
+    end)
+    Elements.ColorPicker(outlines, "Color", options.OutlineColor, function(color)
+        options.OutlineColor = color
+        options.Apply()
+    end)
+    local fov = { Enabled = false, Value = 80 }
+    Settings.ProjectDeltaFOV = fov
+    local camera, original
+    local function restore()
+        if camera and original then pcall(function() camera.FieldOfView = original end) end
+        camera, original = nil, nil
+    end
+    function fov.Apply()
+        local current = workspace.CurrentCamera
+        if Settings.SelectedGame ~= "Project Delta" or not fov.Enabled or not current then
+            restore()
+            return
+        end
+        if camera ~= current then
+            restore()
+            camera, original = current, current.FieldOfView
+        end
+        current.FieldOfView = fov.Value
+    end
+    track(RunService.RenderStepped:Connect(fov.Apply))
+    track({ Disconnect = function() fov.Enabled = false restore() end })
+    local fovSection = gameSection("Project Delta", VisualsTab.Left, "FOV")
+    Elements.Toggle(fovSection, "FOV", false, function(on) fov.Enabled = on fov.Apply() end)
+    Elements.Slider(fovSection, "Value", 40, 120, 80, "°", function(value)
+        fov.Value = value
+        fov.Apply()
+    end)
+    Settings.SetupColdWarVisibility("Project Delta")
+    local list = gameSection("Project Delta", SettingsTab.Left, "Module List")
+    Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
+    BedWars.BuildUI("Project Delta")
+end
 if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
     Settings.SetupPlayerESP("BedWars")
     BedWars.BuildUI()
@@ -11953,6 +12019,7 @@ elseif game.PlaceId == 17625359962 or game.GameId == 6035872082 then
     RivalsAim.BuildUI()
 end
 if game.PlaceId == 13687899540 or game.GameId == 4750561026 then Settings.SetupColdWar() end
+if game.PlaceId == 7336302630 or game.GameId == 2862098693 then Settings.SetupProjectDelta() end
 
 
 
@@ -12019,6 +12086,7 @@ local supportedGames = {
     { Name = "BedWars", Place = 6872265039, Universe = 2619619496 },
     { Name = "Rivals", Place = 17625359962, Universe = 6035872082 },
     { Name = "Cold War", Place = 13687899540, Universe = 4750561026 },
+    { Name = "Project Delta", Place = 7336302630, Universe = 2862098693 },
 }
 local detectedGame
 for _, entry in ipairs(supportedGames) do
@@ -12082,6 +12150,7 @@ if detectedGame then
                     [6872265039] = true, [2619619496] = true,
                     [17625359962] = true, [6035872082] = true,
                     [13687899540] = true, [4750561026] = true,
+                    [7336302630] = true, [2862098693] = true,
                 }
                 if allowed[game.PlaceId] or allowed[game.GameId] then
                     local ok, err = pcall(function()
@@ -12150,7 +12219,7 @@ do
         showGameSections(nil)
         Title.Text = "  Rift | Unsupported game"
         local notice = makeSection(SettingsTab.Left, "Unsupported Game")
-        Elements.Label(notice, "Rift supports BedWars, Rivals, and Cold War.")
+        Elements.Label(notice, "Rift supports BedWars, Rivals, Cold War, and Project Delta.")
         SettingsTab.Select()
     end
 end

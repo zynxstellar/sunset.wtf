@@ -119,6 +119,14 @@ def main():
         aim_path = temp / 'coldwar-aim-spec.luau'
         aim_path.write_text(aim_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(aim_path)], check=True)
+        assert '{ Name = "Project Delta", Place = 7336302630, Universe = 2862098693 }' in inner
+        assert '[7336302630] = true, [2862098693] = true' in inner
+        delta_spec = (ROOT / 'tests' / 'project-delta-spec.luau').read_text(encoding='utf-8')
+        delta_spec = delta_spec.replace('-- INSERT_PROJECT_DELTA_PRODUCTION',
+            between(inner, 'function Settings.SetupProjectDelta()', '\nif game.PlaceId == 6872265039'))
+        delta_path = temp / 'project-delta-spec.luau'
+        delta_path.write_text(delta_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(delta_path)], check=True)
         speed_spec = (ROOT / 'tests' / 'coldwar-speed-spec.luau').read_text(encoding='utf-8')
         speed_spec = speed_spec.replace('-- INSERT_COLDWAR_SPEED_PRODUCTION',
             between(inner, 'function Settings.SetupColdWarBulletSpeed(', '\nfunction Settings.SetupColdWarAutoWeapons('))
@@ -129,7 +137,7 @@ def main():
         extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
             between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarWeaponTuning('))
         extras_spec = extras_spec.replace('-- INSERT_VISIBILITY',
-            between(inner, 'function Settings.SetupColdWarVisibility()', '\nfunction Settings.SetupColdWar()'))
+            between(inner, 'function Settings.SetupColdWarVisibility(', '\nfunction Settings.SetupColdWar()'))
         extras_path = temp / 'visual-extras-spec.luau'
         extras_path.write_text(extras_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(extras_path)], check=True)
