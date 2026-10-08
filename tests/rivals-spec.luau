@@ -943,8 +943,17 @@ end
 local highlights,boxes=liveVisuals()
 assert(#highlights==3 and #boxes==3,"visuals did not include every living non-local player")
 for _,entry in ipairs(highlights) do assert(entry.OutlineColor==outlineColor) end
-assert(boxes[1].Visible and boxes[1].Size.X==12 and boxes[1].Size.Y==24,
+assert(boxes[1].Visible and boxes[1].Size.X==4 and boxes[1].Size.Y==6,
     "ESP box did not use projected model bounds")
+do
+    local perspective={ViewportSize=Camera.ViewportSize,WorldToViewportPoint=function(_,point)
+        return Vector3.new(960+point.X*1000/point.Z,540-point.Y*1000/point.Z,point.Z)
+    end}
+    local _,_,nearWidth,nearHeight=projectBounds(perspective,CFrame.new(Vector3.new(0,0,100)),Vector3.new(4,6,2))
+    local _,_,farWidth,farHeight=projectBounds(perspective,CFrame.new(Vector3.new(0,0,1000)),Vector3.new(4,6,2))
+    assert(farWidth<nearWidth and farHeight<nearHeight and farHeight<24,
+        "distant ESP boxes retained a large minimum size")
+end
 local enemyColored=false
 for _,box in ipairs(boxes) do
     assert(box.Color==boxColor or box.Color==Settings.PlayerESP.Rivals.TeamColor,"ESP color did not update")
@@ -1354,7 +1363,7 @@ end)();
         options.Apply()
         assert(#visible("Square",2)==2,gameName.." did not restore player ESP")
         local bar=visible("Square",5)[1]
-        assert(bar and math.abs(bar.Size.Y-4.8)<1e-6,"limb max health was ignored")
+        assert(bar and math.abs(bar.Size.Y-1.2)<1e-6,"limb max health was ignored")
         local class,weapon,downed=false,false,false
         for _,o in ipairs(visible("Text")) do
             class=class or o.Text=="Sniper"

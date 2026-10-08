@@ -60,16 +60,23 @@ function Elements.Toggle(s,n,d,f) return control(s,n,d,f) end
 function Elements.Dropdown(s,n,items,d,f) return control(s,n,d,f) end
 function Elements.Slider(s,n,min,max,d,units,f) return control(s,n,d,f) end
 function Elements.Button(s,n,f) controls[s.."/"..n]={Click=f} end
-local workspace={Children={},CurrentCamera={ViewportSize=Vector2.new(1920,1080)}}
+local workspace={Children={},CurrentCamera={ViewportSize=Vector2.new(1920,1080),CFrame={Position=Vector3.new(0,0,-1)}}}
+function workspace:FindFirstChild(name) return self.Children[name] end
+local Enum={RaycastFilterType={Exclude="Exclude"}}
+local RaycastParams={new=function() return {} end}
 function workspace.CurrentCamera:WorldToViewportPoint(p) return Vector3.new(960+p.X,540-p.Y,p.Z),p.Z>0 end
 local wall,raycasts,rayFailure=nil,0,false
 local headWall=false
 local collisionTarget
+local directWall,muzzleWall=false,false
 function workspace:Raycast(o,d,params)
-    assert(params.Sentinel=="native collision params")
+    assert(params.Sentinel=="native collision params" or params.FilterType=="Exclude")
     raycasts+=1
     if rayFailure then error("cast failed") end
     if wall then return {Instance=wall} end
+    if not params.Sentinel and (directWall or (muzzleWall and o.Z==0)) then
+        return {Instance=object("Cover","BasePart",workspace)}
+    end
     if headWall and d.Y>0.001 then return {Instance=object("Wall","BasePart",workspace)} end
     if collisionTarget and o.Z<=100 and o.Z+d.Z>=100 and d.Z>0 then
         local point=o+d*((100-o.Z)/d.Z)
@@ -216,14 +223,25 @@ wall=object("Wall","BasePart",workspace)
 fire() assert(directions[1].X==0,"wall check bent a blocked shot")
 aim.Wallbang=true fire() assert(directions[1].X==0,"nonpenetrating weapon bent a blocked shot")
 params.Weapon.PenetrationPower=10
-fire() assert(directions[1].X>0,"penetrating weapon was not aimed through cover")
+fire() assert(directions[1].X==0,"penetrating weapon bypassed mandatory visibility")
 aim.WallCheck=false
 local strictDirection=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1),true)
 assert(strictDirection==nil,"Auto Shoot strict path accepted blocked target")
 aim.WallCheck=true
 aim.Wallbang=false fire() assert(directions[1].X==0,"disabled wallbang redirected through cover")
-aim.WallCheck=false fire() assert(directions[1].X>0)
+aim.WallCheck=false fire() assert(directions[1].X==0,"saved wall-check setting bypassed mandatory visibility")
 aim.WallCheck=true wall=nil
+directWall=true fire() assert(directions[1].X==0,"native collision filter bypassed direct-view cover")
+directWall=false muzzleWall=true fire() assert(directions[1].X==0,"blocked muzzle redirected at a visible player")
+muzzleWall=false
+enemy.Team={Name="NATO"}
+fire() assert(directions[1].X==0,"same-name teammate targeted")
+enemy.Team=LocalPlayer.Team
+fire() assert(directions[1].X==0,"same-team teammate targeted")
+enemy.Team=nil
+fire() assert(directions[1].X==0,"player without a combat team targeted")
+enemy.Team={Name="PACT"}
+fire() assert(directions[1].X>0,"eligible enemy was not restored")
 headWall=true
 aim.TargetVisiblePart=true fire()
 assert(directions[1].Y==0,"visible torso was not chosen when head was blocked")

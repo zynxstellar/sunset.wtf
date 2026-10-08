@@ -165,6 +165,14 @@ def main():
         extras_path = temp / 'visual-extras-spec.luau'
         extras_path.write_text(extras_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(extras_path)], check=True)
+        hit_spec = (ROOT / 'tests' / 'hit-sounds-spec.luau').read_text(encoding='utf-8')
+        hit_spec = hit_spec.replace('-- INSERT_HIT_SOUNDS',
+            between(inner, 'function Settings.SetupColdWarHitSounds()', '\nfunction Settings.SetupColdWar()'))
+        hit_path = temp / 'hit-sounds-spec.luau'
+        hit_path.write_text(hit_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(hit_path)], check=True)
+        sound_files = list((ROOT / 'assets' / 'hitsounds').glob('*.ogg'))
+        assert len(sound_files) == 24 and all(p.read_bytes().startswith(b'OggS') for p in sound_files)
         tuning_spec = (ROOT / 'tests' / 'weapon-tuning-spec.luau').read_text(encoding='utf-8')
         tuning_spec = tuning_spec.replace('-- INSERT_WEAPON_TUNING',
             between(inner, 'function Settings.SetupColdWarWeaponTuning(', '\nfunction Settings.SetupColdWarAutoWeapons('))

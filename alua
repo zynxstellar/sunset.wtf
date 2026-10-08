@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-coldwar-visuals-k304"
+local SUNSET_BUILD = "20261008-rift-visible-aim-hitsounds-k305"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -1640,7 +1640,7 @@ local function projectBounds(camera, boxFrame, boxSize)
         or minX > viewport.X or minY > viewport.Y then return nil end
     minX, minY = math.clamp(minX, 0, viewport.X), math.clamp(minY, 0, viewport.Y)
     maxX, maxY = math.clamp(maxX, 0, viewport.X), math.clamp(maxY, 0, viewport.Y)
-    local width, height = math.max(12, maxX-minX), math.max(24, maxY-minY)
+    local width, height = math.max(1, maxX-minX), math.max(1, maxY-minY)
     return math.clamp((minX + maxX - width) / 2, 0, math.max(0, viewport.X - width)),
         math.clamp((minY + maxY - height) / 2, 0, math.max(0, viewport.Y - height)), width, height
 end
@@ -10532,8 +10532,7 @@ function Settings.SetupColdWarAim(playerModel)
             return delta.Unit, time
         end
     end
-    local function clearArc(origin, direction, time, params, model, velocity, allowWallbang, strict)
-        if not aim.WallCheck and not strict then return true end
+    local function clearArc(origin, direction, time, params, model, velocity)
         local tr = makeTrajectory(origin, direction, params.Weapon)
         local last = origin
         for i = 1, 12 do
@@ -10541,17 +10540,30 @@ function Settings.SetupColdWarAim(playerModel)
             local position = trajectory.GetPositionAtTime(tr, sampleTime) - velocity * sampleTime
             local hit = workspace:Raycast(last, position - last, params.RaycastParams)
             if hit then
-                if not strict and allowWallbang and aim.Wallbang and type(params.Weapon.PenetrationPower) == "number"
-                    and params.Weapon.PenetrationPower > 0 and not hit.Instance:IsDescendantOf(model) then
-                    -- Let the native projectile caster decide whether this surface can be pierced.
-                    return true
-                end
                 return hit.Instance:IsDescendantOf(model) and table.find({ "Head", "Torso", "Left Arm",
                     "Right Arm", "Left Leg", "Right Leg", "UpperTorso", "LowerTorso" }, hit.Instance.Name) ~= nil
             end
             last = position
         end
         return false
+    end
+    local function visiblePart(camera, origin, part, model)
+        local screen, onScreen = camera:WorldToViewportPoint(part.Position)
+        if not onScreen or screen.Z <= 0 then return false end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.IgnoreWater = true
+        params.RespectCanCollide = false
+        local ignore = { camera }
+        if LocalPlayer.Character then table.insert(ignore, LocalPlayer.Character) end
+        local effects = workspace:FindFirstChild("Ignore")
+        if effects then table.insert(ignore, effects) end
+        params.FilterDescendantsInstances = ignore
+        for _, start in ipairs({ camera.CFrame.Position, origin }) do
+            local hit = workspace:Raycast(start, part.Position - start, params)
+            if hit and (not hit.Instance or not hit.Instance:IsDescendantOf(model)) then return false end
+        end
+        return true
     end
     function aim.PenetrationAt(tool, origin)
         if not tool then return 0 end
@@ -10616,7 +10628,7 @@ function Settings.SetupColdWarAim(playerModel)
                             end
                         end
                         if bestPart then
-                            table.insert(candidates, { Model = model, Part = bestPart, Distance = bestDistance })
+                            table.insert(candidates, { Player = player, Model = model, Part = bestPart, Distance = bestDistance })
                         end
                     end
                 end
@@ -10643,16 +10655,15 @@ function Settings.SetupColdWarAim(playerModel)
                 names = (aim.TargetVisiblePart or strict) and { "Head", "Torso", "UpperTorso", "LowerTorso",
                     "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { "Head" }
             end
-            local passes = not strict and aim.TargetVisiblePart and aim.Wallbang and 2 or 1
-            for pass = 1, passes do
-                for _, name in ipairs(names) do
-                    local part = candidate.Model:FindFirstChild(name)
-                    if part and part:IsA("BasePart") then
-                        local selected, time = solve(origin, part.Position, params.Weapon, velocity)
-                        local allowWallbang = not aim.TargetVisiblePart or pass == 2
-                        if selected and clearArc(origin, selected, time, params, candidate.Model, velocity, allowWallbang, strict) then
-                            return selected, nil, candidate.Model, part
-                        end
+            for _, name in ipairs(names) do
+                local part = candidate.Model:FindFirstChild(name)
+                local currentTeam = candidate.Player.Team and candidate.Player.Team.Name
+                if part and part:IsA("BasePart") and currentTeam ~= localTeam
+                    and (currentTeam == "NATO" or currentTeam == "PACT")
+                    and visiblePart(camera, origin, part, candidate.Model) then
+                    local selected, time = solve(origin, part.Position, params.Weapon, velocity)
+                    if selected and clearArc(origin, selected, time, params, candidate.Model, velocity) then
+                        return selected, nil, candidate.Model, part
                     end
                 end
             end
@@ -10779,8 +10790,6 @@ function Settings.SetupColdWarAim(playerModel)
     Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Nearest" }, "Head", function(value) aim.AimPart = value end)
     aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
     Elements.Toggle(section, "Target Visible Part", true, function(on) aim.TargetVisiblePart = on end)
-    Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
-    Elements.Toggle(section, "Wallbang", false, function(on) aim.Wallbang = on end)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
     Elements.Slider(section, "Hit Chance", 0, 100, 100, "%", function(value) aim.HitChance = value end)
     Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
@@ -10954,8 +10963,8 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             local top = camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.3, 0))
             local bottom = camera:WorldToViewportPoint(foot.Position - Vector3.new(0, foot.Size.Y / 2, 0))
             if top.Z > 0 and bottom.Z > 0 then
-                height = math.max(24, math.abs(bottom.Y - top.Y))
-                width = math.max(12, height * 0.5, math.abs(bottom.X - top.X))
+                height = math.max(1, math.abs(bottom.Y - top.Y))
+                width = math.max(1, height * 0.5, math.abs(bottom.X - top.X))
                 x, y = (top.X + bottom.X) / 2 - width / 2, math.min(top.Y, bottom.Y)
                 if width < 1 or height < 1 or x + width < 0 or y + height < 0
                     or x > camera.ViewportSize.X or y > camera.ViewportSize.Y then x = nil end
@@ -12104,6 +12113,173 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarHitSounds()
+    local previous = ENV.SunsetColdWarHitSounds
+    if previous and type(previous.Restore) == "function" then previous.Restore() end
+    local sounds = { Enabled = false, Choice = "Bell 1", Volume = 50, Pitch = 1, Queue = {} }
+    Settings.ColdWarHitSounds, ENV.SunsetColdWarHitSounds = sounds, sounds
+    local choices, files = {}, {}
+    for _, spec in ipairs({ { "Bell", "impactBell_heavy" }, { "Glass", "impactGlass_light" },
+        { "Metal", "impactMetal_light" }, { "Punch", "impactPunch_medium" },
+        { "Soft", "impactSoft_medium" }, { "Tin", "impactTin_medium" },
+        { "Wood", "impactWood_light" }, { "Click", "impactGeneric_light" } }) do
+        for i = 1, 3 do
+            local label = spec[1] .. " " .. i
+            table.insert(choices, label)
+            files[label] = spec[2] .. string.format("_%03d.ogg", i - 1)
+        end
+    end
+    local destroyed, nextRetry, lastPlayed = false, 0, -math.huge
+    local api, original, wrapper
+    local assets, pending, previews, pool, seen = {}, {}, {}, {}, {}
+    local poolIndex = 0
+    local function play(asset)
+        if destroyed or not asset then return end
+        poolIndex = poolIndex % 6 + 1
+        local sound = pool[poolIndex]
+        if not sound then
+            sound = new("Sound", { Name = "RiftHitSound" }, game:GetService("SoundService"))
+            pool[poolIndex] = sound
+        end
+        sound:Stop()
+        sound.SoundId, sound.Volume, sound.PlaybackSpeed = asset, sounds.Volume / 100, sounds.Pitch
+        sound.TimePosition = 0
+        sound:Play()
+    end
+    local function prepare(preview)
+        local label = sounds.Choice
+        local filename = files[label]
+        if not filename or destroyed then return end
+        if assets[filename] then
+            sounds.Asset = assets[filename]
+            if preview then play(sounds.Asset) end
+            return
+        end
+        if preview then previews[filename] = true end
+        if pending[filename] then return end
+        pending[filename] = true
+        task.spawn(function()
+            local ok, asset = pcall(function()
+                local getter = ENV.getcustomasset or getcustomasset or ENV.getsynasset or getsynasset
+                local save = ENV.writefile or writefile
+                local exists = ENV.isfile or isfile
+                local folder = ENV.makefolder or makefolder
+                if type(getter) ~= "function" or type(save) ~= "function" then
+                    error("Hit Sounds needs getcustomasset and writefile")
+                end
+                local path = "RiftAssets/hitsounds_v1_" .. filename
+                if type(exists) ~= "function" or not exists(path) then
+                    local data = game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/"
+                        .. "cd25bf679f5c56449332741079e304229cfd1ee5/assets/hitsounds/" .. filename)
+                    if type(data) ~= "string" or data:sub(1, 4) ~= "OggS" then error("Sound download failed") end
+                    if destroyed then return nil end
+                    if type(folder) == "function" then pcall(folder, "RiftAssets") end
+                    save(path, data)
+                end
+                return getter(path)
+            end)
+            pending[filename] = nil
+            if destroyed then return end
+            if ok and type(asset) == "string" and asset ~= "" then
+                assets[filename] = asset
+                if sounds.Choice == label then
+                    sounds.Asset = asset
+                    if previews[filename] then pcall(play, asset) end
+                end
+            elseif not ok then warn("[Rift] Hit Sounds: " .. tostring(asset)) end
+            previews[filename] = nil
+        end)
+    end
+    local function unhook()
+        if api and api.sendClaim == wrapper then api.sendClaim = original end
+        api, original, wrapper = nil, nil, nil
+        table.clear(sounds.Queue)
+        table.clear(seen)
+    end
+    local function install()
+        if api and api.sendClaim == wrapper then return end
+        local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+        local client = scripts and scripts:FindFirstChild("BallisticsClient")
+        local module = client and client:FindFirstChild("HitReporter")
+        if not module or not rivalsModuleLoaded(module) then return end
+        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
+        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
+        if identity then setId(2) end
+        local result = table.pack(pcall(require, module))
+        if identity then setId(identity) end
+        if not result[1] then error(result[2], 0) end
+        local reporter = result[2]
+        if type(reporter) ~= "table" or type(reporter.sendClaim) ~= "function" then return end
+        if destroyed or not sounds.Enabled then return end
+        api, original = reporter, reporter.sendClaim
+        local native = original
+        wrapper = function(id, impact, ...)
+            local result = table.pack(native(id, impact, ...))
+            if not destroyed and sounds.Enabled and type(impact) == "table" and id ~= nil then
+                if #sounds.Queue >= 32 then table.remove(sounds.Queue, 1) end
+                table.insert(sounds.Queue, { Id = id, Part = impact.Instance, Time = os.clock() })
+            end
+            return table.unpack(result, 1, result.n)
+        end
+        api.sendClaim = wrapper
+    end
+    function sounds.Update()
+        if destroyed then return end
+        if not sounds.Enabled or Settings.SelectedGame ~= "Cold War" then
+            unhook()
+            for _, sound in ipairs(pool) do sound:Stop() end
+            return
+        end
+        if os.clock() >= nextRetry then
+            nextRetry = os.clock() + 0.5
+            local ok, err = pcall(install)
+            if not ok then warn("[Rift] Hit Sounds: " .. tostring(err)) end
+        end
+        local queue = sounds.Queue
+        sounds.Queue = {}
+        for _, event in ipairs(queue) do
+            pcall(function()
+                local part = event.Part
+                local model = part and part:FindFirstAncestorOfClass("Model")
+                local player = model and Players:GetPlayerFromCharacter(model)
+                local team = player and player.Team and player.Team.Name
+                local mine = LocalPlayer.Team and LocalPlayer.Team.Name
+                if not player or player == LocalPlayer or team == mine
+                    or (team ~= "NATO" and team ~= "PACT") then return end
+                local last = seen[player]
+                if last and last.Id == event.Id and event.Time - last.Time < 2 then return end
+                seen[player] = event
+                if os.clock() - event.Time > 0.5 or os.clock() - lastPlayed < 0.04 then return end
+                if not sounds.Asset then prepare(false) return end
+                play(sounds.Asset)
+                lastPlayed = os.clock()
+            end)
+        end
+    end
+    function sounds.Restore()
+        destroyed, sounds.Enabled = true, false
+        unhook()
+        for _, sound in ipairs(pool) do sound:Destroy() end
+        table.clear(pool)
+    end
+    track(RunService.RenderStepped:Connect(sounds.Update))
+    track({ Disconnect = sounds.Restore })
+    local section = gameSection("Cold War", VisualsTab.Left, "Hit Sounds")
+    Elements.Toggle(section, "Hit Sounds", false, function(on)
+        sounds.Enabled = on
+        if on then prepare(false) end
+        sounds.Update()
+    end)
+    Elements.Dropdown(section, "Sound", choices, "Bell 1", function(value)
+        if not files[value] then return end
+        sounds.Choice, sounds.Asset = value, nil
+        if sounds.Enabled then prepare(false) end
+    end)
+    Elements.Slider(section, "Volume", 0, 100, 50, "%", function(value) sounds.Volume = value end)
+    Elements.Slider(section, "Pitch", 50, 200, 100, "%", function(value) sounds.Pitch = value / 100 end)
+    Elements.Button(section, "Preview", function() prepare(true) end)
+end
+
 function Settings.SetupColdWar()
     local options, playerModel = Settings.SetupPlayerESP("Cold War")
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
@@ -12111,6 +12287,7 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarBulletSpeed(playerModel)
     Settings.SetupColdWarVisualExtras()
+    Settings.SetupColdWarHitSounds()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

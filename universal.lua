@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-universal-esp-k272"
+local SUNSET_BUILD = "20261008-rift-universal-esp-scale-k273"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -1655,7 +1655,7 @@ local function projectBounds(camera, boxFrame, boxSize)
         or minX > viewport.X or minY > viewport.Y then return nil end
     minX, minY = math.clamp(minX, 0, viewport.X), math.clamp(minY, 0, viewport.Y)
     maxX, maxY = math.clamp(maxX, 0, viewport.X), math.clamp(maxY, 0, viewport.Y)
-    local width, height = math.max(12, maxX-minX), math.max(24, maxY-minY)
+    local width, height = math.max(1, maxX-minX), math.max(1, maxY-minY)
     return math.clamp((minX + maxX - width) / 2, 0, math.max(0, viewport.X - width)),
         math.clamp((minY + maxY - height) / 2, 0, math.max(0, viewport.Y - height)), width, height
 end
