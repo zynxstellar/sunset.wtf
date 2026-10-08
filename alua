@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-coldwar-aim-fov-k294"
+local SUNSET_BUILD = "20261007-rift-coldwar-weapon-tuning-k295"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11251,6 +11251,126 @@ function Settings.SetupColdWarVisualExtras()
     Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "°", function(value) fov.Value = value end)
 end
 
+function Settings.SetupColdWarWeaponTuning()
+    local previous = ENV.SunsetColdWarWeaponTuning
+    if previous and type(previous.Restore) == "function" then previous.Restore() end
+    local tuning = { SpreadEnabled = false, SpreadAmount = 0,
+        RecoilEnabled = false, RecoilAmount = 0 }
+    Settings.ColdWarWeaponTuning, ENV.SunsetColdWarWeaponTuning = tuning, tuning
+    local spreadInstalled, recoilInstalled, destroyed = false, false, false
+    local nextInstall, nextWarning = 0, 0
+    local recoilController
+    local function nativeRequire(module)
+        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
+        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
+        if identity then setId(2) end
+        local result = table.pack(pcall(require, module))
+        if identity then setId(identity) end
+        if not result[1] then error(result[2], 0) end
+        return result[2]
+    end
+    local function modules()
+        local storage = game:GetService("ReplicatedStorage")
+        local client = storage:FindFirstChild("Client")
+        local tools = client and client:FindFirstChild("Tools")
+        local weapon = tools and tools:FindFirstChild("Weapon")
+        local muzzle = weapon and weapon:FindFirstChild("Muzzle")
+        local controllers = weapon and weapon:FindFirstChild("controllers")
+        return muzzle and muzzle:FindFirstChild("Discharge"),
+            controllers and controllers:FindFirstChild("RecoilController")
+    end
+    local function installSpread(module)
+        if spreadInstalled or not module or not rivalsModuleLoaded(module) then return end
+        local readUpvalues = debug and debug.getupvalues
+        if type(readUpvalues) ~= "function" or type(hookfunction) ~= "function" then
+            error("No Spread needs debug.getupvalues and hookfunction")
+        end
+        local discharge = nativeRequire(module)
+        local fire = type(discharge) == "table" and discharge.fire
+        local deviate = type(fire) == "function" and readUpvalues(fire)[8]
+        if type(deviate) ~= "function" then error("Cold War spread layout changed") end
+        local nativeDeviate
+        nativeDeviate = hookfunction(deviate, function(direction, spread, ...)
+            if tuning.SpreadEnabled and not destroyed and Settings.SelectedGame == "Cold War"
+                and typeof(direction) == "Vector3" then
+                local fraction = math.clamp(tuning.SpreadAmount / 100, 0, 1)
+                if fraction == 0 then return direction.Unit end
+                if fraction < 1 then
+                    local scattered = nativeDeviate(direction, spread, ...)
+                    return direction.Unit:Lerp(scattered, fraction).Unit
+                end
+            end
+            return nativeDeviate(direction, spread, ...)
+        end)
+        if type(nativeDeviate) ~= "function" then error("No Spread hook failed") end
+        spreadInstalled = true
+    end
+    local function installRecoil(module)
+        if recoilInstalled or not module or not rivalsModuleLoaded(module) then return end
+        if type(hookfunction) ~= "function" then error("No Recoil needs hookfunction") end
+        local controller = nativeRequire(module)
+        if type(controller) ~= "table" or type(controller.getSpring) ~= "function" then
+            error("Cold War recoil interface changed")
+        end
+        local spring = controller.getSpring("camera")
+        local shove = spring and spring.shove
+        if type(shove) ~= "function" then return end
+        recoilController = controller
+        local nativeShove
+        nativeShove = hookfunction(shove, function(self, impulse, ...)
+            if tuning.RecoilEnabled and not destroyed and Settings.SelectedGame == "Cold War"
+                and typeof(impulse) == "Vector3" then
+                for _, name in ipairs({ "offset", "rotation", "handle", "camera" }) do
+                    if self == recoilController.getSpring(name) then
+                        local fraction = math.clamp(tuning.RecoilAmount / 100, 0, 1)
+                        if fraction == 0 then return end
+                        return nativeShove(self, impulse * fraction, ...)
+                    end
+                end
+            end
+            return nativeShove(self, impulse, ...)
+        end)
+        if type(nativeShove) ~= "function" then error("No Recoil hook failed") end
+        recoilInstalled = true
+    end
+    function tuning.Update()
+        if destroyed or Settings.SelectedGame ~= "Cold War" or os.clock() < nextInstall then return end
+        if (not tuning.SpreadEnabled or spreadInstalled) and (not tuning.RecoilEnabled or recoilInstalled) then return end
+        nextInstall = os.clock() + 0.5
+        local discharge, recoil = modules()
+        local ok, err = pcall(function()
+            if tuning.SpreadEnabled then installSpread(discharge) end
+            if tuning.RecoilEnabled then installRecoil(recoil) end
+        end)
+        if not ok and os.clock() >= nextWarning then
+            nextWarning = os.clock() + 5
+            warn("[Rift] Weapon tuning: " .. tostring(err))
+        end
+    end
+    function tuning.Restore()
+        destroyed = true
+        tuning.SpreadEnabled, tuning.RecoilEnabled = false, false
+    end
+    track(RunService.RenderStepped:Connect(tuning.Update))
+    track({ Disconnect = tuning.Restore })
+    local spread = gameSection("Cold War", AimTab.Left, "No Spread")
+    Elements.Toggle(spread, "No Spread", false, function(on)
+        tuning.SpreadEnabled = on
+        if on then tuning.Update() end
+    end)
+    Elements.Slider(spread, "Spread Amount", 0, 100, 0, "%", function(value)
+        tuning.SpreadAmount = value
+    end)
+    local recoil = gameSection("Cold War", AimTab.Left, "No Recoil")
+    Elements.Toggle(recoil, "No Recoil", false, function(on)
+        tuning.RecoilEnabled = on
+        if on then tuning.Update() end
+    end)
+    Elements.Slider(recoil, "Recoil Amount", 0, 100, 0, "%", function(value)
+        tuning.RecoilAmount = value
+    end)
+end
+
 function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
@@ -11673,6 +11793,7 @@ function Settings.SetupColdWar()
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
+    Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     Settings.SetupColdWarAutoWeapons(playerModel)
     buildSpinbot(gameSection("Cold War", MiscTab.Left, "Spinbot"))

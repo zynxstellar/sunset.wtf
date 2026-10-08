@@ -121,12 +121,18 @@ def main():
         subprocess.run([str(runtime), str(aim_path)], check=True)
         extras_spec = (ROOT / 'tests' / 'visual-extras-spec.luau').read_text(encoding='utf-8')
         extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
-            between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarAutoWeapons('))
+            between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarWeaponTuning('))
         extras_spec = extras_spec.replace('-- INSERT_VISIBILITY',
             between(inner, 'function Settings.SetupColdWarVisibility()', '\nfunction Settings.SetupColdWar()'))
         extras_path = temp / 'visual-extras-spec.luau'
         extras_path.write_text(extras_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(extras_path)], check=True)
+        tuning_spec = (ROOT / 'tests' / 'weapon-tuning-spec.luau').read_text(encoding='utf-8')
+        tuning_spec = tuning_spec.replace('-- INSERT_WEAPON_TUNING',
+            between(inner, 'function Settings.SetupColdWarWeaponTuning(', '\nfunction Settings.SetupColdWarAutoWeapons('))
+        tuning_path = temp / 'weapon-tuning-spec.luau'
+        tuning_path.write_text(tuning_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(tuning_path)], check=True)
         auto_spec = (ROOT / 'tests' / 'auto-weapons-spec.luau').read_text(encoding='utf-8')
         auto_spec = auto_spec.replace('-- INSERT_AUTO_WEAPONS',
             between(inner, 'function Settings.SetupColdWarAutoWeapons(', '\nfunction Settings.SetupColdWar()'))
