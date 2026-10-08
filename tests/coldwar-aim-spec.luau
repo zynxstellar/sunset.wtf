@@ -108,6 +108,9 @@ local ballistics=object("Ballistics","Folder",object("Shared","Folder",storage))
 local tm=object("Trajectory","ModuleScript",ballistics)
 local wm=object("WeaponSource","ModuleScript",object("Sources","Folder",ballistics))
 local cm=object("ClientFire","ModuleScript",object("BallisticsClient","Folder",object("PlayerScripts","Folder",LocalPlayer)))
+local claims={}
+local hm=object("HitReporter","ModuleScript",cm.Parent)
+hm.Export={sendClaim=function(seed,hit) table.insert(claims,{seed=seed,hit=hit}) end}
 local params={Weapon={MuzzleSpeed=1000,K=0,Explosive=false},RaycastParams={Sentinel="native collision params"}}
 local gravity=0
 tm.Export={new=function(data) data.Gravity=gravity return data end,
@@ -117,12 +120,14 @@ local fp
 wm.Export={toFireParams=function(data) fp=data return params end}
 local calls,received,nativeFailure=0,nil,false
 local nativeYield=false
+local returnShots=false
 local function native(...)
     calls+=1 received=table.pack(...)
     if nativeFailure then error("native failure") end
     if nativeYield then
         assert(coroutine.yield("native waiting")=="continue firing","native continuation changed")
     end
+    if returnShots then return {{seed=1234},{seed=5678}} end
     return "native",nil,42
 end
 cm.Export={fire=function() error("low-level fire must not be replaced") end,volley=native}
@@ -175,6 +180,12 @@ for _=1,3 do
 end
 assert(calls==3 and fp.Owner==LocalPlayer and fp.MuzzleIndex==2 and fp.BulletIndex==3)
 assert(aim.Diagnostics.Shots==3 and aim.Diagnostics.Redirected==3,"firing counters did not observe shots")
+assert(controls["Cold War/Instant Hit/Instant Hit"] and not aim.InstantHitEnabled)
+aim.InstantHitEnabled=true returnShots=true
+fire()
+assert(#claims==2 and claims[1].seed==1234 and claims[2].seed==5678
+    and claims[1].hit.Instance==enemy.Character:FindFirstChild("Head"),"early hit claims did not use native seeds and selected part")
+returnShots=false aim.InstantHitEnabled=false
 aim.HitChance=0
 fire()
 assert(directions[1].X==0 and received[5]==directions,"zero chance redirected or replaced a native shot")

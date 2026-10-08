@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-coldwar-weapon-tuning-k295"
+local SUNSET_BUILD = "20261007-rift-coldwar-instant-hit-k296"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10405,14 +10405,14 @@ function Settings.SetupColdWarAim(playerModel)
         pcall(previous.Restore)
     end
     ENV.RiftCheckSilentAim = nil
-    local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", TargetVisiblePart = true,
+    local aim = { Enabled = false, InstantHitEnabled = false, MenuOpen = true, AimPart = "Head", TargetVisiblePart = true,
         WallCheck = true, Wallbang = false,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false, HitChance = 100 }
     aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
     local state = { Destroyed = false }
     ENV.SunsetColdWarAimHook = state
-    local api, field, original, wrapper, trajectory, weaponSource
+    local api, field, original, wrapper, trajectory, weaponSource, hitReporter
     local pending, nextRetry = false, 0
     local drawing = type(ENV.Drawing) == "table" and ENV.Drawing or Drawing
     local circle
@@ -10429,7 +10429,7 @@ function Settings.SetupColdWarAim(playerModel)
     end
     function state.Restore()
         state.Destroyed = true
-        aim.Enabled = false
+        aim.Enabled, aim.InstantHitEnabled = false, false
         restoreHandler()
         if circle then pcall(function() circle:Remove() end) circle = nil end
     end
@@ -10592,9 +10592,11 @@ function Settings.SetupColdWarAim(playerModel)
         local tr = loadedRequire(ballistics and ballistics:FindFirstChild("Trajectory"), "ReplicatedStorage.Shared.Ballistics.Trajectory")
         local ws = loadedRequire(sources and sources:FindFirstChild("WeaponSource"), "ReplicatedStorage.Shared.Ballistics.Sources.WeaponSource")
         local cf = loadedRequire(client and client:FindFirstChild("ClientFire"), "PlayerScripts.BallisticsClient.ClientFire")
+        local reporter = loadedRequire(client and client:FindFirstChild("HitReporter"), "PlayerScripts.BallisticsClient.HitReporter")
         if type(tr) ~= "table" or type(tr.new) ~= "function" or type(tr.GetTimeForDistance) ~= "function"
             or type(tr.GetPositionAtTime) ~= "function" or type(ws) ~= "table"
-            or type(ws.toFireParams) ~= "function" or type(cf) ~= "table" then
+            or type(ws.toFireParams) ~= "function" or type(cf) ~= "table"
+            or type(reporter) ~= "table" or type(reporter.sendClaim) ~= "function" then
             error("Cold War firing modules are unavailable", 0)
         end
         local key
@@ -10605,8 +10607,9 @@ function Settings.SetupColdWarAim(playerModel)
             end
         end
         if not key then error("Cold War firing interface is unavailable", 0) end
-        if state.Destroyed or not (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return false end
+        if state.Destroyed or not (aim.Enabled or aim.InstantHitEnabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return false end
         trajectory, weaponSource = tr, ws
+        hitReporter = reporter
         aim.Trajectory, aim.WeaponSource = tr, ws
         api, field, original = cf, key, cf[key]
         local native = original
@@ -10617,19 +10620,21 @@ function Settings.SetupColdWarAim(playerModel)
             local diagnostic = aim.Diagnostics
             diagnostic.Shots = diagnostic.Shots + 1
             diagnostic.LastReason = "Shot passed through: disabled, menu open, or unsupported firing arguments"
-            if aim.Enabled and not state.Destroyed and Settings.SelectedGame == "Cold War"
+            local instantPart
+            if (aim.Enabled or aim.InstantHitEnabled) and not state.Destroyed and Settings.SelectedGame == "Cold War"
                 and not aim.MenuOpen and opts == nil and typeof(tool) == "Instance"
                 and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
                 local ok, result, reason = pcall(function()
                     if aim.HitChance <= 0 or (aim.HitChance < 100 and math.random() * 100 >= aim.HitChance) then
                         return nil, "Hit Chance: native shot preserved"
                     end
-                    local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
+                    local selected, why, _, part = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
                     if not vector(selected) then return nil, why end
                     -- Match the reference volley: preserve the game's directions table
                     -- and update its existing entries before its original firing call.
                     if table.isfrozen(directions) then return nil, "Native direction array is read-only" end
                     for i = 1, #directions do directions[i] = selected end
+                    instantPart = part
                     return selected
                 end)
                 if ok and result then
@@ -10647,13 +10652,30 @@ function Settings.SetupColdWarAim(playerModel)
             end
             -- Keep the native firing call on its original continuation path.
             -- Only aim calculation above is protected; firing owns its yields/errors.
-            return native(tool, muzzle, bullet, origin, directions, opts, ...)
+            local results = table.pack(native(tool, muzzle, bullet, origin, directions, opts, ...))
+            local shots = results[1]
+            if aim.InstantHitEnabled and instantPart and instantPart.Parent and opts == nil
+                and type(shots) == "table" and hitReporter then
+                -- The native call has already sent Fire. Try an early claim using
+                -- the exact seed of each pellet; the server decides whether it is valid.
+                for _, shot in ipairs(shots) do
+                    if type(shot) == "table" and type(shot.seed) == "number" then
+                        local ok, err = pcall(hitReporter.sendClaim, shot.seed,
+                            { Instance = instantPart, Position = instantPart.Position })
+                        if not ok then
+                            diagnostic.Errors = diagnostic.Errors + 1
+                            diagnostic.LastReason = "Instant Hit claim failed: " .. tostring(err)
+                        end
+                    end
+                end
+            end
+            return table.unpack(results, 1, results.n)
         end
         api[field] = wrapper
         return true
     end
     function aim.TryInstall()
-        if pending or state.Destroyed or not (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return end
+        if pending or state.Destroyed or not (aim.Enabled or aim.InstantHitEnabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return end
         pending = true
         nextRetry = os.clock() + 1
         task.spawn(function()
@@ -10667,7 +10689,7 @@ function Settings.SetupColdWarAim(playerModel)
     end
     function aim.SetEnabled(on)
         aim.Enabled = on == true and not state.Destroyed
-        if aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled) then
+        if aim.Enabled or aim.InstantHitEnabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled) then
             if not aim.Available then aim.TryInstall() end
         else aim.Available = false restoreHandler() end
     end
@@ -10676,7 +10698,7 @@ function Settings.SetupColdWarAim(playerModel)
         -- The native weapon thread cannot access gethui/CoreGui instances.
         -- Read our UI here and give firing only the cached Lua boolean.
         aim.MenuOpen = anyMenuVisible()
-        if (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled))
+        if (aim.Enabled or aim.InstantHitEnabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled))
             and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
         local camera = workspace.CurrentCamera
         local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not aim.MenuOpen
@@ -10705,6 +10727,15 @@ function Settings.SetupColdWarAim(playerModel)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
     Elements.Slider(section, "Hit Chance", 0, 100, 100, "%", function(value) aim.HitChance = value end)
     Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value) aim.MaxDistance = value end)
+    local instant = gameSection("Cold War", AimTab.Left, "Instant Hit")
+    Elements.Toggle(instant, "Instant Hit", false, function(on)
+        aim.InstantHitEnabled = on
+        if on then aim.TryInstall() elseif not aim.Enabled
+            and not (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled) then
+            aim.Available = false
+            restoreHandler()
+        end
+    end)
     local fov = gameSection("Cold War", VisualsTab.Left, "FOV Circle")
     Elements.Toggle(fov, "FOV Circle", false, function(on) aim.FOVVisible = on aim.Update() end)
     Elements.Slider(fov, "Radius", 50, 1500, 150, " px", function(value) aim.Radius = value aim.Update() end)
