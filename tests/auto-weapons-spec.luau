@@ -7,11 +7,15 @@ local function instance(name,parent)
     return obj
 end
 local function typeof(v) return type(v)=="table" and v.Kind or type(v) end
-local vecmeta={__mul=function(a,b) return a end,__sub=function(a,b) return a end}
+local vecmeta={__mul=function(a,b) return a end,__sub=function(a,b) return a end,
+    __index=function(_,key) if key=="Magnitude" then return 0 end end}
 local vector=setmetatable({},vecmeta)
+local worldOrigin=setmetatable({},vecmeta)
+local viewmodelOrigin=setmetatable({},vecmeta)
 local storage=instance("Storage")
 local client=instance("Client",storage)
 local weaponModule=instance("Weapon",instance("Tools",client))
+local viewmodelModule=instance("WeaponViewmodel",instance("controllers",weaponModule))
 local wielderModule=instance("Wielder",instance("Character",client))
 local inventoryModule=instance("InventoryController",client.Children.Character)
 local game={GetService=function() return storage end}
@@ -28,7 +32,8 @@ local empty,reserve,loaded=false,true,true
 local mode="Auto"
 local muzzle={magazine={isEmpty=function() return empty end,hasReserve=function() return reserve end},
     chamber={isLoaded=function() return loaded end},getFireModeName=function() return mode end,
-    getBulletIndex=function() return 1 end,attachment={WorldPosition=vector}}
+    getBulletIndex=function() return 1 end,attachment={WorldPosition=worldOrigin},
+    viewmodelAttachment={WorldPosition=viewmodelOrigin}}
 local current={tool=tool,currentMuzzle=muzzle,currentMuzzleIndex=1,config={{Firerate=600}}}
 local starts,stops,reloads=0,0,0
 local failing,yielding=false,false
@@ -46,14 +51,16 @@ function weapon.requestReload(object) reloads+=1 end
 setmetatable(current,weapon)
 local canAct=true
 local wielder={canAct=function() return canAct end}
+local shown=true
+local viewmodel={isShown=function() return shown end}
 local function nativeHold() return true end
 local function holsterCurrent() end
 local function drawTool() end
 local inventory={equip=function() end}
 local upvalues={
-    [inventory.equip]={holsterCurrent,drawTool},
-    [holsterCurrent]={nativeHold},
-    [drawTool]={nativeHold},
+    [inventory.equip]={[7]=holsterCurrent,[9]=drawTool},
+    [holsterCurrent]={[5]=nativeHold},
+    [drawTool]={[7]=nativeHold},
 }
 local debug={getupvalues=function(fn) return upvalues[fn] or {} end}
 local hookedHold
@@ -72,6 +79,7 @@ local function require(module)
     assert(identity==2)
     requireCount+=1
     if module==weaponModule then return weapon end
+    if module==viewmodelModule then return viewmodel end
     if module==inventoryModule then return inventory end
     return wielder
 end
@@ -86,7 +94,7 @@ local UIS={GetFocusedTextBox=function() return typing end,IsMouseButtonPressed=f
 local Enum={RaycastFilterType={Exclude=1},UserInputType={MouseButton1=1}}
 local RaycastParams={new=function() return {} end}
 local hit=instance("Head",enemyModel)
-local workspace={CurrentCamera={CFrame={Position=vector,LookVector=vector}},
+local workspace={CurrentCamera={CFrame={Position=vector,LookVector=vector},Focus={Position=vector}},
     FindFirstChild=function() return nil end,Raycast=function() return hit and {Instance=hit} end}
 local now=0
 local os={clock=function() return now end}
@@ -137,15 +145,27 @@ empty=false loaded=true mode="Auto"
 local beforeAim=starts
 Settings.ColdWarAim.Enabled=true Settings.ColdWarAim.Available=true
 local aimTarget=false
+local arcClear=false
+local resolvedOrigin
 Settings.ColdWarAim.Resolve=function(t,mi,bi,o,d)
     assert(t==tool and mi==1 and bi==1)
-    if aimTarget then return vector,nil,enemyModel,{Position=vector} end
+    resolvedOrigin=o
+    if aimTarget and (hit~=nil and hit:IsDescendantOf(enemyModel) or arcClear) then
+        return vector,nil,enemyModel,{Position=vector}
+    end
 end
 step() assert(starts==beforeAim,"missing Silent Aim target triggered a shot")
 aimTarget=true hit=instance("Ground") step()
 assert(starts==beforeAim,"Auto Shoot fired through the ground")
+shown=false
+arcClear=true now+=1 step()
+assert(starts==beforeAim+1,"valid ballistic arc was rejected by an extra straight ray")
+assert(resolvedOrigin==worldOrigin,"sprint did not use the native world muzzle")
+shown=true
+arcClear=false
+hit=nil step()
 hit=instance("Head",enemyModel)
-aimTarget=true step() assert(starts==beforeAim+1,"Silent Aim target did not trigger")
+aimTarget=true step() assert(starts==beforeAim+2,"Silent Aim target did not trigger")
 controls["Auto Shoot"](false)
 local nativeEquip=weapon.equip
 assert(auto.Current==nil,"disabled observer retained weapon")

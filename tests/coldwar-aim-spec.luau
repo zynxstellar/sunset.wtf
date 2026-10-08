@@ -63,12 +63,14 @@ function Elements.Button(s,n,f) controls[s.."/"..n]={Click=f} end
 local workspace={Children={},CurrentCamera={ViewportSize=Vector2.new(1920,1080)}}
 function workspace.CurrentCamera:WorldToViewportPoint(p) return Vector3.new(960+p.X,540-p.Y,p.Z),p.Z>0 end
 local wall,raycasts,rayFailure=nil,0,false
+local headWall=false
 local collisionTarget
 function workspace:Raycast(o,d,params)
     assert(params.Sentinel=="native collision params")
     raycasts+=1
     if rayFailure then error("cast failed") end
     if wall then return {Instance=wall} end
+    if headWall and d.Y>0.001 then return {Instance=object("Wall","BasePart",workspace)} end
     if collisionTarget and o.Z<=100 and o.Z+d.Z>=100 and d.Z>0 then
         local point=o+d*((100-o.Z)/d.Z)
         for _,name in ipairs({"Head","Torso"}) do
@@ -217,8 +219,18 @@ fire() assert(directions[1].X>0,"penetrating weapon was not aimed through cover"
 aim.Wallbang=false fire() assert(directions[1].X==0,"disabled wallbang redirected through cover")
 aim.WallCheck=false fire() assert(directions[1].X>0)
 aim.WallCheck=true wall=nil
+headWall=true
+aim.TargetVisiblePart=true fire()
+assert(directions[1].Y==0,"visible torso was not chosen when head was blocked")
+controls["Cold War/Silent Aim/Target Visible Part"]:Set(false)
+fire() assert(directions[1].X==0,"selected head was bypassed with visible-part fallback disabled")
+headWall=false
+controls["Cold War/Silent Aim/Target Visible Part"]:Set(true)
 aim.Radius=5 fire() assert(directions[1].X==0,"FOV exclusion failed")
 assert(aim.Diagnostics.LastReason:find("FOV"),"FOV failure missing from diagnostic")
+enemy.Character.Children.Torso.Size=Vector3.new(2,4,1)
+fire() assert(directions[1].X>0,"body overlap inside the FOV circle was ignored")
+enemy.Character.Children.Torso.Size=nil
 aim.Radius=150 aim.MaxDistance=25 fire() assert(directions[1].X==0,"range exclusion failed")
 aim.MaxDistance=1000 enemy.Dead=true fire() assert(directions[1].X==0,"dead player targeted") enemy.Dead=false
 local force=object("Shield","ForceField",enemy.Character)

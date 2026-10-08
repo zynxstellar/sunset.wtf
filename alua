@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-coldwar-instant-equip-k293"
+local SUNSET_BUILD = "20261007-rift-coldwar-aim-fov-k294"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10405,7 +10405,8 @@ function Settings.SetupColdWarAim(playerModel)
         pcall(previous.Restore)
     end
     ENV.RiftCheckSilentAim = nil
-    local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", WallCheck = true, Wallbang = false,
+    local aim = { Enabled = false, MenuOpen = true, AimPart = "Head", TargetVisiblePart = true,
+        WallCheck = true, Wallbang = false,
         Prediction = true, Radius = 150, MaxDistance = 1000, FOVVisible = false, HitChance = 100 }
     aim.Diagnostics = { Shots = 0, Redirected = 0, Errors = 0, LastReason = "No shots observed" }
     Settings.ColdWarAim = aim
@@ -10471,7 +10472,7 @@ function Settings.SetupColdWarAim(playerModel)
             return delta.Unit, time
         end
     end
-    local function clearArc(origin, direction, time, params, model, velocity)
+    local function clearArc(origin, direction, time, params, model, velocity, allowWallbang)
         if not aim.WallCheck then return true end
         local tr = makeTrajectory(origin, direction, params.Weapon)
         local last = origin
@@ -10480,7 +10481,7 @@ function Settings.SetupColdWarAim(playerModel)
             local position = trajectory.GetPositionAtTime(tr, sampleTime) - velocity * sampleTime
             local hit = workspace:Raycast(last, position - last, params.RaycastParams)
             if hit then
-                if aim.Wallbang and type(params.Weapon.PenetrationPower) == "number"
+                if allowWallbang and aim.Wallbang and type(params.Weapon.PenetrationPower) == "number"
                     and params.Weapon.PenetrationPower > 0 and not hit.Instance:IsDescendantOf(model) then
                     -- Let the native projectile caster decide whether this surface can be pierced.
                     return true
@@ -10512,14 +10513,23 @@ function Settings.SetupColdWarAim(playerModel)
                     local values = model:FindFirstChild("CharacterValues")
                     local unconscious = values and values:FindFirstChild("Unconscious")
                     if not unconscious or unconscious.Value ~= true then
-                        local names = aim.AimPart == "Nearest" and { "Head", "Torso", "UpperTorso" }
-                            or aim.AimPart == "Torso" and { "Torso", "UpperTorso" } or { "Head" }
+                        local names = { "Head", "Torso", "UpperTorso", "LowerTorso",
+                            "Left Arm", "Right Arm", "Left Leg", "Right Leg" }
                         local bestPart, bestDistance
                         for _, name in ipairs(names) do
                             local part = model:FindFirstChild(name)
                             if part and part:IsA("BasePart") and (part.Position - origin).Magnitude <= aim.MaxDistance then
                                 local screen, onScreen = camera:WorldToViewportPoint(part.Position)
-                                local distance = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+                                local halfWidth, halfHeight = 0, 0
+                                if typeof(part.Size) == "Vector3" then
+                                    local verticalFOV = math.rad(camera.FieldOfView or 70)
+                                    local scale = camera.ViewportSize.Y / (2 * math.tan(verticalFOV * 0.5) * math.max(screen.Z, 0.1))
+                                    halfWidth = part.Size.X * scale * 0.5
+                                    halfHeight = part.Size.Y * scale * 0.5
+                                end
+                                local dx = math.max(0, math.abs(screen.X - center.X) - halfWidth)
+                                local dy = math.max(0, math.abs(screen.Y - center.Y) - halfHeight)
+                                local distance = math.sqrt(dx * dx + dy * dy)
                                 if onScreen and screen.Z > 0 and distance <= aim.Radius
                                     and (not bestDistance or distance < bestDistance) then
                                     bestPart, bestDistance = part, distance
@@ -10543,15 +10553,27 @@ function Settings.SetupColdWarAim(playerModel)
                 local v = root.AssemblyLinearVelocity
                 if vector(v) and v.Magnitude <= 80 then velocity = v end
             end
-            local names = aim.AimPart == "Torso" and { "Torso", "UpperTorso", "Head", "Left Leg", "Right Leg" }
-                or aim.AimPart == "Nearest" and { candidate.Part.Name, "Head", "Torso", "UpperTorso", "Left Arm", "Right Arm" }
-                or { "Head", "Torso", "UpperTorso", "Left Arm", "Right Arm" }
-            for _, name in ipairs(names) do
-                local part = candidate.Model:FindFirstChild(name)
-                if part and part:IsA("BasePart") then
-                    local selected, time = solve(origin, part.Position, params.Weapon, velocity)
-                    if selected and clearArc(origin, selected, time, params, candidate.Model, velocity) then
-                        return selected, nil, candidate.Model, part
+            local names
+            if aim.AimPart == "Torso" then
+                names = aim.TargetVisiblePart and { "Torso", "UpperTorso", "LowerTorso", "Head",
+                    "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { "Torso", "UpperTorso", "LowerTorso" }
+            elseif aim.AimPart == "Nearest" then
+                names = aim.TargetVisiblePart and { candidate.Part.Name, "Head", "Torso", "UpperTorso",
+                    "LowerTorso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { candidate.Part.Name }
+            else
+                names = aim.TargetVisiblePart and { "Head", "Torso", "UpperTorso", "LowerTorso",
+                    "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { "Head" }
+            end
+            local passes = aim.TargetVisiblePart and aim.Wallbang and 2 or 1
+            for pass = 1, passes do
+                for _, name in ipairs(names) do
+                    local part = candidate.Model:FindFirstChild(name)
+                    if part and part:IsA("BasePart") then
+                        local selected, time = solve(origin, part.Position, params.Weapon, velocity)
+                        local allowWallbang = not aim.TargetVisiblePart or pass == 2
+                        if selected and clearArc(origin, selected, time, params, candidate.Model, velocity, allowWallbang) then
+                            return selected, nil, candidate.Model, part
+                        end
                     end
                 end
             end
@@ -10677,6 +10699,7 @@ function Settings.SetupColdWarAim(playerModel)
     local section = gameSection("Cold War", AimTab.Left, "Silent Aim")
     Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Nearest" }, "Head", function(value) aim.AimPart = value end)
     aim.Toggle = Elements.Toggle(section, "Silent Aim", false, aim.SetEnabled)
+    Elements.Toggle(section, "Target Visible Part", true, function(on) aim.TargetVisiblePart = on end)
     Elements.Toggle(section, "Wall Check", true, function(on) aim.WallCheck = on end)
     Elements.Toggle(section, "Wallbang", false, function(on) aim.Wallbang = on end)
     Elements.Toggle(section, "Prediction", true, function(on) aim.Prediction = on end)
@@ -11235,7 +11258,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         InstantEquipEnabled = false,
         AmmoSaverEnabled = true, BurstRounds = 2, BurstPause = 0.25, Current = nil }
     Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
-    local api, wielder
+    local api, wielder, viewmodel
     local originals, wrappers = {}, {}
     local held, heldMuzzle, heldAt, nextPull, nextReload = nil, nil, 0, 0, 0
     local pendingReload, destroyed, nextInstall, nextStep, nextWarning = false, false, 0, 0, 0
@@ -11309,24 +11332,18 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if type(inventory) ~= "table" or type(inventory.equip) ~= "function" then
             error("Cold War inventory interface changed")
         end
-        local callers = {}
-        for _, value in pairs(readUpvalues(inventory.equip)) do
-            if type(value) == "function" then table.insert(callers, value) end
+        -- CharacterClient's inventory equip uses these two callbacks to holster
+        -- and draw. Both reference the same animation wait in the observed build.
+        local equipValues = readUpvalues(inventory.equip)
+        local holsterCurrent, drawTool = equipValues[7], equipValues[9]
+        if type(holsterCurrent) ~= "function" or type(drawTool) ~= "function" then
+            error("Cold War inventory equip layout changed")
         end
-        local counts = {}
-        for _, caller in ipairs(callers) do
-            for _, value in pairs(readUpvalues(caller)) do
-                if type(value) == "function" then counts[value] = (counts[value] or 0) + 1 end
-            end
+        local holsterValues, drawValues = readUpvalues(holsterCurrent), readUpvalues(drawTool)
+        local holdForTrack = holsterValues[5]
+        if type(holdForTrack) ~= "function" or drawValues[7] ~= holdForTrack then
+            error("Cold War equip animation wait changed")
         end
-        local holdForTrack
-        for value, count in pairs(counts) do
-            if count >= 2 then
-                if holdForTrack then error("Cold War equip timing is ambiguous") end
-                holdForTrack = value
-            end
-        end
-        if not holdForTrack then error("Cold War equip timing changed") end
         local originalHold
         originalHold = hookfunction(holdForTrack, function(...)
             if auto.InstantEquipEnabled and not destroyed then return false end
@@ -11348,7 +11365,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
                 if api[key] == wrapper then api[key] = originals[key] end
             end
         end
-        api, wielder, auto.Current = nil, nil, nil
+        api, wielder, viewmodel, auto.Current = nil, nil, nil, nil
         originals, wrappers = {}, {}
     end
     valid = function(object)
@@ -11363,16 +11380,21 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         local tools = client and client:FindFirstChild("Tools")
         local character = client and client:FindFirstChild("Character")
         local weaponModule = tools and tools:FindFirstChild("Weapon")
+        local controllers = weaponModule and weaponModule:FindFirstChild("controllers")
+        local viewmodelModule = controllers and controllers:FindFirstChild("WeaponViewmodel")
         local wielderModule = character and character:FindFirstChild("Wielder")
-        if not weaponModule or not wielderModule or not rivalsModuleLoaded(weaponModule)
-            or not rivalsModuleLoaded(wielderModule) then return end
+        if not weaponModule or not wielderModule or not viewmodelModule
+            or not rivalsModuleLoaded(weaponModule) or not rivalsModuleLoaded(wielderModule)
+            or not rivalsModuleLoaded(viewmodelModule) then return end
         local weapon = nativeCall(require, weaponModule)
         local owner = nativeCall(require, wielderModule)
+        local weaponViewmodel = nativeCall(require, viewmodelModule)
         for _, key in ipairs({ "equip", "unequip", "startFiring", "stopFiring", "requestReload" }) do
             if type(weapon[key]) ~= "function" then error("Cold War weapon interface changed: " .. key) end
         end
         if type(owner.canAct) ~= "function" then error("Cold War action interface changed") end
-        api, wielder = weapon, owner
+        if type(weaponViewmodel.isShown) ~= "function" then error("Cold War viewmodel interface changed") end
+        api, wielder, viewmodel = weapon, owner, weaponViewmodel
         for _, key in ipairs({ "equip", "unequip", "startFiring", "requestReload" }) do
             local native = weapon[key]
             originals[key] = native
@@ -11410,17 +11432,20 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if aim and aim.Enabled then
             if not aim.Available or aim.HitChance <= 0 then return false end
             local bullet = muzzle:getBulletIndex()
-            local attachment = muzzle.viewmodelAttachment or muzzle.attachment
+            -- Discharge fires from the viewmodel only while it is shown in
+            -- first person. Sprint hides it, so use the world muzzle then.
+            local firstPerson = camera.Focus and
+                (camera.CFrame.Position - camera.Focus.Position).Magnitude <= 0.75
+            local attachment = firstPerson and viewmodel.isShown() and muzzle.viewmodelAttachment
+                or muzzle.attachment
             if not bullet or not attachment then return false end
             local origin = attachment.WorldPosition
             local direction, _, targetModel, targetPart = aim.Resolve(object.tool,
                 object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector)
             if not direction or not targetModel or not targetPart then return false end
-            local params = RaycastParams.new()
-            params.FilterType = Enum.RaycastFilterType.Exclude
-            params.FilterDescendantsInstances = { LocalPlayer.Character, camera, workspace:FindFirstChild("Ignore") }
-            local hit = workspace:Raycast(origin, targetPart.Position - origin, params)
-            return not hit or hit.Instance:IsDescendantOf(targetModel)
+            -- Resolve already checks the projectile arc against native collision
+            -- parameters. A second straight ray rejects valid shots on slopes.
+            return true
         end
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
