@@ -1,12 +1,12 @@
 -- INSERT_CURRENT_RELEASE
--- INSERT_RIVALS_RELEASE
+-- INSERT_ARSENAL_RELEASE
 local suppliedSource, downloadFailure, compileFailure
 local executions, requests, compilations = 0, 0, 0
 local environment = {}
 local game = {}
 function game:HttpGet(url)
     requests += 1
-    local expectedFile = game.PlaceId == 17625359962 and "rivals%.lua" or "alua"
+    local expectedFile = game.PlaceId == 286090429 and "arsenal%.lua" or "alua"
     assert(url:match("/[%da-f]+/" .. expectedFile .. "$") and not url:find("/main/"), "release URL is not pinned")
     if downloadFailure then error("offline") end
     return suppliedSource
@@ -42,10 +42,14 @@ assert(executions == 1 and environment.SunsetLoaderUrl == pinnedUrl, "failed loa
 compileFailure = false
 run()
 assert(executions == 2, "loader did not recover after a failed request")
-game.PlaceId = 17625359962
-suppliedSource = rivalsReleaseSource
+game.PlaceId = 286090429
+suppliedSource = arsenalReleaseSource
 run()
-assert(executions == 3 and environment.SunsetLoaderUrl:match("/[%da-f]+/rivals%.lua$"),
-    "Rivals did not load its pinned source")
+assert(executions == 3 and environment.SunsetLoaderUrl:match("/[%da-f]+/arsenal%.lua$"),
+    "Arsenal did not load its pinned source")
 suppliedSource = releaseSource
-assert(not pcall(run), "Rivals accepted the non-Rivals build")
+assert(not pcall(run), "Arsenal accepted the non-Arsenal build")
+game.PlaceId = 17625359962
+run()
+assert(executions == 4 and environment.SunsetLoaderUrl:match("/[%da-f]+/alua$"),
+    "Rivals did not return to the shared Rift source")

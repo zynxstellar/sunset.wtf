@@ -11,7 +11,8 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 local IS_GENERIC = not (game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 17625359962 or game.GameId == 6035872082)
 local BOARD_GAME_NAME = IS_GENERIC
-    and (game.PlaceId == 123974602339071 and "JUST A BASEPLATE."
+    and (game.PlaceId == 286090429 and "Arsenal"
+        or game.PlaceId == 123974602339071 and "JUST A BASEPLATE."
         or ("Universal (" .. tostring(game.PlaceId) .. ")")) or "Rivals"
 local function isRivalsMode(name)
     return name == "Rivals" or name == "JUST A BASEPLATE."
@@ -66,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-rivals-clean-ui-k269"
+local SUNSET_BUILD = "20261008-rift-arsenal-hands-k270"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -9573,6 +9574,25 @@ function RivalsAim.Setup()
     local visualEntries = {}
     local visualsConnection, visualsScreen
     local cameraBinding = "RiftRivalsCameraAim"
+    local function moveArsenalViewmodel(camera, before, after)
+        if game.PlaceId ~= 286090429 then return end
+        local delta = after * before:Inverse()
+        for _, child in ipairs(camera:GetChildren()) do
+            local name = child.Name:lower()
+            if child:IsA("Model") then
+                local viewmodel = name:find("arm", 1, true) or name:find("hand", 1, true)
+                    or name:find("viewmodel", 1, true) or name:find("weapon", 1, true)
+                if viewmodel or not child:FindFirstChildOfClass("Humanoid") then
+                    pcall(function() child:PivotTo(delta * child:GetPivot()) end)
+                end
+            elseif child:IsA("BasePart") then
+                if name:find("arm", 1, true) or name:find("hand", 1, true)
+                    or name:find("weapon", 1, true) then
+                    pcall(function() child.CFrame = delta * child.CFrame end)
+                end
+            end
+        end
+    end
     local contexts = setmetatable({}, { __mode = "k" })
     local function withGameIdentity(callback)
         local getIdentity = getthreadidentity or getidentity
@@ -10403,13 +10423,15 @@ end
             end
             if (part.Position - camera.CFrame.Position).Magnitude < 0.001 then stopAutoFire() return end
             aimStatus(options, "Tracking " .. tostring(state.CameraTargetPlayer and state.CameraTargetPlayer.Name or "target"))
-            local goal = CFrame.lookAt(camera.CFrame.Position, part.Position)
+            local before = camera.CFrame
+            local goal = CFrame.lookAt(before.Position, part.Position)
             if options == RivalsAim.Aimbot then
                 camera.CFrame = goal
             else
                 local alpha = 1 - math.exp(-options.Strength * math.clamp(delta or 1 / 60, 0, 0.1))
-                camera.CFrame = camera.CFrame:Lerp(goal, alpha)
+                camera.CFrame = before:Lerp(goal, alpha)
             end
+            moveArsenalViewmodel(camera, before, camera.CFrame)
             autoFire(options, fighter, part, camera)
         end)
         if not ok then
