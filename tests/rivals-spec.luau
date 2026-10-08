@@ -1383,6 +1383,42 @@ end)();
         assert(visible("Square",2)[1].Transparency==0.55,"hidden enemy was not dimmed")
         set("Visible Only",true)
         assert(#visible("Square",2)==0 and #visible("Line")==0 and #visible("Text")==0,"hidden enemy retained ESP")
+        if gameName=="Cold War" then
+            local priorAim=Settings.ColdWarAim
+            local priorCharacter=LocalPlayer.Character
+            LocalPlayer.Character=new("Model",{Name="LocalESPCharacter"})
+            local rifle=new("Tool",{Name="EquippedRifle"},LocalPlayer.Character)
+            local cover=new("BasePart",{Name="ThinCover",Position=Vector3.new(0,0,40)})
+            Settings.ColdWarAim={PenetrationAt=function(tool)
+                assert(tool)
+                return 2
+            end}
+            raycastResult=function(origin,direction,params)
+                if params.FilterType==Enum.RaycastFilterType.Include then
+                    return {Instance=cover,Position=Vector3.new(0,0,41)}
+                end
+                if origin==Camera.CFrame.Position then
+                    return {Instance=cover,Position=Vector3.new(0,0,40)}
+                end
+                return {Instance=foe.Character:FindFirstChild("Head"),Position=foe.Character:FindFirstChild("Head").Position}
+            end
+            clockNow+=1 options.Apply()
+            local allowed,team,distance,direct,wallbang=options.Allow(foe,foe.Character,Camera)
+            assert(#visible("Square",2)==1 and visible("Square",2)[1].Color==options.WallbangColor,
+                "penetrable cover did not show the enemy in ESP: "..tostring(allowed).."/"..tostring(wallbang).."/"..#visible("Square",2))
+            raycastResult=function(origin,direction,params)
+                if params.FilterType==Enum.RaycastFilterType.Include then
+                    return {Instance=cover,Position=Vector3.new(0,0,45)}
+                end
+                return {Instance=cover,Position=Vector3.new(0,0,40)}
+            end
+            clockNow+=1 options.Apply()
+            assert(#visible("Square",2)==0,"cover thicker than penetration was marked wallbangable")
+            rifle:Destroy() cover:Destroy()
+            Settings.ColdWarAim=priorAim
+            LocalPlayer.Character:Destroy()
+            LocalPlayer.Character=priorCharacter
+        end
         raycastResult=nil clockNow+=1 options.Apply()
         assert(#visible("Square",2)==1 and #visible("Line")==2,"visible enemy was not restored")
         set("Unlimited Range",false)

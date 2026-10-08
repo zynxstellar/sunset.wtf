@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-esp-cover-k302"
+local SUNSET_BUILD = "20261008-rift-esp-wallbang-k303"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10553,6 +10553,25 @@ function Settings.SetupColdWarAim(playerModel)
         end
         return false
     end
+    function aim.PenetrationAt(tool, origin)
+        if not tool then return 0 end
+        if not weaponSource then
+            local storage = game:GetService("ReplicatedStorage")
+            local shared = storage:FindFirstChild("Shared")
+            local ballistics = shared and shared:FindFirstChild("Ballistics")
+            local sources = ballistics and ballistics:FindFirstChild("Sources")
+            local module = sources and sources:FindFirstChild("WeaponSource")
+            local ok, source = pcall(loadedRequire, module,
+                "ReplicatedStorage.Shared.Ballistics.Sources.WeaponSource")
+            if ok and type(source) == "table" then weaponSource = source end
+        end
+        if not weaponSource then return 0 end
+        local ok, params = pcall(weaponSource.toFireParams, {
+            Tool = tool, MuzzleIndex = 1, BulletIndex = 1, Origin = origin,
+            Direction = Vector3.new(0, 0, -1), Owner = LocalPlayer })
+        local weapon = ok and type(params) == "table" and params.Weapon
+        return type(weapon) == "table" and math.max(0, tonumber(weapon.PenetrationPower) or 0) or 0
+    end
     function aim.Resolve(tool, muzzle, bullet, origin, direction, strict)
         local camera = workspace.CurrentCamera
         if not camera or not vector(direction) then return end
@@ -10786,6 +10805,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         BorderColor = Color3.fromRGB(0, 0, 0), HealthLowColor = Color3.fromRGB(255, 70, 70),
         HealthHighColor = Color3.fromRGB(90, 235, 110), HealthBackgroundColor = Color3.fromRGB(15, 15, 20),
         BoxColor = Color3.fromRGB(255, 86, 86), VisibleColor = Color3.fromRGB(255, 214, 90),
+        WallbangColor = Color3.fromRGB(255, 178, 71),
         TeamColor = Color3.fromRGB(90, 160, 255), OutlineColor = Color3.fromRGB(77, 224, 208) }
     Settings.PlayerESP = Settings.PlayerESP or {}
     Settings.PlayerESP[gameName] = options
@@ -10803,6 +10823,30 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     local visibilityParams = RaycastParams.new()
     visibilityParams.FilterType = Enum.RaycastFilterType.Exclude
     visibilityParams.IgnoreWater = true
+    local function canWallbang(model, head, camera, hit)
+        if gameName ~= "Cold War" or not hit or not hit.Position or not hit.Instance
+            or not hit.Instance:IsA("BasePart") or hit.Instance:IsDescendantOf(model) then return false end
+        local aim = Settings.ColdWarAim
+        if not aim or type(aim.PenetrationAt) ~= "function" then return false end
+        local character = LocalPlayer.Character
+        local tool = character and character:FindFirstChildOfClass("Tool")
+        local power = aim.PenetrationAt(tool, camera.CFrame.Position)
+        if power <= 0 then return false end
+        local direction = head.Position - camera.CFrame.Position
+        if direction.Magnitude <= 0.01 then return false end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Include
+        params.FilterDescendantsInstances = { hit.Instance }
+        local ok, exit = pcall(workspace.Raycast, workspace, head.Position,
+            camera.CFrame.Position - head.Position, params)
+        if not ok or not exit or not exit.Position then return false end
+        local thickness = (exit.Position - hit.Position).Magnitude
+        if thickness <= 0 or thickness > power then return false end
+        local nextOrigin = exit.Position + direction.Unit * 0.05
+        local okNext, nextHit = pcall(workspace.Raycast, workspace, nextOrigin,
+            head.Position - nextOrigin, visibilityParams)
+        return okNext and (not nextHit or nextHit.Instance:IsDescendantOf(model))
+    end
     local destroyed = false
     local function make(kind, properties)
         local object = drawing.new(kind)
@@ -10875,13 +10919,15 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             local ok, hit = pcall(workspace.Raycast, workspace, camera.CFrame.Position,
                 head.Position - camera.CFrame.Position, visibilityParams)
             if not ok and options.VisibleOnly then return false end
-            cache = { Model = model, Visible = ok and (not hit or hit.Instance:IsDescendantOf(model)),
+            local direct = ok and (not hit or hit.Instance:IsDescendantOf(model))
+            local penetrable = ok and not direct and canWallbang(model, head, camera, hit)
+            cache = { Model = model, Visible = direct, Wallbangable = penetrable,
                 Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
-        return (not options.VisibleOnly or cache.Visible or
+        return (not options.VisibleOnly or cache.Visible or cache.Wallbangable or
             ((gameName == "Rivals" or gameName == "BedWars") and teammate)),
-            teammate, distance, cache.Visible
+            teammate, distance, cache.Visible, cache.Wallbangable
     end
     local function applyPlayer(player, model, camera)
         local entry = entries[player]
@@ -10895,10 +10941,11 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         end
         hide(entry)
         local head = model:FindFirstChild("Head")
-        local allowed, teammate, distance, visible = options.Allow(player, model, camera)
+        local allowed, teammate, distance, visible, wallbangable = options.Allow(player, model, camera)
         if not allowed then return end
-        local color = teammate and options.TeamColor or visible and options.VisibleColor or options.BoxColor
-        local alpha = not teammate and not visible and options.DimHidden and 0.55 or 1
+        local color = teammate and options.TeamColor or visible and options.VisibleColor
+            or wallbangable and options.WallbangColor or options.BoxColor
+        local alpha = not teammate and not visible and not wallbangable and options.DimHidden and 0.55 or 1
         local x, y, width, height
         local left = model:FindFirstChild("Left Leg") or model:FindFirstChild("LeftFoot")
         local right = model:FindFirstChild("Right Leg") or model:FindFirstChild("RightFoot")
@@ -11166,6 +11213,11 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         options.Apply()
     end)
     visiblePicker = Elements.ColorPicker(boxes, "Visible Color", options.VisibleColor, function(color) options.VisibleColor = color options.Apply() end)
+    if gameName == "Cold War" then
+        Elements.ColorPicker(boxes, "Wallbang Color", options.WallbangColor, function(color)
+            options.WallbangColor = color options.Apply()
+        end)
+    end
     Elements.ColorPicker(boxes, "Team Color", options.TeamColor, function(color) options.TeamColor = color options.Apply() end)
     local playerColors = Elements.Toggle(boxes, "Use Player Colors", true, function(on) options.UsePlayerColors = on options.Apply() end)
     for _, spec in ipairs({ { "Name Color", "NameColor" }, { "Class Color", "ClassColor" },
