@@ -217,6 +217,10 @@ fire() assert(directions[1].X==0,"wall check bent a blocked shot")
 aim.Wallbang=true fire() assert(directions[1].X==0,"nonpenetrating weapon bent a blocked shot")
 params.Weapon.PenetrationPower=10
 fire() assert(directions[1].X>0,"penetrating weapon was not aimed through cover")
+aim.WallCheck=false
+local strictDirection=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1),true)
+assert(strictDirection==nil,"Auto Shoot strict path accepted blocked target")
+aim.WallCheck=true
 aim.Wallbang=false fire() assert(directions[1].X==0,"disabled wallbang redirected through cover")
 aim.WallCheck=false fire() assert(directions[1].X>0)
 aim.WallCheck=true wall=nil

@@ -147,7 +147,8 @@ Settings.ColdWarAim.Enabled=true Settings.ColdWarAim.Available=true
 local aimTarget=false
 local arcClear=false
 local resolvedOrigin
-Settings.ColdWarAim.Resolve=function(t,mi,bi,o,d)
+Settings.ColdWarAim.Resolve=function(t,mi,bi,o,d,strict)
+    assert(strict==true,"Auto Shoot did not require a clear ballistic path")
     assert(t==tool and mi==1 and bi==1)
     resolvedOrigin=o
     if aimTarget and (hit~=nil and hit:IsDescendantOf(enemyModel) or arcClear) then

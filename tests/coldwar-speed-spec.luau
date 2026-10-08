@@ -7,6 +7,13 @@ end
 local Settings = { SelectedGame = "Cold War" }
 local ENV = {}
 local LocalPlayer = {}
+LocalPlayer.Team = "NATO"
+local enemy = { Team = "PACT" }
+enemy.Character = object("Enemy")
+local head = object("Head", enemy.Character)
+local health = object("Health", head)
+health.Value = 50
+local Players = { GetPlayers = function() return { LocalPlayer, enemy } end }
 local AimTab = { Left = {} }
 local controls = {}
 local function gameSection(_, _, name) return name end
@@ -20,6 +27,10 @@ end
 function Elements.Slider(section, name, minimum, maximum, initial, unit, callback)
     return Elements.Toggle(section, name, initial, callback)
 end
+function Elements.Label() return { Text = "" } end
+function Elements.Button(section, name, callback)
+    controls[section .. "/" .. name] = { Click = callback }
+end
 local callbacks = {}
 local RunService = { RenderStepped = {} }
 function RunService.RenderStepped:Connect(callback)
@@ -28,7 +39,9 @@ function RunService.RenderStepped:Connect(callback)
 end
 local cleanup = {}
 local function track(connection) table.insert(cleanup, connection) end
-local task = { spawn = function(callback) callback() end }
+local delayed
+local task = { spawn = function(callback) callback() end,
+    delay = function(seconds, callback) assert(seconds == 4) delayed = callback end }
 local now = 10
 local os = { clock = function() return now end }
 local warnings = {}
@@ -59,7 +72,7 @@ local game = { GetService = function(_, name)
     return storage
 end }
 -- INSERT_COLDWAR_SPEED_PRODUCTION
-Settings.SetupColdWarBulletSpeed()
+Settings.SetupColdWarBulletSpeed(function(player) return player.Character end)
 local speed = Settings.ColdWarBulletSpeed
 local toggle = controls["Bullet Speed/Bullet Speed"]
 local slider = controls["Bullet Speed/Speed Multiplier"]
@@ -76,6 +89,19 @@ assert(normal.Weapon == nativeProfile and other.Weapon == nativeProfile)
 local shot = source.toFireParams({ Owner = LocalPlayer, Seed = 2 })
 assert(shot.Weapon ~= nativeProfile and shot.Weapon.MuzzleSpeed == 200
     and shot.Weapon.Damage == 20 and nativeProfile.MuzzleSpeed == 100)
+local check = controls["Bullet Speed/Check Bullet Speed"]
+assert(check and speed.ModifiedShots == 1)
+check.Click()
+source.toFireParams({ Owner = LocalPlayer, Seed = 5 })
+health.Value = 42
+delayed()
+assert(speed.LastCheck:find("1 sped%-up pellets") and speed.LastCheck:find("8 enemy HP lost"),
+    "Bullet Speed check did not report observed health loss")
+health.Value = 50
+check.Click()
+source.toFireParams({ Owner = LocalPlayer, Seed = 6 })
+delayed()
+assert(speed.LastCheck:find("0 enemy HP lost"), "Bullet Speed check invented damage")
 slider:Set(10)
 assert(source.toFireParams({ Owner = LocalPlayer, Seed = 3 }).Weapon.MuzzleSpeed == 1000)
 Settings.SelectedGame = "Rivals"

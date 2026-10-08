@@ -61,7 +61,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-coldwar-bullet-speed-k297"
+local SUNSET_BUILD = "20261007-rift-coldwar-shot-check-k298"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10472,8 +10472,8 @@ function Settings.SetupColdWarAim(playerModel)
             return delta.Unit, time
         end
     end
-    local function clearArc(origin, direction, time, params, model, velocity, allowWallbang)
-        if not aim.WallCheck then return true end
+    local function clearArc(origin, direction, time, params, model, velocity, allowWallbang, strict)
+        if not aim.WallCheck and not strict then return true end
         local tr = makeTrajectory(origin, direction, params.Weapon)
         local last = origin
         for i = 1, 12 do
@@ -10481,7 +10481,7 @@ function Settings.SetupColdWarAim(playerModel)
             local position = trajectory.GetPositionAtTime(tr, sampleTime) - velocity * sampleTime
             local hit = workspace:Raycast(last, position - last, params.RaycastParams)
             if hit then
-                if allowWallbang and aim.Wallbang and type(params.Weapon.PenetrationPower) == "number"
+                if not strict and allowWallbang and aim.Wallbang and type(params.Weapon.PenetrationPower) == "number"
                     and params.Weapon.PenetrationPower > 0 and not hit.Instance:IsDescendantOf(model) then
                     -- Let the native projectile caster decide whether this surface can be pierced.
                     return true
@@ -10493,7 +10493,7 @@ function Settings.SetupColdWarAim(playerModel)
         end
         return false
     end
-    function aim.Resolve(tool, muzzle, bullet, origin, direction)
+    function aim.Resolve(tool, muzzle, bullet, origin, direction, strict)
         local camera = workspace.CurrentCamera
         if not camera or not vector(direction) then return end
         local params = weaponSource.toFireParams({ Tool = tool, MuzzleIndex = muzzle or 1,
@@ -10545,7 +10545,7 @@ function Settings.SetupColdWarAim(playerModel)
         end
         table.sort(candidates, function(a, b) return a.Distance < b.Distance end)
         if #candidates == 0 then return nil, "No eligible enemy inside the FOV and distance limit" end
-        for i = 1, math.min(3, #candidates) do
+        for i = 1, strict and #candidates or math.min(3, #candidates) do
             local candidate = candidates[i]
             local root = candidate.Model:FindFirstChild("HumanoidRootPart") or candidate.Part
             local velocity = Vector3.new()
@@ -10555,23 +10555,23 @@ function Settings.SetupColdWarAim(playerModel)
             end
             local names
             if aim.AimPart == "Torso" then
-                names = aim.TargetVisiblePart and { "Torso", "UpperTorso", "LowerTorso", "Head",
+                names = (aim.TargetVisiblePart or strict) and { "Torso", "UpperTorso", "LowerTorso", "Head",
                     "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { "Torso", "UpperTorso", "LowerTorso" }
             elseif aim.AimPart == "Nearest" then
-                names = aim.TargetVisiblePart and { candidate.Part.Name, "Head", "Torso", "UpperTorso",
+                names = (aim.TargetVisiblePart or strict) and { candidate.Part.Name, "Head", "Torso", "UpperTorso",
                     "LowerTorso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { candidate.Part.Name }
             else
-                names = aim.TargetVisiblePart and { "Head", "Torso", "UpperTorso", "LowerTorso",
+                names = (aim.TargetVisiblePart or strict) and { "Head", "Torso", "UpperTorso", "LowerTorso",
                     "Left Arm", "Right Arm", "Left Leg", "Right Leg" } or { "Head" }
             end
-            local passes = aim.TargetVisiblePart and aim.Wallbang and 2 or 1
+            local passes = not strict and aim.TargetVisiblePart and aim.Wallbang and 2 or 1
             for pass = 1, passes do
                 for _, name in ipairs(names) do
                     local part = candidate.Model:FindFirstChild(name)
                     if part and part:IsA("BasePart") then
                         local selected, time = solve(origin, part.Position, params.Weapon, velocity)
                         local allowWallbang = not aim.TargetVisiblePart or pass == 2
-                        if selected and clearArc(origin, selected, time, params, candidate.Model, velocity, allowWallbang) then
+                        if selected and clearArc(origin, selected, time, params, candidate.Model, velocity, allowWallbang, strict) then
                             return selected, nil, candidate.Model, part
                         end
                     end
@@ -11371,13 +11371,14 @@ function Settings.SetupColdWarWeaponTuning()
     end)
 end
 
-function Settings.SetupColdWarBulletSpeed()
+function Settings.SetupColdWarBulletSpeed(playerModel)
     local previous = ENV.SunsetColdWarBulletSpeed
     if previous and type(previous.Restore) == "function" then pcall(previous.Restore) end
-    local speed = { Enabled = false, Multiplier = 2, Available = false }
+    local speed = { Enabled = false, Multiplier = 2, Available = false,
+        ModifiedShots = 0, LastCheck = "No check run" }
     Settings.ColdWarBulletSpeed, ENV.SunsetColdWarBulletSpeed = speed, speed
     local api, original, wrapper
-    local destroyed, pending, nextRetry, nextWarning = false, false, 0, 0
+    local destroyed, pending, nextRetry, nextWarning, checkToken = false, false, 0, 0, 0
     local function restore()
         if api and api.toFireParams == wrapper then api.toFireParams = original end
         api, original, wrapper = nil, nil, nil
@@ -11417,6 +11418,7 @@ function Settings.SetupColdWarBulletSpeed()
                 local profile = table.clone(params.Weapon)
                 profile.MuzzleSpeed = profile.MuzzleSpeed * math.clamp(speed.Multiplier, 1, 100)
                 params.Weapon = profile
+                speed.ModifiedShots = speed.ModifiedShots + 1
             end
             return params
         end
@@ -11443,6 +11445,7 @@ function Settings.SetupColdWarBulletSpeed()
     function speed.Restore()
         destroyed = true
         speed.Enabled = false
+        checkToken = checkToken + 1
         restore()
     end
     track({ Disconnect = speed.Restore })
@@ -11454,6 +11457,59 @@ function Settings.SetupColdWarBulletSpeed()
     Elements.Slider(section, "Speed Multiplier", 1, 100, 2, "x", function(value)
         speed.Multiplier = value
     end)
+    local status = Elements.Label(section, "Check: ready")
+    local function healthSnapshot()
+        local values = {}
+        local ownTeam = LocalPlayer.Team
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Team ~= ownTeam then
+                local model = playerModel and playerModel(player) or player.Character
+                if model then
+                    for _, name in ipairs({ "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }) do
+                        local part = model:FindFirstChild(name)
+                        local health = part and part:FindFirstChild("Health")
+                        if health and type(health.Value) == "number" then values[health] = health.Value end
+                    end
+                end
+            end
+        end
+        return values
+    end
+    function speed.Check()
+        checkToken = checkToken + 1
+        local token = checkToken
+        if not speed.Enabled or not speed.Available then
+            speed.LastCheck = "Enable Bullet Speed and equip a gun first"
+            status.Text = speed.LastCheck
+            return
+        end
+        local before = healthSnapshot()
+        local startShots = speed.ModifiedShots
+        speed.LastCheck = "Checking shots and enemy health for 4s..."
+        status.Text = speed.LastCheck
+        task.delay(4, function()
+            if destroyed or checkToken ~= token then return end
+            local shots = speed.ModifiedShots - startShots
+            local damage, tracked = 0, 0
+            for health, old in pairs(before) do
+                if health.Parent and type(health.Value) == "number" then
+                    tracked = tracked + 1
+                    damage = damage + math.max(0, old - health.Value)
+                end
+            end
+            if shots == 0 then
+                speed.LastCheck = "No sped-up shots observed"
+            elseif tracked == 0 then
+                speed.LastCheck = string.format("%d sped-up pellets; enemy health unavailable", shots)
+            else
+                speed.LastCheck = string.format("%d sped-up pellets; %.0f enemy HP lost", shots, damage)
+            end
+            status.Text = speed.LastCheck
+            print("[Rift] Bullet Speed check: " .. speed.LastCheck
+                .. " (health loss may include other players' shots)")
+        end)
+    end
+    Elements.Button(section, "Check Bullet Speed", speed.Check)
 end
 
 function Settings.SetupColdWarAutoWeapons(playerModel)
@@ -11646,7 +11702,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
             if not bullet or not attachment then return false end
             local origin = attachment.WorldPosition
             local direction, _, targetModel, targetPart = aim.Resolve(object.tool,
-                object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector)
+                object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector, true)
             if not direction or not targetModel or not targetPart then return false end
             -- Resolve already checks the projectile arc against native collision
             -- parameters. A second straight ray rejects valid shots on slopes.
@@ -11877,7 +11933,7 @@ function Settings.SetupColdWar()
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
-    Settings.SetupColdWarBulletSpeed()
+    Settings.SetupColdWarBulletSpeed(playerModel)
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
