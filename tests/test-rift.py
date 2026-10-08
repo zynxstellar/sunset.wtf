@@ -119,6 +119,12 @@ def main():
         aim_path = temp / 'coldwar-aim-spec.luau'
         aim_path.write_text(aim_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(aim_path)], check=True)
+        speed_spec = (ROOT / 'tests' / 'coldwar-speed-spec.luau').read_text(encoding='utf-8')
+        speed_spec = speed_spec.replace('-- INSERT_COLDWAR_SPEED_PRODUCTION',
+            between(inner, 'function Settings.SetupColdWarBulletSpeed(', '\nfunction Settings.SetupColdWarAutoWeapons('))
+        speed_path = temp / 'coldwar-speed-spec.luau'
+        speed_path.write_text(speed_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(speed_path)], check=True)
         extras_spec = (ROOT / 'tests' / 'visual-extras-spec.luau').read_text(encoding='utf-8')
         extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
             between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarWeaponTuning('))
