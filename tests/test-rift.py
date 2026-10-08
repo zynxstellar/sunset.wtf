@@ -26,6 +26,9 @@ def main():
     source = (ROOT / 'alua').read_text(encoding='utf-8')
     inner = between(source, 'local source = [========[', ']========]')
     inner = inner[len('local source = [========['):]
+    startup_guard = inner.split('local ENV =', 1)[0]
+    assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
+        'Project Delta is supported but the startup guard returns before building its UI'
     chunks = [
         between(inner, 'function Persistence.SavedHUDPositions()', '\ndo\n    local lastSavedJSON'),
         between(inner, 'do\n    BedWars.NotifyGui', '\ndo\n    BedWars.SpotifyPanel'),

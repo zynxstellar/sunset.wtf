@@ -8,7 +8,8 @@ local source = [========[
 
 if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
     and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082
-    and game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026 then
+    and game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026
+    and game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693 then
     return
 end
 
@@ -61,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-project-delta-k299"
+local SUNSET_BUILD = "20261007-rift-project-delta-ui-k300"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
