@@ -62,12 +62,24 @@ def main():
         loader_spec = (ROOT / 'tests' / 'loader-spec.luau').read_text(encoding='utf-8')
         loader_spec = loader_spec.replace('-- INSERT_CURRENT_RELEASE',
             'local releaseSource = [====[' + build_line + ']====]')
+        rivals_build_line = re.search(r'local SUNSET_BUILD = "[^"]+"',
+            (ROOT / 'rivals.lua').read_text(encoding='utf-8')).group(0)
+        loader_spec = loader_spec.replace('-- INSERT_RIVALS_RELEASE',
+            'local rivalsReleaseSource = [====[' + rivals_build_line + ']====]')
         loader_spec = loader_spec.replace('-- INSERT_LOADER_PRODUCTION', loader_source)
         loader_path = temp / 'loader-spec.luau'
         loader_path.write_text(loader_spec, encoding='utf-8')
         subprocess.run([str(compiler), '--null', str(ROOT / 'loader.lua')], check=True)
         subprocess.run([str(runtime), str(loader_path)], check=True)
         print('PASS pinned loader: current release, stale/missing version rejection, download/compile failures, recovery')
+        rivals_source = (ROOT / 'rivals.lua').read_text(encoding='utf-8')
+        rivals_inner = between(rivals_source, 'local source = [========[', ']========]')
+        rivals_inner = rivals_inner[len('local source = [========['):]
+        rivals_inner_path = temp / 'rivals-inner.luau'
+        rivals_inner_path.write_text(rivals_inner, encoding='utf-8')
+        for path in [ROOT / 'rivals.lua', rivals_inner_path]:
+            subprocess.run([str(compiler), '--null', '-O0', '-g2', str(path)], check=True)
+        print('PASS supplied Rivals source: wrapper and embedded game code compile')
         for path in [ROOT / 'alua', inner_path]:
             subprocess.run([str(compiler), '--null', str(path)], check=True)
             # Executor loadstring may keep every debug local in a register.
