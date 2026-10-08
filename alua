@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-esp-wallbang-k303"
+local SUNSET_BUILD = "20261008-rift-coldwar-visuals-k304"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11268,7 +11268,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
 end
 
 function Settings.SetupColdWarVisualExtras()
-    local trails = { Enabled = false, Lifetime = 1.5, Thickness = 2,
+    local trails = { Enabled = false, Lifetime = 1.5, Thickness = 2, Glow = true, Impact = true,
         Color = Color3.fromRGB(139, 92, 246), Queue = {}, Paths = {} }
     Settings.ColdWarBulletTrails = trails
     local fov = { Enabled = false, Value = 90 }
@@ -11278,6 +11278,8 @@ function Settings.SetupColdWarVisualExtras()
     local destroyed = false
     local function remove(path)
         for _, line in ipairs(path.Lines or {}) do pcall(function() line:Remove() end) end
+        for _, line in ipairs(path.GlowLines or {}) do pcall(function() line:Remove() end) end
+        if path.ImpactDot then pcall(function() path.ImpactDot:Remove() end) end
     end
     local function clear()
         for _, path in ipairs(trails.Paths) do remove(path) end
@@ -11292,7 +11294,7 @@ function Settings.SetupColdWarVisualExtras()
         if destroyed or not trails.Enabled then return end
         local copy = {}
         for i = 1, math.min(#directions, 16) do copy[i] = directions[i] end
-        if #trails.Queue >= 32 then table.remove(trails.Queue, 1) end
+        if #trails.Queue >= 24 then table.remove(trails.Queue, 1) end
         table.insert(trails.Queue, { Tool = tool, Muzzle = muzzle, Bullet = bullet,
             Origin = origin, Directions = copy, Started = os.clock() })
     end
@@ -11307,15 +11309,15 @@ function Settings.SetupColdWarVisualExtras()
         local tr = api.new({ Origin = shot.Origin, Direction = direction.Unit,
             MuzzleSpeed = weapon.MuzzleSpeed, K = weapon.K })
         local duration = math.min(2, 2000 / weapon.MuzzleSpeed)
-        local path = { Points = { shot.Origin }, Lines = {}, Started = shot.Started }
-        for i = 1, 32 do
+        local path = { Points = { shot.Origin }, Lines = {}, GlowLines = {}, Started = shot.Started }
+        for i = 1, 20 do
             local last = path.Points[#path.Points]
-            local point = api.GetPositionAtTime(tr, duration * i / 32)
+            local point = api.GetPositionAtTime(tr, duration * i / 20)
             local hit = workspace:Raycast(last, point - last, params.RaycastParams)
             table.insert(path.Points, hit and hit.Position or point)
-            if hit then break end
+            if hit then path.Impact = true break end
         end
-        if #trails.Paths >= 32 then remove(table.remove(trails.Paths, 1)) end
+        if #trails.Paths >= 24 then remove(table.remove(trails.Paths, 1)) end
         table.insert(trails.Paths, path)
     end
     function trails.Update()
@@ -11345,18 +11347,43 @@ function Settings.SetupColdWarVisualExtras()
                 for segment = 1, #path.Points - 1 do
                     local ok = pcall(function()
                         local line = path.Lines[segment]
-                        if not line then line = drawing.new("Line") path.Lines[segment] = line end
+                        if not line then line = drawing.new("Line") line.ZIndex = 2 path.Lines[segment] = line end
                         local a = current and current:WorldToViewportPoint(path.Points[segment])
                         local b = current and current:WorldToViewportPoint(path.Points[segment + 1])
                         line.Visible = a ~= nil and b ~= nil and a.Z > 0 and b.Z > 0
                         if line.Visible then
                             line.From, line.To = Vector2.new(a.X, a.Y), Vector2.new(b.X, b.Y)
                             line.Color, line.Thickness = trails.Color, trails.Thickness
-                            line.Transparency = math.clamp((1 - progress) / 0.3, 0, 1)
+                            local fade = math.clamp((1 - progress) / 0.35, 0, 1)
+                            line.Transparency = fade * (0.45 + 0.55 * segment / (#path.Points - 1))
+                            local glow = path.GlowLines[segment]
+                            if trails.Glow then
+                                if not glow then glow = drawing.new("Line") glow.ZIndex = 1 path.GlowLines[segment] = glow end
+                                glow.From, glow.To = line.From, line.To
+                                glow.Color, glow.Thickness = trails.Color, trails.Thickness * 3
+                                glow.Transparency, glow.Visible = line.Transparency * 0.23, true
+                            elseif glow then glow.Visible = false end
+                        elseif path.GlowLines[segment] then
+                            path.GlowLines[segment].Visible = false
                         end
                     end)
                     if not ok then remove(path) table.remove(trails.Paths, i) break end
                 end
+                if path.Impact and trails.Impact and current then
+                    local ok = pcall(function()
+                        local tip = current:WorldToViewportPoint(path.Points[#path.Points])
+                        if not path.ImpactDot then path.ImpactDot = drawing.new("Circle") path.ImpactDot.ZIndex = 3 end
+                        path.ImpactDot.Visible = tip.Z > 0
+                        if path.ImpactDot.Visible then
+                            path.ImpactDot.Position = Vector2.new(tip.X, tip.Y)
+                            path.ImpactDot.Radius = 2 + 3 * (1 - progress)
+                            path.ImpactDot.Filled = true
+                            path.ImpactDot.Color = trails.Color
+                            path.ImpactDot.Transparency = math.clamp((1 - progress) / 0.35, 0, 1)
+                        end
+                    end)
+                    if not ok and path.ImpactDot then path.ImpactDot.Visible = false end
+                elseif path.ImpactDot then path.ImpactDot.Visible = false end
             end
         end
     end
@@ -11372,6 +11399,8 @@ function Settings.SetupColdWarVisualExtras()
     Elements.ColorPicker(section, "Color", trails.Color, function(color) trails.Color = color end)
     Elements.Slider(section, "Disappear After", 100, 10000, 1500, "ms", function(value) trails.Lifetime = value / 1000 end)
     Elements.Slider(section, "Thickness", 1, 5, 2, " px", function(value) trails.Thickness = value end)
+    Elements.Toggle(section, "Glow", true, function(on) trails.Glow = on end)
+    Elements.Toggle(section, "Impact Dot", true, function(on) trails.Impact = on end)
     local cameraSection = gameSection("Cold War", VisualsTab.Left, "FOV")
     Elements.Toggle(cameraSection, "FOV", false, function(on) fov.Enabled = on if not on then restoreFOV() end end)
     Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "°", function(value) fov.Value = value end)
@@ -12084,6 +12113,21 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
+    local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")
+    Elements.Toggle(atmosphere, "Atmosphere", false, setAtmosphereEnabled)
+    Elements.Dropdown(atmosphere, "Preset", { "Sunset", "Clear", "Dawn", "Golden", "Midnight",
+        "Mist", "Storm", "Neon", "Space", "Aurora", "DeepSea" }, "Sunset", function(value)
+        atmospherePreset = value
+        applyAtmosphere()
+    end)
+    Elements.Toggle(atmosphere, "Custom Time", false, function(on)
+        atmosphereCustomTime = on
+        applyAtmosphere()
+    end)
+    Elements.Slider(atmosphere, "Time of Day", 0, 24, 18, "", function(value)
+        atmosphereTime = value
+        applyAtmosphere()
+    end, 0.5)
     Settings.SetupColdWarAutoWeapons(playerModel)
     buildSpinbot(gameSection("Cold War", MiscTab.Left, "Spinbot"))
     Settings.StartupStage("Building Cold War menu...")

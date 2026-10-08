@@ -14,7 +14,7 @@ local now=0
 local os={clock=function() return now end}
 local lines,connections,controls={},{},{}
 local ENV={Drawing={new=function(kind)
-    assert(kind=="Line")
+    assert(kind=="Line" or kind=="Circle")
     local line={Remove=function(self) self.Removed=true self.Visible=false end}
     table.insert(lines,line) return line
 end}}
@@ -54,16 +54,16 @@ fire() assert(#trails.Queue==0,"disabled trail recorded")
 controls["Bullet Tracers/Bullet Tracers"].Set(true)
 assert(syncs==1,"trail-only enable did not synchronize firing observer")
 fire() trails.Update()
-assert(#trails.Paths==1 and #lines==32 and lines[1].Visible)
+assert(#trails.Paths==1 and #lines==40 and lines[1].Visible and lines[2].Thickness>lines[1].Thickness)
 now=1.3 trails.Update()
 assert(lines[1].Transparency>0 and lines[1].Transparency<1,"trail did not fade")
 now=1.5 trails.Update()
 assert(#trails.Paths==0 and lines[1].Removed,"expired drawing leaked")
 collision=true fire() trails.Update()
-assert(#trails.Paths[1].Points==2,"path crossed first collision")
+assert(#trails.Paths[1].Points==2 and trails.Paths[1].ImpactDot,"path crossed first collision")
 for _=1,100 do fire() end
-assert(#trails.Queue==32,"shot queue is unbounded")
-trails.Update() assert(#trails.Paths==32,"path storage is unbounded")
+assert(#trails.Queue==24,"shot queue is unbounded")
+trails.Update() assert(#trails.Paths==24,"path storage is unbounded")
 controls["Bullet Tracers/Bullet Tracers"].Set(false)
 assert(#trails.Paths==0 and #trails.Queue==0)
 for _,line in ipairs(lines) do assert(line.Removed,"disable leaked drawing") end
