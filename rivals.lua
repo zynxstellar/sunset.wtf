@@ -66,7 +66,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261004-rift-ui-register-fix-k268-universal-v14-enemy-shot-aim"
+local SUNSET_BUILD = "20261008-rift-rivals-clean-ui-k269"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -10751,14 +10751,10 @@ end
 
 function RivalsAim.BuildUI()
     if IS_GENERIC and not RivalsAim.ArsenalSilentAvailable then
-        local unavailable = gameSection(BOARD_GAME_NAME, AimTab.Left, "Silent Aim")
-        Elements.Label(unavailable, "Needs a game-specific weapon adapter.")
-        Elements.Label(unavailable, "Camera Aim Assist and Aimbot are available.")
+        gameSection(BOARD_GAME_NAME, AimTab.Left, "Silent Aim")
     else
     local aim = gameSection(BOARD_GAME_NAME, AimTab.Left, "Silent Aim")
     if IS_GENERIC then
-        RivalsAim.SilentStatusLabel = Elements.Label(aim, "Status: Off")
-        Elements.Label(aim, "Arsenal direct firing-ray adapter; hit acceptance needs a live test.")
         Elements.Toggle(aim, "Team Check", true, function(on) RivalsAim.TeamCheck = on end)
         Elements.Slider(aim, "Max Distance", 25, 1000, 1000, "studs", function(value) RivalsAim.MaxDistance = value end)
     end
@@ -10766,7 +10762,6 @@ function RivalsAim.BuildUI()
         RivalsAim.AimPart = value
     end)
     RivalsAim.AimPart = "Closest To Crosshair"
-    Elements.Label(aim, "Closest To Crosshair selects a visible head, torso, arm or leg dynamically.")
     RivalsAim.Toggle = Elements.Toggle(aim, "Silent Aim", false, function(on)
         RivalsAim.SetEnabled(on)
     end)
@@ -10778,10 +10773,7 @@ function RivalsAim.BuildUI()
         local name, key = spec[1], spec[2]
         local options = RivalsAim[key]
         local section = gameSection(BOARD_GAME_NAME, AimTab.Left, name)
-        options.StatusLabel = Elements.Label(section, "Status: Off")
-        if key == "Aimbot" then
-            Elements.Label(section, "Targets all visible enemies on screen; teammates are always excluded.")
-        elseif IS_GENERIC then
+        if IS_GENERIC and key ~= "Aimbot" then
             Elements.Toggle(section, "Team Check", true, function(on) options.TeamCheck = on end)
         end
         Elements.Dropdown(section, "Aim Part", { "Head", "Torso", "Root" }, "Head", function(value)
@@ -10799,13 +10791,8 @@ function RivalsAim.BuildUI()
                 RivalsAim.StopAutoFire()
                 options.AimWhileFiring = on
             end)
-            Elements.Label(section, "Aim While Firing uses your fire button instead of right mouse.")
         end
-        if key == "Legit" then
-            Elements.Label(section, "Targets and fires only with clear line of sight.")
-        elseif key == "Aimbot" then
-            Elements.Label(section, "Only targets visible players with clear line of sight.")
-        else
+        if key == "Assist" then
             Elements.Toggle(section, "Wall Check", options.WallCheck, function(on) options.WallCheck = on end)
         end
         if key == "Legit" or key == "Aimbot" then
@@ -10817,10 +10804,6 @@ function RivalsAim.BuildUI()
                 RivalsAim.StopAutoFire()
                 options.FireMode = value
             end)
-            Elements.Label(section, "Hold: automatic weapons. Clicks: semi-auto. Manual aim uses your own trigger.")
-            if key == "Aimbot" then
-                Elements.Label(section, "Auto Fire stops when the target is hidden or lost.")
-            end
             Elements.Slider(section, "Fire Rate", 1, 20, 8, "clicks/s", function(value) options.FireCPS = value end)
         end
         if key == "Aimbot" or key == "Legit" then
@@ -10911,10 +10894,6 @@ function RivalsAim.BuildUI()
         RivalsView.Apply()
     end)
     local killChat = gameSection(BOARD_GAME_NAME, FunTab.Left, "Kill Chat")
-    if IS_GENERIC then
-        Elements.Label(killChat, "Requires replicated Humanoid creator tags.")
-        Elements.Label(killChat, "Sends gg only for kills attributed to you.")
-    end
     RivalsKillChat.Toggle = Elements.Toggle(killChat, "Kill Chat", false, function(on)
         RivalsKillChat.SetEnabled(on)
     end)
@@ -10933,7 +10912,6 @@ function RivalsAim.BuildUI()
     Elements.Slider(flight, "Fly Speed", 1, 1000, 50, "studs/s", function(value)
         Settings.FlySpeed = value
     end)
-    Elements.Label(flight, "Unanchored flight with hover braking, adjustable speed and noclip.")
     BedWars.BuildUI(BOARD_GAME_NAME)
 end
 

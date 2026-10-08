@@ -75,6 +75,9 @@ def main():
         rivals_source = (ROOT / 'rivals.lua').read_text(encoding='utf-8')
         rivals_inner = between(rivals_source, 'local source = [========[', ']========]')
         rivals_inner = rivals_inner[len('local source = [========['):]
+        rivals_ui = between(rivals_inner, 'function RivalsAim.BuildUI()',
+            '\nif IS_GENERIC or game.PlaceId == 17625359962')
+        assert 'Elements.Label(' not in rivals_ui, 'Rivals module settings still have explanatory text'
         rivals_inner_path = temp / 'rivals-inner.luau'
         rivals_inner_path.write_text(rivals_inner, encoding='utf-8')
         for path in [ROOT / 'rivals.lua', rivals_inner_path]:
