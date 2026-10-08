@@ -12,6 +12,12 @@ local vecmeta={__mul=function(a,b) return a end,__sub=function(a,b) return a end
 local vector=setmetatable({},vecmeta)
 local worldOrigin=setmetatable({},vecmeta)
 local viewmodelOrigin=setmetatable({},vecmeta)
+local originalInstance=instance
+instance=function(name,parent)
+    local object=originalInstance(name,parent)
+    object.Position=vector
+    return object
+end
 local storage=instance("Storage")
 local client=instance("Client",storage)
 local weaponModule=instance("Weapon",instance("Tools",client))
@@ -160,13 +166,13 @@ aimTarget=true hit=instance("Ground") step()
 assert(starts==beforeAim,"Auto Shoot fired through the ground")
 shown=false
 arcClear=true now+=1 step()
-assert(starts==beforeAim+1,"valid ballistic arc was rejected by an extra straight ray")
+assert(starts==beforeAim,"covered ballistic arc wasted ammo")
 assert(resolvedOrigin==worldOrigin,"sprint did not use the native world muzzle")
 shown=true
 arcClear=false
 hit=nil step()
 hit=instance("Head",enemyModel)
-aimTarget=true step() assert(starts==beforeAim+2,"Silent Aim target did not trigger")
+aimTarget=true step() assert(starts==beforeAim+1,"Silent Aim target did not trigger")
 controls["Auto Shoot"](false)
 local nativeEquip=weapon.equip
 assert(auto.Current==nil,"disabled observer retained weapon")

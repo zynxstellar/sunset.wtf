@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-project-delta-spin-view-k301"
+local SUNSET_BUILD = "20261008-rift-esp-cover-k302"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -1628,15 +1628,33 @@ local function projectBounds(camera, boxFrame, boxSize)
                 local corner = boxFrame * Vector3.new(boxSize.X*x/2, boxSize.Y*y/2, boxSize.Z*z/2)
                 local point = camera:WorldToViewportPoint(corner)
 
-                if point.Z <= 0.05 then return nil end
-                minX, minY = math.min(minX, point.X), math.min(minY, point.Y)
-                maxX, maxY = math.max(maxX, point.X), math.max(maxY, point.Y)
+                if point.Z > 0.05 then
+                    minX, minY = math.min(minX, point.X), math.min(minY, point.Y)
+                    maxX, maxY = math.max(maxX, point.X), math.max(maxY, point.Y)
+                end
             end
         end
     end
     local viewport = camera.ViewportSize
-    if maxX < 0 or maxY < 0 or minX > viewport.X or minY > viewport.Y then return nil end
-    return minX, minY, maxX-minX, maxY-minY
+    if minX == math.huge or maxX < 0 or maxY < 0
+        or minX > viewport.X or minY > viewport.Y then return nil end
+    minX, minY = math.clamp(minX, 0, viewport.X), math.clamp(minY, 0, viewport.Y)
+    maxX, maxY = math.clamp(maxX, 0, viewport.X), math.clamp(maxY, 0, viewport.Y)
+    local width, height = math.max(12, maxX-minX), math.max(24, maxY-minY)
+    return math.clamp((minX + maxX - width) / 2, 0, math.max(0, viewport.X - width)),
+        math.clamp((minY + maxY - height) / 2, 0, math.max(0, viewport.Y - height)), width, height
+end
+local function espEdgePosition(camera, worldPosition)
+    local point = camera:WorldToViewportPoint(worldPosition)
+    local viewport = camera.ViewportSize
+    local centerX, centerY = viewport.X / 2, viewport.Y / 2
+    local dx, dy = point.X - centerX, point.Y - centerY
+    if point.Z <= 0 then dx, dy = -dx, -dy end
+    if math.abs(dx) + math.abs(dy) < 0.001 then dy = -1 end
+    local marginX, marginY = math.min(90, viewport.X * 0.2), math.min(35, viewport.Y * 0.1)
+    local scale = math.min((centerX - marginX) / math.max(math.abs(dx), 0.001),
+        (centerY - marginY) / math.max(math.abs(dy), 0.001))
+    return Vector2.new(centerX + dx * scale, centerY + dy * scale)
 end
 
 local ESP = {}
@@ -10758,7 +10776,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         HealthOn = true, ClassOn = true, InfoOn = true, FlagsOn = true, LimbsOn = false,
         SkeletonOn = false, TracersOn = false, HeadDotOn = false, ShowTeammates = true,
         VisibleOnly = false, ShowAllPlayers = gameName == "Cold War" or gameName == "Project Delta",
-        DimHidden = true, MaxDistance = 1000, TextSize = 13,
+        DimHidden = true, MaxDistance = 100000, UnlimitedRange = true, TextSize = 13, EdgeOn = true,
         VehiclesOn = true, EmptyVehicles = false,
         UsePlayerColors = true, VisibilityInterval = 1 / 60,
         NameColor = Color3.fromRGB(240, 240, 240), ClassColor = Color3.fromRGB(240, 240, 240),
@@ -10803,12 +10821,13 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         if not entry then return end
         removeDrawing(entry.Box)
         removeDrawing(entry.Name)
+        removeDrawing(entry.Edge)
         for _, object in pairs(entry.Extras) do removeDrawing(object) end
         for _, outline in pairs(entry.Outlines) do removeDrawing(outline) end
         entries[player] = nil
     end
     local function hide(entry)
-        entry.Box.Visible, entry.Name.Visible = false, false
+        entry.Box.Visible, entry.Name.Visible, entry.Edge.Visible = false, false, false
         for _, outline in pairs(entry.Outlines) do outline.Visible = false end
         for _, object in pairs(entry.Extras) do object.Visible = false end
     end
@@ -10839,7 +10858,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         local head = model:FindFirstChild("Head")
         if not head or not head:IsA("BasePart") then return false end
         local distance = (head.Position - camera.CFrame.Position).Magnitude * metersPerStud
-        if not options.ShowAllPlayers and distance > options.MaxDistance then return false end
+        if not options.UnlimitedRange and not options.ShowAllPlayers and distance > options.MaxDistance then return false end
         local teammate = LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team
         if gameName == "Rivals" then
             local mine, theirs = LocalPlayer:GetAttribute("TeamID"), player:GetAttribute("TeamID")
@@ -10872,6 +10891,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             entries[player] = entry
             entry.Box = make("Square", { Filled = false, Thickness = 1.5, ZIndex = 2, Transparency = 1 })
             entry.Name = make("Text", { Size = 13, Center = true, Outline = true, ZIndex = 3, Transparency = 1 })
+            entry.Edge = make("Text", { Size = 13, Center = true, Outline = true, ZIndex = 3, Transparency = 1 })
         end
         hide(entry)
         local head = model:FindFirstChild("Head")
@@ -10887,17 +10907,26 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             local top = camera:WorldToViewportPoint(head.Position + Vector3.new(0, head.Size.Y / 2 + 0.3, 0))
             local bottom = camera:WorldToViewportPoint(foot.Position - Vector3.new(0, foot.Size.Y / 2, 0))
             if top.Z > 0 and bottom.Z > 0 then
-                height = math.abs(bottom.Y - top.Y)
-                width = math.max(height * 0.5, math.abs(bottom.X - top.X))
+                height = math.max(24, math.abs(bottom.Y - top.Y))
+                width = math.max(12, height * 0.5, math.abs(bottom.X - top.X))
                 x, y = (top.X + bottom.X) / 2 - width / 2, math.min(top.Y, bottom.Y)
                 if width < 1 or height < 1 or x + width < 0 or y + height < 0
                     or x > camera.ViewportSize.X or y > camera.ViewportSize.Y then x = nil end
             end
-        else
-            local frame, size = model:GetBoundingBox()
-            x, y, width, height = projectBounds(camera, frame, size)
         end
-        if not x then return end
+        if not x then
+            local ok, frame, size = pcall(model.GetBoundingBox, model)
+            if ok then x, y, width, height = projectBounds(camera, frame, size) end
+        end
+        if not x then
+            if options.EdgeOn then
+                entry.Edge.Position = espEdgePosition(camera, head.Position)
+                entry.Edge.Text = tostring(player.DisplayName or player.Name) .. "  " .. math.floor(distance) .. "m"
+                entry.Edge.Color, entry.Edge.Transparency = color, alpha
+                entry.Edge.Size, entry.Edge.Visible = options.TextSize, true
+            end
+            return
+        end
         entry.Box.Color, entry.Box.Transparency = color, alpha
         entry.Box.Position, entry.Box.Size = Vector2.new(x, y), Vector2.new(width, height)
         entry.Box.Visible = options.BoxesOn and options.DrawBoxes
@@ -11159,12 +11188,14 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     for _, spec in ipairs({ { "Draw Boxes", "DrawBoxes" }, { "Health Bar", "HealthOn" },
         { "Show Class", "ClassOn" }, { "Distance and Weapon", "InfoOn" }, { "Status Flags", "FlagsOn" },
         { "Limb Health", "LimbsOn" }, { "Skeleton", "SkeletonOn" }, { "Tracers", "TracersOn" },
-        { "Head Dot", "HeadDotOn" }, { "Show Teammates", "ShowTeammates" },
+        { "Head Dot", "HeadDotOn" }, { "Off-screen Indicators", "EdgeOn" },
+        { "Unlimited Range", "UnlimitedRange" },
+        { "Show Teammates", "ShowTeammates" },
         { "Dim Hidden", "DimHidden" } }) do
         local key = spec[2]
         Elements.Toggle(boxes, spec[1], options[key], function(on) options[key] = on options.Apply() end)
     end
-    Elements.Slider(boxes, "Max Distance", 25, 5000, 1000, "m", function(value) options.MaxDistance = value options.Apply() end)
+    Elements.Slider(boxes, "Max Distance", 25, 100000, 100000, "m", function(value) options.MaxDistance = value options.Apply() end)
     Elements.Slider(boxes, "Text Size", 12, 24, 13, " px", function(value) options.TextSize = value options.Apply() end)
     if gameName ~= "Cold War" then options.VehiclesOn = false return options, playerModel end
     Elements.Toggle(boxes, "Vehicles", true, function(on) options.VehiclesOn = on options.Apply() end)
@@ -11732,6 +11763,20 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     local function target(object, muzzle)
         local camera = workspace.CurrentCamera
         if not camera then return false end
+        local function clearLine(origin, point, model)
+            if not origin or not point or not model then return false end
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.IgnoreWater = true
+            params.RespectCanCollide = true
+            local ignore = { camera }
+            if LocalPlayer.Character then table.insert(ignore, LocalPlayer.Character) end
+            local effects = workspace:FindFirstChild("Ignore")
+            if effects then table.insert(ignore, effects) end
+            params.FilterDescendantsInstances = ignore
+            local ok, hit = pcall(workspace.Raycast, workspace, origin, point - origin, params)
+            return ok and (not hit or (hit.Instance and hit.Instance:IsDescendantOf(model)))
+        end
         local aim = Settings.ColdWarAim
         if aim and aim.Enabled then
             if not aim.Available or aim.HitChance <= 0 then return false end
@@ -11747,9 +11792,10 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
             local direction, _, targetModel, targetPart = aim.Resolve(object.tool,
                 object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector, true)
             if not direction or not targetModel or not targetPart then return false end
-            -- Resolve already checks the projectile arc against native collision
-            -- parameters. A second straight ray rejects valid shots on slopes.
-            return true
+            -- Auto Shoot conserves ammo: both the camera and the actual muzzle
+            -- must have an unobstructed direct line to the selected player.
+            return clearLine(camera.CFrame.Position, targetPart.Position, targetModel)
+                and clearLine(origin, targetPart.Position, targetModel)
         end
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
@@ -11765,7 +11811,11 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
                 if model and not model:FindFirstChildOfClass("ForceField") and hit.Instance:IsDescendantOf(model) then
                     local values = model:FindFirstChild("CharacterValues")
                     local down = values and values:FindFirstChild("Unconscious")
-                    if not down or not down.Value then return true end
+                    if not down or not down.Value then
+                        local attachment = muzzle.attachment
+                        return attachment and clearLine(attachment.WorldPosition,
+                            hit.Position or hit.Instance.Position, model) or false
+                    end
                 end
             end
         end

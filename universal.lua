@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-universal-hands-k271"
+local SUNSET_BUILD = "20261008-rift-universal-esp-k272"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -1643,15 +1643,33 @@ local function projectBounds(camera, boxFrame, boxSize)
                 local corner = boxFrame * Vector3.new(boxSize.X*x/2, boxSize.Y*y/2, boxSize.Z*z/2)
                 local point = camera:WorldToViewportPoint(corner)
 
-                if point.Z <= 0.05 then return nil end
-                minX, minY = math.min(minX, point.X), math.min(minY, point.Y)
-                maxX, maxY = math.max(maxX, point.X), math.max(maxY, point.Y)
+                if point.Z > 0.05 then
+                    minX, minY = math.min(minX, point.X), math.min(minY, point.Y)
+                    maxX, maxY = math.max(maxX, point.X), math.max(maxY, point.Y)
+                end
             end
         end
     end
     local viewport = camera.ViewportSize
-    if maxX < 0 or maxY < 0 or minX > viewport.X or minY > viewport.Y then return nil end
-    return minX, minY, maxX-minX, maxY-minY
+    if minX == math.huge or maxX < 0 or maxY < 0
+        or minX > viewport.X or minY > viewport.Y then return nil end
+    minX, minY = math.clamp(minX, 0, viewport.X), math.clamp(minY, 0, viewport.Y)
+    maxX, maxY = math.clamp(maxX, 0, viewport.X), math.clamp(maxY, 0, viewport.Y)
+    local width, height = math.max(12, maxX-minX), math.max(24, maxY-minY)
+    return math.clamp((minX + maxX - width) / 2, 0, math.max(0, viewport.X - width)),
+        math.clamp((minY + maxY - height) / 2, 0, math.max(0, viewport.Y - height)), width, height
+end
+local function espEdgePosition(camera, worldPosition)
+    local point = camera:WorldToViewportPoint(worldPosition)
+    local viewport = camera.ViewportSize
+    local centerX, centerY = viewport.X / 2, viewport.Y / 2
+    local dx, dy = point.X - centerX, point.Y - centerY
+    if point.Z <= 0 then dx, dy = -dx, -dy end
+    if math.abs(dx) + math.abs(dy) < 0.001 then dy = -1 end
+    local marginX, marginY = math.min(90, viewport.X * 0.2), math.min(35, viewport.Y * 0.1)
+    local scale = math.min((centerX - marginX) / math.max(math.abs(dx), 0.001),
+        (centerY - marginY) / math.max(math.abs(dy), 0.001))
+    return Vector2.new(centerX + dx * scale, centerY + dy * scale)
 end
 
 local ESP = {}
@@ -10525,7 +10543,7 @@ end
         targetHUD:Destroy()
     end })
     visualsScreen = new("ScreenGui", {
-        Name = "RiftRivalsESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = -1,
+        Name = "RiftRivalsESP", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 100,
     }, PlayerGui)
     local nextVisualApiRetry = 0
     visualsConnection = RunService.RenderStepped:Connect(function()
@@ -10553,6 +10571,12 @@ end
                             BorderSizePixel = 0,
                         }, visualsScreen)
                         entry = { Box = box, Stroke = border(box, RivalsVisuals.BoxColor, 1.5),
+                            Edge = new("TextLabel", {
+                                Name = "OffscreenPlayer", Visible = false, BackgroundTransparency = 1,
+                                BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5),
+                                Size = UDim2.fromOffset(180, 24), Font = T.font, TextSize = 14,
+                                TextStrokeTransparency = 0.2,
+                            }, visualsScreen),
                             Highlight = new("Highlight", {
                                 Name = "RiftPlayerOutline", Adornee = model, Enabled = false,
                                 DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
@@ -10564,6 +10588,7 @@ end
                     entry.Highlight.OutlineColor = RivalsVisuals.OutlineColor
                     entry.Stroke.Color = RivalsVisuals.BoxColor
                     entry.Box.Visible = false
+                    entry.Edge.Visible = false
                     if RivalsVisuals.BoxesOn then
                         local projected, x, y, width, height = pcall(function()
                             local frame, size = model:GetBoundingBox()
@@ -10573,6 +10598,16 @@ end
                             entry.Box.Position = UDim2.fromOffset(x, y)
                             entry.Box.Size = UDim2.fromOffset(width, height)
                             entry.Box.Visible = true
+                        else
+                            local anchor = model:FindFirstChild("Head") or entity.RootPart
+                            if anchor and anchor:IsA("BasePart") then
+                                local edge = espEdgePosition(camera, anchor.Position)
+                                entry.Edge.Position = UDim2.fromOffset(edge.X, edge.Y)
+                                entry.Edge.Text = tostring(player.DisplayName or player.Name)
+                                    .. "  " .. math.floor((anchor.Position - camera.CFrame.Position).Magnitude * 0.28) .. "m"
+                                entry.Edge.TextColor3 = RivalsVisuals.BoxColor
+                                entry.Edge.Visible = true
+                            end
                         end
                     end
                 end
@@ -10581,6 +10616,7 @@ end
         for model, entry in pairs(visualEntries) do
             if not seen[model] then
                 entry.Box:Destroy()
+                entry.Edge:Destroy()
                 entry.Highlight:Destroy()
                 visualEntries[model] = nil
             end

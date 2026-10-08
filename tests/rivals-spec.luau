@@ -943,7 +943,7 @@ end
 local highlights,boxes=liveVisuals()
 assert(#highlights==3 and #boxes==3,"visuals did not include every living non-local player")
 for _,entry in ipairs(highlights) do assert(entry.OutlineColor==outlineColor) end
-assert(boxes[1].Visible and boxes[1].Size.X==4 and boxes[1].Size.Y==6,
+assert(boxes[1].Visible and boxes[1].Size.X==12 and boxes[1].Size.Y==24,
     "ESP box did not use projected model bounds")
 local enemyColored=false
 for _,box in ipairs(boxes) do
@@ -1325,6 +1325,28 @@ end)();
         set("ESP Boxes",true) set("Tracers",true) set("Skeleton",true) set("Head Dot",true)
         assert(#visible("Square",2)==2 and #visible("Line")==4 and #visible("Circle")==2,
             gameName.." did not share boxes, skeletons, tracers and head dots")
+        local shifted={}
+        for _,part in ipairs(foe.Character:GetChildren()) do
+            if part:IsA("BasePart") then
+                shifted[part]=part.Position
+                part.Position=part.Position+Vector3.new(4000,0,0)
+                part.CFrame=CFrame.new(part.Position)
+            end
+        end
+        options.Apply()
+        local edgeFound=false
+        for _,object in ipairs(visible("Text")) do
+            if object.Text and object.Text:find("ESPEnemy",1,true) then
+                edgeFound=object.Position.X>=0 and object.Position.X<=Camera.ViewportSize.X
+            end
+        end
+        assert(#visible("Square",2)==1 and edgeFound,
+            gameName.." lost the off-screen player instead of showing an edge indicator")
+        for part,position in pairs(shifted) do
+            part.Position,part.CFrame=position,CFrame.new(position)
+        end
+        options.Apply()
+        assert(#visible("Square",2)==2,gameName.." did not restore the on-screen box")
         foe.Character:SetAttribute("IsNPC",true)
         options.Apply()
         assert(#visible("Square",2)==1,gameName.." showed an NPC-marked model")
@@ -1332,7 +1354,7 @@ end)();
         options.Apply()
         assert(#visible("Square",2)==2,gameName.." did not restore player ESP")
         local bar=visible("Square",5)[1]
-        assert(bar and math.abs(bar.Size.Y-1.2)<1e-6,"limb max health was ignored")
+        assert(bar and math.abs(bar.Size.Y-4.8)<1e-6,"limb max health was ignored")
         local class,weapon,downed=false,false,false
         for _,o in ipairs(visible("Text")) do
             class=class or o.Text=="Sniper"
@@ -1363,6 +1385,7 @@ end)();
         assert(#visible("Square",2)==0 and #visible("Line")==0 and #visible("Text")==0,"hidden enemy retained ESP")
         raycastResult=nil clockNow+=1 options.Apply()
         assert(#visible("Square",2)==1 and #visible("Line")==2,"visible enemy was not restored")
+        set("Unlimited Range",false)
         set("Max Distance",25)
         assert(#visible("Square",2)==0,"maximum ESP distance ignored")
         if gameName=="Cold War" or gameName=="Project Delta" then
@@ -1376,6 +1399,7 @@ end)();
             set("Show All Players",false)
         end
         set("Max Distance",1000)
+        set("Unlimited Range",true)
         local cacheCasts=#casts options.Apply() options.Apply()
         assert(#casts==cacheCasts,"visibility rays were not cached")
         clockNow+=0.02 options.Apply()
