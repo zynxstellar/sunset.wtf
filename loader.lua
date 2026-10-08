@@ -1,3 +1,8 @@
+-- Game support includes: BedWars (easy.gg; Full Support), Rivals, Cold War (Full Support).
+-- Executor support includes: Potassium, Synapse Z, and Volt. Other executors are labeled NOT TESTED.
+-- Contact z.y.n.x. on Discord for help, assistance, or suggestions.
+-- You can also join the Discord at: https://discord.gg/4pj9cedscb
+
 -- Update both release values together when publishing a new client build.
 local dedicated = game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 17625359962 or game.GameId == 6035872082
