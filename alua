@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261007-rift-project-delta-ui-k300"
+local SUNSET_BUILD = "20261007-rift-project-delta-spin-view-k301"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -1537,6 +1537,19 @@ local function owningPlayer(model)
     end
     return nil
 end
+local function isNpcModel(model)
+    if not model then return false end
+    if model:GetAttribute("NPC") == true or model:GetAttribute("IsNPC") == true
+        or model:GetAttribute("IsBot") == true then return true end
+    local marker = model:FindFirstChild("NPC") or model:FindFirstChild("IsNPC")
+    if marker and marker:IsA("BoolValue") and marker.Value then return true end
+    if CollectionService and type(CollectionService.HasTag) == "function" then
+        for _, tag in ipairs({ "NPC", "Npc", "Bot" }) do
+            if CollectionService:HasTag(model, tag) then return true end
+        end
+    end
+    return false
+end
 
 Settings.AimSkipUnknown = false
 Settings.AimTeamField = ""
@@ -1639,7 +1652,7 @@ do
     local function update()
         local camera = workspace.CurrentCamera
         for model in pairs(TargetModels) do
-            if not owningPlayer(model) or not eligibleModel(model, false) then
+            if not owningPlayer(model) or isNpcModel(model) or not eligibleModel(model, false) then
                 remove(model)
             elseif camera then
                 local ok, cf, size = pcall(function() return model:GetBoundingBox() end)
@@ -3401,7 +3414,7 @@ do
                         local head = character and character:FindFirstChild("Head")
                         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                         local existing = tags[player]
-                        if head and humanoid and humanoid.Health > 0 then
+                        if head and humanoid and humanoid.Health > 0 and not isNpcModel(character) then
                             if not existing or not existing.Parent
                                 or existing.Adornee ~= head then
                                 if existing then existing:Destroy() end
@@ -5043,6 +5056,7 @@ local function refreshBedWarsPlayers()
             local model = player.Character
             local humanoid = model and model:FindFirstChildOfClass("Humanoid")
             if player ~= LocalPlayer and model and humanoid and humanoid.Health > 0
+                and not isNpcModel(model)
                 and model:IsDescendantOf(workspace)
                 and (not Settings.PlayerESP or not Settings.PlayerESP.BedWars
                     or Settings.PlayerESP.BedWars.Allow(player, model, workspace.CurrentCamera)) then
@@ -9098,6 +9112,9 @@ function BedWars.BuildUI(boardGame)
             { "Visuals", "Player Outlines", "Visuals", "Project Delta", "Player Outlines", "Player Outlines" },
             { "Visuals", "FOV", "Visuals", "Project Delta", "FOV", "FOV" },
             { "Visuals", "Visibility", "Visuals", "Project Delta", "Visibility", "No Fog" },
+            { "Misc", "Spinbot", "Misc", "Project Delta", "Spinbot", "Spinbot" },
+            { "Player", "Third Person", "Player", "Project Delta", "Third Person", "Third Person" },
+            { "Player", "Zoom Unlocker", "Player", "Project Delta", "Zoom Unlocker", "Zoom Unlocker" },
             { "Sunset", "Module List", "Sunset", "Project Delta", "Module List", "Module List" },
             { "Sunset", "Configs", "Sunset", "All", "Configs" },
             { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
@@ -10076,7 +10093,8 @@ function RivalsAim.Setup()
             and (RivalsVisuals.BoxesOn or RivalsVisuals.OutlinesOn) then
             for _, player in ipairs(Players:GetPlayers()) do
                 local ok, entity = pcall(enemyEntity, player, fighter, true)
-                if ok and entity and (not Settings.PlayerESP or not Settings.PlayerESP.Rivals
+                if ok and entity and not isNpcModel(entity.Model)
+                    and (not Settings.PlayerESP or not Settings.PlayerESP.Rivals
                     or Settings.PlayerESP.Rivals.Allow(player, entity.Model, camera)) then
                     local model = entity.Model
                     seen[model] = true
@@ -10150,7 +10168,10 @@ end
 local RivalsFOV = { Enabled = false, Value = 80 }
 local RivalsSpeed = { Enabled = false, Value = 16 }
 local RivalsView = { ThirdPerson = false, ZoomUnlocked = false, Distance = 10, MaxZoom = 500 }
-function RivalsView.Setup()
+function RivalsView.Setup(gameName, view)
+    gameName = gameName or "Rivals"
+    view = view or RivalsView
+    local renderName = "Rift" .. gameName:gsub("[^%w]", "") .. "View"
     local snapshot, lastCamera, baseFrame, adjustedFrame
     local wheelDistance = 0
     local visibility = {}
@@ -10175,8 +10196,8 @@ function RivalsView.Setup()
         else LocalPlayer.CameraMode = snapshot.Mode end
         snapshot = nil
     end
-    function RivalsView.Apply()
-        if Settings.SelectedGame ~= "Rivals" or (not RivalsView.ThirdPerson and not RivalsView.ZoomUnlocked) then
+    function view.Apply()
+        if Settings.SelectedGame ~= gameName or (not view.ThirdPerson and not view.ZoomUnlocked) then
             restore()
             return
         end
@@ -10187,11 +10208,11 @@ function RivalsView.Setup()
                 Min = LocalPlayer.CameraMinZoomDistance, Max = LocalPlayer.CameraMaxZoomDistance }
         end
         LocalPlayer.CameraMode = Enum.CameraMode.Classic
-        local distance = RivalsView.ThirdPerson and RivalsView.Distance or wheelDistance
-        local maxDistance = RivalsView.ZoomUnlocked and RivalsView.MaxZoom or 40
-        distance = math.clamp(distance, RivalsView.ThirdPerson and 5 or 0, maxDistance)
+        local distance = view.ThirdPerson and view.Distance or wheelDistance
+        local maxDistance = view.ZoomUnlocked and view.MaxZoom or 40
+        distance = math.clamp(distance, view.ThirdPerson and 5 or 0, maxDistance)
         LocalPlayer.CameraMaxZoomDistance = math.max(maxDistance, LocalPlayer.CameraMinZoomDistance)
-        LocalPlayer.CameraMinZoomDistance = RivalsView.ThirdPerson and 5 or 0.5
+        LocalPlayer.CameraMinZoomDistance = view.ThirdPerson and 5 or 0.5
         LocalPlayer.CameraMaxZoomDistance = maxDistance
         if anyMenuVisible() then restoreOffset() return end
         -- The game keeps a first-person camera of its own, so apply the view offset
@@ -10228,18 +10249,18 @@ function RivalsView.Setup()
         else restoreVisibility() end
     end
     track(UIS.InputChanged:Connect(function(input, processed)
-        if processed or anyMenuVisible() or UIS:GetFocusedTextBox() or not RivalsView.ZoomUnlocked
+        if processed or anyMenuVisible() or UIS:GetFocusedTextBox() or not view.ZoomUnlocked
             or input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
-        if RivalsView.ThirdPerson then
-            RivalsView.Distance = math.clamp(RivalsView.Distance - input.Position.Z * 3, 5, RivalsView.MaxZoom)
+        if view.ThirdPerson then
+            view.Distance = math.clamp(view.Distance - input.Position.Z * 3, 5, view.MaxZoom)
         else
-            wheelDistance = math.clamp(wheelDistance - input.Position.Z * 3, 0, RivalsView.MaxZoom)
+            wheelDistance = math.clamp(wheelDistance - input.Position.Z * 3, 0, view.MaxZoom)
         end
     end))
-    RunService:BindToRenderStep("RiftRivalsView", Enum.RenderPriority.Last.Value + 2, RivalsView.Apply)
+    RunService:BindToRenderStep(renderName, Enum.RenderPriority.Last.Value + 2, view.Apply)
     track({ Disconnect = function()
-        RivalsView.ThirdPerson, RivalsView.ZoomUnlocked = false, false
-        RunService:UnbindFromRenderStep("RiftRivalsView")
+        view.ThirdPerson, view.ZoomUnlocked = false, false
+        RunService:UnbindFromRenderStep(renderName)
         restore()
     end })
 end
@@ -10794,7 +10815,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
     local function playerModel(player)
         if player == LocalPlayer then return end
         local model = resolveModel and resolveModel(player) or player.Character
-        if not model or not model:IsDescendantOf(workspace) then return end
+        if not model or not model:IsDescendantOf(workspace) or isNpcModel(model) then return end
         if model:GetAttribute("Ragdolled") == true then return end
         local head = model:FindFirstChild("Head")
         local torso = model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
@@ -12005,6 +12026,28 @@ function Settings.SetupProjectDelta()
         fov.Apply()
     end)
     Settings.SetupColdWarVisibility("Project Delta")
+    buildSpinbot(gameSection("Project Delta", MiscTab.Left, "Spinbot"))
+    local view = { ThirdPerson = false, ZoomUnlocked = false, Distance = 10, MaxZoom = 500 }
+    Settings.ProjectDeltaView = view
+    RivalsView.Setup("Project Delta", view)
+    local thirdPerson = gameSection("Project Delta", PlayerTab.Left, "Third Person")
+    Elements.Toggle(thirdPerson, "Third Person", false, function(on)
+        view.ThirdPerson = on
+        view.Apply()
+    end)
+    Elements.Slider(thirdPerson, "Distance", 5, 30, 10, "studs", function(value)
+        view.Distance = value
+        view.Apply()
+    end)
+    local zoom = gameSection("Project Delta", PlayerTab.Left, "Zoom Unlocker")
+    Elements.Toggle(zoom, "Zoom Unlocker", false, function(on)
+        view.ZoomUnlocked = on
+        view.Apply()
+    end)
+    Elements.Slider(zoom, "Max Zoom", 40, 1000, 500, "studs", function(value)
+        view.MaxZoom = value
+        view.Apply()
+    end)
     local list = gameSection("Project Delta", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     BedWars.BuildUI("Project Delta")

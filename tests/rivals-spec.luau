@@ -1298,7 +1298,7 @@ end)();
     Window.Visible=false
     for _,board in pairs(Settings.GameBoards) do board.Visible=false end
     raycastFailure,raycastResult=false,nil
-    for _,gameName in ipairs({"Cold War","Rivals","BedWars"}) do
+    for _,gameName in ipairs({"Cold War","Rivals","BedWars","Project Delta"}) do
         local drawings={Objects={}}
         function drawings.new(kind)
             local object={Kind=kind,Visible=false,Remove=function(self) self.Removed=true self.Visible=false end}
@@ -1325,6 +1325,12 @@ end)();
         set("ESP Boxes",true) set("Tracers",true) set("Skeleton",true) set("Head Dot",true)
         assert(#visible("Square",2)==2 and #visible("Line")==4 and #visible("Circle")==2,
             gameName.." did not share boxes, skeletons, tracers and head dots")
+        foe.Character:SetAttribute("IsNPC",true)
+        options.Apply()
+        assert(#visible("Square",2)==1,gameName.." showed an NPC-marked model")
+        foe.Character:SetAttribute("IsNPC",nil)
+        options.Apply()
+        assert(#visible("Square",2)==2,gameName.." did not restore player ESP")
         local bar=visible("Square",5)[1]
         assert(bar and math.abs(bar.Size.Y-1.2)<1e-6,"limb max health was ignored")
         local class,weapon,downed=false,false,false
@@ -1344,7 +1350,7 @@ end)();
         set("Draw Boxes",false)
         assert(#visible("Square",2)==0 and #visible("Line")==4,"box style disabled independent overlays")
         set("Draw Boxes",true) set("Show Teammates",false)
-        if gameName=="Cold War" then
+        if gameName=="Cold War" or gameName=="Project Delta" then
             assert(options.ShowAllPlayers and #visible("Square",2)==2,
                 "Show All did not include the loaded teammate")
             set("Show All Players",false)
@@ -1359,7 +1365,7 @@ end)();
         assert(#visible("Square",2)==1 and #visible("Line")==2,"visible enemy was not restored")
         set("Max Distance",25)
         assert(#visible("Square",2)==0,"maximum ESP distance ignored")
-        if gameName=="Cold War" then
+        if gameName=="Cold War" or gameName=="Project Delta" then
             set("Show All Players",true)
             assert(#visible("Square",2)==2,"Show All did not bypass distance and teammate filters")
             raycastResult={Instance=wall} clockNow+=1 options.Apply()
@@ -1430,5 +1436,5 @@ end)();
     end
     Players.GetPlayers,ENV.Drawing,workspace.FindFirstChild=savedPlayers,oldDrawing,savedFind
     LocalPlayer.Team=oldLocalTeam
-    print("PASS shared ESP: Cold War/Rivals/BedWars boxes, health/class/weapon/status, skeletons/tracers/head dots, independent styles, enemy/team colors, wall visibility/dimming/range, cached rays, vehicles, menu/disable/unload")
+    print("PASS shared ESP: Cold War/Rivals/BedWars/Project Delta boxes, NPC filter, health/class/weapon/status, skeletons/tracers/head dots, independent styles, enemy/team colors, wall visibility/dimming/range, cached rays, vehicles, menu/disable/unload")
 end)()

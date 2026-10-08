@@ -9,7 +9,14 @@ function Settings.SetupColdWarVisibility(game)
     assert(game == "Project Delta")
 end
 local BedWars = { BuildUI = function(game) assert(game == "Project Delta") end }
-local VisualsTab, SettingsTab = { Left = {} }, { Left = {} }
+local VisualsTab, SettingsTab, MiscTab, PlayerTab = { Left = {} }, { Left = {} }, { Left = {} }, { Left = {} }
+local spinSection
+local function buildSpinbot(section) spinSection = section end
+local viewScope
+local RivalsView = { Setup = function(game, view)
+    viewScope = game
+    view.Apply = function() end
+end }
 local function gameSection(game, _, name) return game .. "/" .. name end
 local controls = {}
 local Elements = {}
@@ -56,4 +63,10 @@ assert(camera.FieldOfView == 70 and nextCamera.FieldOfView == 110,
 controls["Project Delta/FOV/FOV"].Set(false)
 assert(nextCamera.FieldOfView == 65)
 assert(controls["Project Delta/Module List/Module List"])
-print("PASS Project Delta: visuals setup, outlines, FOV, camera replacement and restore")
+assert(spinSection == "Project Delta/Spinbot", "Project Delta Spinbot was not added")
+assert(viewScope == "Project Delta", "Project Delta third-person controller was not bound")
+controls["Project Delta/Third Person/Third Person"].Set(true)
+assert(Settings.ProjectDeltaView.ThirdPerson)
+controls["Project Delta/Zoom Unlocker/Zoom Unlocker"].Set(true)
+assert(Settings.ProjectDeltaView.ZoomUnlocked)
+print("PASS Project Delta: visuals, spinbot, third person, zoom, camera restore")

@@ -160,6 +160,7 @@ def main():
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),
+            between(inner, 'local function isNpcModel(', '\nSettings.AimSkipUnknown ='),
             between(inner, 'local function refreshBedWarsPlayers()', '\nlocal function refreshBedWarsMap()'),
             between(inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
             between(inner, 'local function projectBounds(', '\nlocal ESP = {}'),
