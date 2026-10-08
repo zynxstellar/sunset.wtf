@@ -62,31 +62,31 @@ def main():
         loader_spec = (ROOT / 'tests' / 'loader-spec.luau').read_text(encoding='utf-8')
         loader_spec = loader_spec.replace('-- INSERT_CURRENT_RELEASE',
             'local releaseSource = [====[' + build_line + ']====]')
-        arsenal_build_line = re.search(r'local SUNSET_BUILD = "[^"]+"',
-            (ROOT / 'arsenal.lua').read_text(encoding='utf-8')).group(0)
-        loader_spec = loader_spec.replace('-- INSERT_ARSENAL_RELEASE',
-            'local arsenalReleaseSource = [====[' + arsenal_build_line + ']====]')
+        universal_build_line = re.search(r'local SUNSET_BUILD = "[^"]+"',
+            (ROOT / 'universal.lua').read_text(encoding='utf-8')).group(0)
+        loader_spec = loader_spec.replace('-- INSERT_UNIVERSAL_RELEASE',
+            'local universalReleaseSource = [====[' + universal_build_line + ']====]')
         loader_spec = loader_spec.replace('-- INSERT_LOADER_PRODUCTION', loader_source)
         loader_path = temp / 'loader-spec.luau'
         loader_path.write_text(loader_spec, encoding='utf-8')
         subprocess.run([str(compiler), '--null', str(ROOT / 'loader.lua')], check=True)
         subprocess.run([str(runtime), str(loader_path)], check=True)
         print('PASS pinned loader: current release, stale/missing version rejection, download/compile failures, recovery')
-        arsenal_source = (ROOT / 'arsenal.lua').read_text(encoding='utf-8')
-        arsenal_inner = between(arsenal_source, 'local source = [========[', ']========]')
-        arsenal_inner = arsenal_inner[len('local source = [========['):]
-        arsenal_ui = between(arsenal_inner, 'function RivalsAim.BuildUI()',
+        universal_source = (ROOT / 'universal.lua').read_text(encoding='utf-8')
+        universal_inner = between(universal_source, 'local source = [========[', ']========]')
+        universal_inner = universal_inner[len('local source = [========['):]
+        universal_ui = between(universal_inner, 'function RivalsAim.BuildUI()',
             '\nif IS_GENERIC or game.PlaceId == 17625359962')
-        assert 'Elements.Label(' not in arsenal_ui, 'Arsenal module settings still have explanatory text'
-        arsenal_inner_path = temp / 'arsenal-inner.luau'
-        arsenal_inner_path.write_text(arsenal_inner, encoding='utf-8')
-        for path in [ROOT / 'arsenal.lua', arsenal_inner_path]:
+        assert 'Elements.Label(' not in universal_ui, 'Universal module settings still have explanatory text'
+        universal_inner_path = temp / 'universal-inner.luau'
+        universal_inner_path.write_text(universal_inner, encoding='utf-8')
+        for path in [ROOT / 'universal.lua', universal_inner_path]:
             subprocess.run([str(compiler), '--null', '-O0', '-g2', str(path)], check=True)
-        print('PASS supplied Arsenal source: wrapper and embedded game code compile')
-        hands_spec = (ROOT / 'tests' / 'arsenal-hands-spec.luau').read_text(encoding='utf-8')
-        hands_spec = hands_spec.replace('-- INSERT_ARSENAL_VIEWMODEL',
-            between(arsenal_inner, '    local function moveArsenalViewmodel(', '\n    local contexts ='))
-        hands_path = temp / 'arsenal-hands-spec.luau'
+        print('PASS Universal source: wrapper and embedded game code compile')
+        hands_spec = (ROOT / 'tests' / 'universal-hands-spec.luau').read_text(encoding='utf-8')
+        hands_spec = hands_spec.replace('-- INSERT_UNIVERSAL_VIEWMODEL',
+            between(universal_inner, '    local function moveAimViewmodel(', '\n    local contexts ='))
+        hands_path = temp / 'universal-hands-spec.luau'
         hands_path.write_text(hands_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(hands_path)], check=True)
         for path in [ROOT / 'alua', inner_path]:

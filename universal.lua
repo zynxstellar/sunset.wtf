@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-arsenal-hands-k270"
+local SUNSET_BUILD = "20261008-rift-universal-hands-k271"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -9574,8 +9574,7 @@ function RivalsAim.Setup()
     local visualEntries = {}
     local visualsConnection, visualsScreen
     local cameraBinding = "RiftRivalsCameraAim"
-    local function moveArsenalViewmodel(camera, before, after)
-        if game.PlaceId ~= 286090429 then return end
+    local function moveAimViewmodel(camera, before, after)
         local delta = after * before:Inverse()
         for _, child in ipairs(camera:GetChildren()) do
             local name = child.Name:lower()
@@ -10431,7 +10430,7 @@ end
                 local alpha = 1 - math.exp(-options.Strength * math.clamp(delta or 1 / 60, 0, 0.1))
                 camera.CFrame = before:Lerp(goal, alpha)
             end
-            moveArsenalViewmodel(camera, before, camera.CFrame)
+            moveAimViewmodel(camera, before, camera.CFrame)
             autoFire(options, fighter, part, camera)
         end)
         if not ok then
