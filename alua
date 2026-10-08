@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-visible-aim-hitsounds-k305"
+local SUNSET_BUILD = "20261008-rift-nearest-aim-audio-k306"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10547,9 +10547,23 @@ function Settings.SetupColdWarAim(playerModel)
         end
         return false
     end
-    local function visiblePart(camera, origin, part, model)
+    local function withinFOV(camera, part)
         local screen, onScreen = camera:WorldToViewportPoint(part.Position)
         if not onScreen or screen.Z <= 0 then return false end
+        local center = camera.ViewportSize * 0.5
+        local halfWidth, halfHeight = 0, 0
+        if typeof(part.Size) == "Vector3" then
+            local scale = camera.ViewportSize.Y / (2 * math.tan(math.rad(camera.FieldOfView or 70) * 0.5)
+                * math.max(screen.Z, 0.1))
+            halfWidth, halfHeight = part.Size.X * scale * 0.5, part.Size.Y * scale * 0.5
+        end
+        local dx = math.max(0, math.abs(screen.X - center.X) - halfWidth)
+        local dy = math.max(0, math.abs(screen.Y - center.Y) - halfHeight)
+        local distance = math.sqrt(dx * dx + dy * dy)
+        return not aim.FOVVisible or distance <= aim.Radius, distance
+    end
+    local function visiblePart(camera, origin, part, model)
+        if not withinFOV(camera, part) then return false end
         local params = RaycastParams.new()
         params.FilterType = Enum.RaycastFilterType.Exclude
         params.IgnoreWater = true
@@ -10594,7 +10608,6 @@ function Settings.SetupColdWarAim(playerModel)
             or params.Weapon.Explosive or not params.RaycastParams then return nil, "Weapon parameters unavailable or unsupported" end
         local localTeam = LocalPlayer.Team and LocalPlayer.Team.Name
         if localTeam ~= "NATO" and localTeam ~= "PACT" then return nil, "Your team is not NATO or PACT" end
-        local center = camera.ViewportSize * 0.5
         local candidates = {}
         for _, player in ipairs(Players:GetPlayers()) do
             local team = player.Team and player.Team.Name
@@ -10610,33 +10623,30 @@ function Settings.SetupColdWarAim(playerModel)
                         for _, name in ipairs(names) do
                             local part = model:FindFirstChild(name)
                             if part and part:IsA("BasePart") and (part.Position - origin).Magnitude <= aim.MaxDistance then
-                                local screen, onScreen = camera:WorldToViewportPoint(part.Position)
-                                local halfWidth, halfHeight = 0, 0
-                                if typeof(part.Size) == "Vector3" then
-                                    local verticalFOV = math.rad(camera.FieldOfView or 70)
-                                    local scale = camera.ViewportSize.Y / (2 * math.tan(verticalFOV * 0.5) * math.max(screen.Z, 0.1))
-                                    halfWidth = part.Size.X * scale * 0.5
-                                    halfHeight = part.Size.Y * scale * 0.5
-                                end
-                                local dx = math.max(0, math.abs(screen.X - center.X) - halfWidth)
-                                local dy = math.max(0, math.abs(screen.Y - center.Y) - halfHeight)
-                                local distance = math.sqrt(dx * dx + dy * dy)
-                                if onScreen and screen.Z > 0 and distance <= aim.Radius
+                                local eligible, distance = withinFOV(camera, part)
+                                if eligible
                                     and (not bestDistance or distance < bestDistance) then
                                     bestPart, bestDistance = part, distance
                                 end
                             end
                         end
                         if bestPart then
-                            table.insert(candidates, { Player = player, Model = model, Part = bestPart, Distance = bestDistance })
+                            local root = model:FindFirstChild("HumanoidRootPart") or bestPart
+                            table.insert(candidates, { Player = player, Model = model, Part = bestPart,
+                                Distance = (root.Position - origin).Magnitude, ScreenDistance = bestDistance })
                         end
                     end
                 end
             end
         end
-        table.sort(candidates, function(a, b) return a.Distance < b.Distance end)
-        if #candidates == 0 then return nil, "No eligible enemy inside the FOV and distance limit" end
-        for i = 1, strict and #candidates or math.min(3, #candidates) do
+        table.sort(candidates, function(a, b)
+            if a.Distance == b.Distance then return a.ScreenDistance < b.ScreenDistance end
+            return a.Distance < b.Distance
+        end)
+        if #candidates == 0 then return nil, aim.FOVVisible
+            and "No eligible enemy inside the FOV and distance limit"
+            or "No eligible on-screen enemy inside the distance limit" end
+        for i = 1, #candidates do
             local candidate = candidates[i]
             local root = candidate.Model:FindFirstChild("HumanoidRootPart") or candidate.Part
             local velocity = Vector3.new()
@@ -12116,7 +12126,8 @@ end
 function Settings.SetupColdWarHitSounds()
     local previous = ENV.SunsetColdWarHitSounds
     if previous and type(previous.Restore) == "function" then previous.Restore() end
-    local sounds = { Enabled = false, Choice = "Bell 1", Volume = 50, Pitch = 1, Queue = {} }
+    local sounds = { Enabled = false, Choice = "Bell 1", Volume = 50, Pitch = 1, Queue = {},
+        AudioReady = false, LastError = nil }
     Settings.ColdWarHitSounds, ENV.SunsetColdWarHitSounds = sounds, sounds
     local choices, files = {}, {}
     for _, spec in ipairs({ { "Bell", "impactBell_heavy" }, { "Glass", "impactGlass_light" },
@@ -12131,7 +12142,8 @@ function Settings.SetupColdWarHitSounds()
     end
     local destroyed, nextRetry, lastPlayed = false, 0, -math.huge
     local api, original, wrapper
-    local assets, pending, previews, pool, seen = {}, {}, {}, {}, {}
+    local assets, pending, previews, pool, seen, probes = {}, {}, {}, {}, {}, {}
+    local active = false
     local poolIndex = 0
     local function play(asset)
         if destroyed or not asset then return end
@@ -12146,12 +12158,25 @@ function Settings.SetupColdWarHitSounds()
         sound.TimePosition = 0
         sound:Play()
     end
+    local function loadAudio(asset)
+        local probe = new("Sound", { Name = "RiftHitSoundLoad", SoundId = asset, Volume = 0 },
+            game:GetService("SoundService"))
+        probes[probe] = true
+        local ok, err = pcall(function()
+            game:GetService("ContentProvider"):PreloadAsync({ probe })
+            if not probe.IsLoaded then error("Roblox could not decode the selected audio file") end
+        end)
+        probes[probe] = nil
+        probe:Destroy()
+        if not ok then error(err, 0) end
+        return asset
+    end
     local function prepare(preview)
         local label = sounds.Choice
         local filename = files[label]
         if not filename or destroyed then return end
         if assets[filename] then
-            sounds.Asset = assets[filename]
+            sounds.Asset, sounds.AudioReady = assets[filename], true
             if preview then play(sounds.Asset) end
             return
         end
@@ -12176,17 +12201,26 @@ function Settings.SetupColdWarHitSounds()
                     if type(folder) == "function" then pcall(folder, "RiftAssets") end
                     save(path, data)
                 end
-                return getter(path)
+                if destroyed then return nil end
+                local asset = getter(path)
+                if type(asset) ~= "string" or asset == "" then error("Executor did not return an audio asset") end
+                return loadAudio(asset)
             end)
             pending[filename] = nil
             if destroyed then return end
             if ok and type(asset) == "string" and asset ~= "" then
                 assets[filename] = asset
                 if sounds.Choice == label then
-                    sounds.Asset = asset
-                    if previews[filename] then pcall(play, asset) end
+                    sounds.Asset, sounds.AudioReady, sounds.LastError = asset, true, nil
+                    if previews[filename] then
+                        local played, err = pcall(play, asset)
+                        if not played then sounds.LastError = tostring(err) warn("[Rift] Hit Sounds: " .. sounds.LastError) end
+                    end
                 end
-            elseif not ok then warn("[Rift] Hit Sounds: " .. tostring(asset)) end
+            elseif not ok then
+                sounds.AudioReady, sounds.LastError = false, tostring(asset)
+                warn("[Rift] Hit Sounds: " .. sounds.LastError)
+            end
             previews[filename] = nil
         end)
     end
@@ -12227,9 +12261,13 @@ function Settings.SetupColdWarHitSounds()
         if destroyed then return end
         if not sounds.Enabled or Settings.SelectedGame ~= "Cold War" then
             unhook()
-            for _, sound in ipairs(pool) do sound:Stop() end
+            if active then
+                for _, sound in ipairs(pool) do sound:Stop() end
+            end
+            active = false
             return
         end
+        active = true
         if os.clock() >= nextRetry then
             nextRetry = os.clock() + 0.5
             local ok, err = pcall(install)
@@ -12260,7 +12298,9 @@ function Settings.SetupColdWarHitSounds()
         destroyed, sounds.Enabled = true, false
         unhook()
         for _, sound in ipairs(pool) do sound:Destroy() end
+        for probe in pairs(probes) do probe:Destroy() end
         table.clear(pool)
+        table.clear(probes)
     end
     track(RunService.RenderStepped:Connect(sounds.Update))
     track({ Disconnect = sounds.Restore })
@@ -12272,12 +12312,15 @@ function Settings.SetupColdWarHitSounds()
     end)
     Elements.Dropdown(section, "Sound", choices, "Bell 1", function(value)
         if not files[value] then return end
-        sounds.Choice, sounds.Asset = value, nil
+        sounds.Choice, sounds.Asset, sounds.AudioReady, sounds.LastError = value, nil, false, nil
         if sounds.Enabled then prepare(false) end
     end)
     Elements.Slider(section, "Volume", 0, 100, 50, "%", function(value) sounds.Volume = value end)
     Elements.Slider(section, "Pitch", 50, 200, 100, "%", function(value) sounds.Pitch = value / 100 end)
-    Elements.Button(section, "Preview", function() prepare(true) end)
+    Elements.Button(section, "Preview", function()
+        local ok, err = pcall(prepare, true)
+        if not ok then sounds.LastError = tostring(err) warn("[Rift] Hit Sounds: " .. sounds.LastError) end
+    end)
 end
 
 function Settings.SetupColdWar()

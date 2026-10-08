@@ -68,6 +68,8 @@ function workspace.CurrentCamera:WorldToViewportPoint(p) return Vector3.new(960+
 local wall,raycasts,rayFailure=nil,0,false
 local headWall=false
 local collisionTarget
+local extraCollisionTargets={}
+local hiddenModel
 local directWall,muzzleWall=false,false
 function workspace:Raycast(o,d,params)
     assert(params.Sentinel=="native collision params" or params.FilterType=="Exclude")
@@ -77,11 +79,22 @@ function workspace:Raycast(o,d,params)
     if not params.Sentinel and (directWall or (muzzleWall and o.Z==0)) then
         return {Instance=object("Cover","BasePart",workspace)}
     end
-    if headWall and d.Y>0.001 then return {Instance=object("Wall","BasePart",workspace)} end
-    if collisionTarget and o.Z<=100 and o.Z+d.Z>=100 and d.Z>0 then
-        local point=o+d*((100-o.Z)/d.Z)
+    if not params.Sentinel and hiddenModel then
         for _,name in ipairs({"Head","Torso"}) do
-            local part=collisionTarget.Children[name]
+            if (o+d-hiddenModel.Children[name].Position).Magnitude<0.001 then
+                return {Instance=object("Cover","BasePart",workspace)}
+            end
+        end
+    end
+    if headWall and d.Y>0.001 then return {Instance=object("Wall","BasePart",workspace)} end
+    local targets={collisionTarget}
+    for _,model in ipairs(extraCollisionTargets) do table.insert(targets,model) end
+    for _,model in ipairs(targets) do
+        local z=model.Children.Head.Position.Z
+        if o.Z>z or o.Z+d.Z<z or d.Z<=0 then continue end
+        local point=o+d*((z-o.Z)/d.Z)
+        for _,name in ipairs({"Head","Torso"}) do
+            local part=model.Children[name]
             if math.abs(point.X-part.Position.X)<1 and math.abs(point.Y-part.Position.Y)<1 then return {Instance=part} end
         end
     end
@@ -249,11 +262,26 @@ controls["Cold War/Silent Aim/Target Visible Part"]:Set(false)
 fire() assert(directions[1].X==0,"selected head was bypassed with visible-part fallback disabled")
 headWall=false
 controls["Cold War/Silent Aim/Target Visible Part"]:Set(true)
-aim.Radius=5 fire() assert(directions[1].X==0,"FOV exclusion failed")
+aim.FOVVisible=true aim.Radius=5 fire() assert(directions[1].X==0,"FOV exclusion failed")
 assert(aim.Diagnostics.LastReason:find("FOV"),"FOV failure missing from diagnostic")
 enemy.Character.Children.Torso.Size=Vector3.new(2,4,1)
 fire() assert(directions[1].X>0,"body overlap inside the FOV circle was ignored")
 enemy.Character.Children.Torso.Size=nil
+local inside=player("NearestInside","PACT",40,70)
+local outside=player("NearestOutside","PACT",60,10)
+extraCollisionTargets={inside.Character,outside.Character}
+aim.Radius=50
+local _,_,picked=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1))
+assert(picked==inside.Character,"FOV targeting used crosshair distance instead of nearest enemy distance")
+aim.FOVVisible=false
+_,_,picked=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1))
+assert(picked==outside.Character,"hidden FOV circle still restricted target radius")
+hiddenModel=outside.Character
+_,_,picked=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1))
+assert(picked==inside.Character,"hidden nearest enemy prevented visible fallback")
+hiddenModel=nil
+inside.Dead,outside.Dead=true,true
+extraCollisionTargets={}
 aim.Radius=150 aim.MaxDistance=25 fire() assert(directions[1].X==0,"range exclusion failed")
 aim.MaxDistance=1000 enemy.Dead=true fire() assert(directions[1].X==0,"dead player targeted") enemy.Dead=false
 local force=object("Shield","ForceField",enemy.Character)

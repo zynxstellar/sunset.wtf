@@ -29,7 +29,15 @@ local files,downloads,plays,saved,assets={},0,0,0,0
 local tasks={}
 local task={spawn=function(fn) table.insert(tasks,fn) end}
 local function finish() local q=tasks tasks={} for _,fn in ipairs(q) do fn() end end
-local game={GetService=function() return {} end,HttpGet=function(_,url)
+local audioDecodeFailure=false
+local preloads=0
+local game={GetService=function(_,name)
+    if name=="ContentProvider" then return {PreloadAsync=function(_,list)
+        preloads+=1
+        for _,sound in ipairs(list) do sound.IsLoaded=not audioDecodeFailure end
+    end} end
+    return {}
+end,HttpGet=function(_,url)
     assert(url:find("cd25bf679f5c56449332741079e304229cfd1ee5/assets/hitsounds/",1,true))
     downloads+=1 return "OggS"..string.rep("a",120)
 end}
@@ -39,9 +47,10 @@ local ENV={getcustomasset=function(path) assets+=1 assert(files[path]) return "a
 local soundsCreated={}
 local function new(kind,props,parent)
     assert(kind=="Sound")
-    local s={Stop=function() end,Play=function(self) plays+=1 self.Played=true end,
+    local s={Stop=function(self) self.Stopped=true end,Play=function(self) plays+=1 self.Played=true self.Stopped=false end,
         Destroy=function(self) self.Destroyed=true end}
-    table.insert(soundsCreated,s) return s
+    if props.Name=="RiftHitSound" then table.insert(soundsCreated,s) end
+    return s
 end
 local Settings={SelectedGame="Cold War"}
 local controls,connections={},{ }
@@ -64,7 +73,7 @@ local function step() now+=0.1 hits.Update() assert(identity==8) end
 step() assert(requires==0 and downloads==0,"disabled hitsounds did work")
 controls["Hit Sounds"](true)
 assert(downloads==0 and #tasks==1,"audio download blocked enabling")
-finish() assert(downloads==1 and hits.Asset and saved==1)
+finish() assert(downloads==1 and hits.Asset and saved==1 and preloads==1 and hits.AudioReady)
 loaded=true now+=1 step()
 assert(requires==1 and reporter.sendClaim~=native)
 local result=table.pack(reporter.sendClaim(1,{Instance=enemyPart},"extra"))
@@ -89,6 +98,9 @@ assert(not ok and #hits.Queue==0,"failed native report enqueued a hit")
 reporter.sendClaim(7,{Instance=enemyPart})
 controls["Hit Sounds"](false) step()
 assert(plays==3 and reporter.sendClaim==native,"disable leaked pending hits or hook")
+controls.Preview()
+step()
+assert(plays==4 and not soundsCreated[4].Stopped,"disabled module cut off Preview on the next frame")
 controls["Hit Sounds"](true) now+=1 step()
 local foreign=function() end reporter.sendClaim=foreign
 hits.Restore() assert(reporter.sendClaim==foreign,"unload overwrote a foreign hook")
@@ -97,5 +109,9 @@ reporter.sendClaim=native
 Settings.SetupColdWarHitSounds() hits=Settings.ColdWarHitSounds
 controls.Sound("Punch 3") controls.Preview()
 hits.Restore() finish()
-assert(plays==3,"late download played after unload")
+assert(plays==4,"late download played after unload")
+Settings.SetupColdWarHitSounds() hits=Settings.ColdWarHitSounds
+audioDecodeFailure=true controls.Preview() finish()
+assert(not hits.AudioReady and hits.LastError and #warnings>0,"unplayable audio was silently accepted")
+hits.Restore()
 print("PASS Hit Sounds: 24 choices, deferred cached assets, enemy reports, duplicate/team/world filters, native results/errors, preview/volume/pitch, disable/unload")
