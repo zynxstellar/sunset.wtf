@@ -9,10 +9,10 @@ local dedicated = game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 13687899540 or game.GameId == 4750561026
     or game.PlaceId == 7336302630 or game.GameId == 2862098693
 local expectedBuild = dedicated
-    and "20261009-rift-remove-hit-sounds-k309"
+    and "20261009-rift-performance-music-k310"
     or "20261009-rift-universal-steady-camera-k274"
 local sourceUrl = dedicated
-    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/a9a343e869396935416e16c9658c33bb75bdfda0/alua"
+    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/3bc9da81ec561738e4a4e5b4dfbd6cbf46420e73/alua"
     or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/c95f9d228d476b0a096a678b2e13456d14d2ba92/universal.lua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
