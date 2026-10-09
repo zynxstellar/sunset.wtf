@@ -26,6 +26,7 @@ def main():
     source = (ROOT / 'alua').read_text(encoding='utf-8')
     inner = between(source, 'local source = [========[', ']========]')
     inner = inner[len('local source = [========['):]
+    assert 'hookmetamethod(game, "__newindex"' not in inner, 'global menu hook returned'
     startup_guard = inner.split('local ENV =', 1)[0]
     assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
         'Project Delta is supported but the startup guard returns before building its UI'
@@ -79,8 +80,14 @@ def main():
         diagnostic_path = temp / 'diagnostic-loader-spec.luau'
         diagnostic_path.write_text(diagnostic_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(diagnostic_path)], check=True)
+        trace_spec = (ROOT / 'tests' / 'startup-trace-spec.luau').read_text(encoding='utf-8')
+        trace_spec = trace_spec.replace('-- INSERT_STARTUP_WRAPPER', source.split(']========]', 1)[1])
+        trace_path = temp / 'startup-trace-spec.luau'
+        trace_path.write_text(trace_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(trace_path)], check=True)
         print('PASS pinned loader: current release, stale/missing version rejection, download/compile failures, recovery')
         universal_source = (ROOT / 'universal.lua').read_text(encoding='utf-8')
+        assert 'hookmetamethod(game, "__newindex"' not in universal_source, 'universal global menu hook returned'
         universal_inner = between(universal_source, 'local source = [========[', ']========]')
         universal_inner = universal_inner[len('local source = [========['):]
         universal_ui = between(universal_inner, 'function RivalsAim.BuildUI()',

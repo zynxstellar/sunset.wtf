@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-universal-steady-camera-k274"
+local SUNSET_BUILD = "20261009-rift-universal-menu-stability-k275"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -359,8 +359,9 @@ end))
 
 
 
-local canHook = typeof(hookmetamethod) == "function" and typeof(newcclosure) == "function" and typeof(checkcaller) == "function"
-local useScriptable = not canHook
+-- Menu input is handled by our render callback, without a global property hook.
+local canHook = false
+local useScriptable = false
 
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 local savedMenuInput
@@ -443,19 +444,6 @@ track(RunService.Stepped:Connect(forceUnlock))
 track(RunService.Heartbeat:Connect(forceUnlock))
 
 
-if canHook then
-    local oldNewIndex
-    oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
-        if not checkcaller() and Window and Window.Parent and anyMenuVisible() then
-            if self == UIS then
-                rememberGameInput(key, value)
-                if key == "MouseBehavior" then value = Enum.MouseBehavior.Default end
-                if key == "MouseIconEnabled" then value = true end
-            end
-        end
-        return oldNewIndex(self, key, value)
-    end))
-end
 
 track({ Disconnect = function()
     pcall(RunService.UnbindFromRenderStep, RunService, UNLOCK_NAME)

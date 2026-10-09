@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-performance-music-k310"
+local SUNSET_BUILD = "20261009-rift-startup-stability-k311"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -329,6 +329,7 @@ new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
 TweenService:Create(ENV.SunsetLoading.Fill, TweenInfo.new(1.2, Enum.EasingStyle.Quad,
     Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.88, 1) }):Play()
 function Settings.StartupStage(message)
+    if type(ENV.SunsetStartupTrace) == "function" then ENV.SunsetStartupTrace(message) end
     if not Settings.IsColdWar then return end
     print("[Rift startup " .. SUNSET_BUILD .. "] " .. message)
     local loading = ENV.SunsetLoading
@@ -398,9 +399,9 @@ end))
 
 -- Cold War visuals only need our own UI and player characters. Leave native
 -- property writes alone; unlock the menu cursor through forceUnlock instead.
-local canHook = game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026
-    and typeof(hookmetamethod) == "function" and typeof(newcclosure) == "function" and typeof(checkcaller) == "function"
-local useScriptable = not canHook
+-- Menu input is handled by our render callback, without a global property hook.
+local canHook = false
+local useScriptable = false
 
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 local savedMenuInput
@@ -486,19 +487,6 @@ track(RunService.Stepped:Connect(forceUnlock))
 track(RunService.Heartbeat:Connect(forceUnlock))
 
 
-if canHook then
-    local oldNewIndex
-    oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
-        if not checkcaller() and Window and Window.Parent and anyMenuVisible() then
-            if self == UIS then
-                rememberGameInput(key, value)
-                if key == "MouseBehavior" then value = Enum.MouseBehavior.Default end
-                if key == "MouseIconEnabled" then value = true end
-            end
-        end
-        return oldNewIndex(self, key, value)
-    end))
-end
 
 track({ Disconnect = function()
     pcall(RunService.UnbindFromRenderStep, RunService, UNLOCK_NAME)
@@ -8358,7 +8346,9 @@ if Settings.IsColdWar then
     -- avoid running BedWars.Stop's attribute and native controller writes.
     function BedWars.Stop() BedWars.Running = false end
 else
+    Settings.StartupStage("Preparing game runtime...")
     Settings.SetupBedWarsRuntime()
+    Settings.StartupStage("Game runtime ready")
 end
 
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
@@ -12695,7 +12685,7 @@ do
     end
 end
 if detectedGame then
-    Settings.StartupStage("Restoring Cold War settings...")
+    Settings.StartupStage("Restoring game settings...")
     Persistence.Restore(detectedGame, menuKeyControl)
     Persistence.Start()
     track(LocalPlayer.OnTeleport:Connect(function(state)
@@ -12718,6 +12708,24 @@ if typeof(writefile) == "function" then
         writefile("SunsetConfigs/SunsetCurrent.lua", source)
     end)
 end
+environment.SunsetStartupTrace = function(stage)
+    if typeof(writefile) ~= "function" then return end
+    pcall(function()
+        if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
+        writefile("SunsetConfigs/RiftStartup.txt", "Build: 20261009-rift-startup-stability-k311\nPlace: "
+            .. tostring(game.PlaceId) .. "\nStage: " .. tostring(stage) .. "\nClock: " .. tostring(os.clock()))
+    end)
+end
+environment.SunsetStartupTrace("Compiling client")
 local chunk, err = loadstring(source)
-if not chunk then error("Rift source did not compile: " .. tostring(err)) end
-chunk()
+if not chunk then
+    environment.SunsetStartupTrace("Compile failed: " .. tostring(err))
+    error("Rift source did not compile: " .. tostring(err))
+end
+environment.SunsetStartupTrace("Executing client")
+local started, failure = pcall(chunk)
+if not started then
+    environment.SunsetStartupTrace("Startup error: " .. tostring(failure))
+    error(failure, 0)
+end
+environment.SunsetStartupTrace("Ready")

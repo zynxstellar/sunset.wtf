@@ -27,7 +27,7 @@ assert(patched:find('if control.Kind == "toggle" then control.Set(false) end', 1
 assert(patched:find('SunsetConfigs/RiftCrashDiagnostic.txt', 1, true))
 ok, message, ran = run(releaseSource, false, true)
 assert(ok and ran, "BedWars match diagnostic failed: " .. tostring(message))
-ok, message, ran = run(releaseSource:gsub('20261009%-rift%-performance%-music%-k310', 'wrong-build'))
+ok, message, ran = run(releaseSource:gsub('20261009%-rift%-startup%-stability%-k311', 'wrong-build'))
 assert(not ok and not ran, "wrong build ran")
 ok, message, ran = run(nil)
 assert(not ok and not ran, "download failure ran")
