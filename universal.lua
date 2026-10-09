@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-universal-esp-scale-k273"
+local SUNSET_BUILD = "20261009-rift-universal-steady-camera-k274"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -1870,10 +1870,18 @@ local function buildSpinbot(s)
     local direction = 1
     local trackedHumanoid, originalAutoRotate, trackedRoot
     local yaw = 0
+    local nativeX, nativeYaw, nativeZ = 0, 0, 0
+    local cameraRoot
+    Settings.SpinCameraId = (Settings.SpinCameraId or 0) + 1
+    local cameraBinding = "RiftSpinCamera" .. Settings.SpinCameraId
     local function restoreSpin()
         if trackedHumanoid and trackedHumanoid.Parent then
             trackedHumanoid.AutoRotate = originalAutoRotate
         end
+        if trackedRoot and trackedRoot.Parent then
+            trackedRoot.CFrame = CFrame.new(trackedRoot.Position) * CFrame.Angles(nativeX, nativeYaw, nativeZ)
+        end
+        cameraRoot = nil
         trackedHumanoid, originalAutoRotate, trackedRoot = nil, nil, nil
     end
     local spinToggle = Elements.Toggle(s, "Spinbot", false, function(on)
@@ -1897,14 +1905,34 @@ local function buildSpinbot(s)
             restoreSpin()
             trackedHumanoid, trackedRoot = humanoid, root
             originalAutoRotate = humanoid.AutoRotate
-            local _, initialYaw = root.CFrame:ToOrientation()
-            yaw = initialYaw
+            nativeX, nativeYaw, nativeZ = root.CFrame:ToOrientation()
+            yaw = nativeYaw
         end
         humanoid.AutoRotate = false
         yaw = (yaw + direction * math.rad(rate) * math.min(dt, 0.1)) % (math.pi * 2)
         root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
     end))
-    track({ Disconnect = function() enabled = false restoreSpin() end })
+    -- Let the native camera and first-person weapon see the normal facing.
+    -- Put the spin back after camera, viewmodel, and aim updates have finished.
+    RunService:BindToRenderStep(cameraBinding .. "Before", Enum.RenderPriority.Camera.Value - 1, function()
+        cameraRoot = nil
+        if not enabled or not trackedRoot or not trackedRoot.Parent then return end
+        cameraRoot = trackedRoot
+        cameraRoot.CFrame = CFrame.new(cameraRoot.Position) * CFrame.Angles(nativeX, nativeYaw, nativeZ)
+    end)
+    RunService:BindToRenderStep(cameraBinding .. "After", Enum.RenderPriority.Last.Value + 10, function()
+        local root = cameraRoot
+        cameraRoot = nil
+        if not enabled or root ~= trackedRoot or not root or not root.Parent then return end
+        nativeX, nativeYaw, nativeZ = root.CFrame:ToOrientation()
+        root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
+    end)
+    track({ Disconnect = function()
+        enabled = false
+        restoreSpin()
+        RunService:UnbindFromRenderStep(cameraBinding .. "Before")
+        RunService:UnbindFromRenderStep(cameraBinding .. "After")
+    end })
     return spinToggle
 end
 spinToggle = buildSpinbot(makeSection(MiscTab.Left, "Spinbot"))

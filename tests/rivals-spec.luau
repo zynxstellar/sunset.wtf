@@ -153,7 +153,7 @@ local function track(c) table.insert(connections,c) return c end
 local RunService={Heartbeat=signal(),RenderStepped=signal(),Stepped=signal(),PreSimulation=signal()}
 RunService.Bindings={}
 function RunService:BindToRenderStep(name,priority,callback)
-    assert(priority==201 or priority==301 or priority==302 or priority==303)
+    assert(priority==199 or priority==201 or priority==301 or priority==302 or priority==303 or priority==310)
     self.Bindings[name]=callback
 end
 function RunService:UnbindFromRenderStep(name) self.Bindings[name]=nil end
