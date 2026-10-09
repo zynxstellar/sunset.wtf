@@ -71,6 +71,14 @@ def main():
         loader_path.write_text(loader_spec, encoding='utf-8')
         subprocess.run([str(compiler), '--null', str(ROOT / 'loader.lua')], check=True)
         subprocess.run([str(runtime), str(loader_path)], check=True)
+        diagnostic_spec = (ROOT / 'tests' / 'diagnostic-loader-spec.luau').read_text(encoding='utf-8')
+        diagnostic_spec = diagnostic_spec.replace('-- INSERT_DIAGNOSTIC_RELEASE',
+            'local releaseSource = [==========[' + source + ']==========]')
+        diagnostic_spec = diagnostic_spec.replace('-- INSERT_DIAGNOSTIC_LOADER',
+            (ROOT / 'diagnostic-loader.lua').read_text(encoding='utf-8'))
+        diagnostic_path = temp / 'diagnostic-loader-spec.luau'
+        diagnostic_path.write_text(diagnostic_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(diagnostic_path)], check=True)
         print('PASS pinned loader: current release, stale/missing version rejection, download/compile failures, recovery')
         universal_source = (ROOT / 'universal.lua').read_text(encoding='utf-8')
         universal_inner = between(universal_source, 'local source = [========[', ']========]')
