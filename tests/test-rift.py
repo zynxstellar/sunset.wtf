@@ -89,13 +89,6 @@ def main():
         hands_path = temp / 'universal-hands-spec.luau'
         hands_path.write_text(hands_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(hands_path)], check=True)
-        for name, script_source in [('dedicated', inner), ('universal', universal_inner)]:
-            spin_spec = (ROOT / 'tests' / 'spin-camera-spec.luau').read_text(encoding='utf-8')
-            spin_spec = spin_spec.replace('-- INSERT_SPIN_PRODUCTION',
-                between(script_source, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('))
-            spin_path = temp / (name + '-spin-camera-spec.luau')
-            spin_path.write_text(spin_spec, encoding='utf-8')
-            subprocess.run([str(runtime), str(spin_path)], check=True)
         for path in [ROOT / 'alua', inner_path]:
             subprocess.run([str(compiler), '--null', str(path)], check=True)
             # Executor loadstring may keep every debug local in a register.
@@ -198,12 +191,6 @@ def main():
         tuning_path = temp / 'weapon-tuning-spec.luau'
         tuning_path.write_text(tuning_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(tuning_path)], check=True)
-        steady_spec = (ROOT / 'tests' / 'steady-gun-spec.luau').read_text(encoding='utf-8')
-        steady_spec = steady_spec.replace('-- INSERT_STEADY_GUN',
-            between(inner, 'function Settings.SetupColdWarSteadyGun()', '\nfunction Settings.SetupColdWarAutoWeapons('))
-        steady_path = temp / 'steady-gun-spec.luau'
-        steady_path.write_text(steady_spec, encoding='utf-8')
-        subprocess.run([str(runtime), str(steady_path)], check=True)
         auto_spec = (ROOT / 'tests' / 'auto-weapons-spec.luau').read_text(encoding='utf-8')
         auto_spec = auto_spec.replace('-- INSERT_AUTO_WEAPONS',
             between(inner, 'function Settings.SetupColdWarAutoWeapons(', '\nfunction Settings.SetupColdWar()'))

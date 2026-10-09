@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-steady-gun-camera-k308"
+local SUNSET_BUILD = "20261009-rift-session-autoshoot-seated-k307"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -1858,18 +1858,10 @@ local function buildSpinbot(s)
     local direction = 1
     local trackedHumanoid, originalAutoRotate, trackedRoot
     local yaw = 0
-    local nativeX, nativeYaw, nativeZ = 0, 0, 0
-    local cameraRoot
-    Settings.SpinCameraId = (Settings.SpinCameraId or 0) + 1
-    local cameraBinding = "RiftSpinCamera" .. Settings.SpinCameraId
     local function restoreSpin()
         if trackedHumanoid and trackedHumanoid.Parent then
             trackedHumanoid.AutoRotate = originalAutoRotate
         end
-        if trackedRoot and trackedRoot.Parent then
-            trackedRoot.CFrame = CFrame.new(trackedRoot.Position) * CFrame.Angles(nativeX, nativeYaw, nativeZ)
-        end
-        cameraRoot = nil
         trackedHumanoid, originalAutoRotate, trackedRoot = nil, nil, nil
     end
     local spinToggle = Elements.Toggle(s, "Spinbot", false, function(on)
@@ -1893,34 +1885,14 @@ local function buildSpinbot(s)
             restoreSpin()
             trackedHumanoid, trackedRoot = humanoid, root
             originalAutoRotate = humanoid.AutoRotate
-            nativeX, nativeYaw, nativeZ = root.CFrame:ToOrientation()
-            yaw = nativeYaw
+            local _, initialYaw = root.CFrame:ToOrientation()
+            yaw = initialYaw
         end
         humanoid.AutoRotate = false
         yaw = (yaw + direction * math.rad(rate) * math.min(dt, 0.1)) % (math.pi * 2)
         root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
     end))
-    -- Let the native camera and first-person weapon see the normal facing.
-    -- Put the spin back after camera, viewmodel, and aim updates have finished.
-    RunService:BindToRenderStep(cameraBinding .. "Before", Enum.RenderPriority.Camera.Value - 1, function()
-        cameraRoot = nil
-        if not enabled or not trackedRoot or not trackedRoot.Parent then return end
-        cameraRoot = trackedRoot
-        cameraRoot.CFrame = CFrame.new(cameraRoot.Position) * CFrame.Angles(nativeX, nativeYaw, nativeZ)
-    end)
-    RunService:BindToRenderStep(cameraBinding .. "After", Enum.RenderPriority.Last.Value + 10, function()
-        local root = cameraRoot
-        cameraRoot = nil
-        if not enabled or root ~= trackedRoot or not root or not root.Parent then return end
-        nativeX, nativeYaw, nativeZ = root.CFrame:ToOrientation()
-        root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
-    end)
-    track({ Disconnect = function()
-        enabled = false
-        restoreSpin()
-        RunService:UnbindFromRenderStep(cameraBinding .. "Before")
-        RunService:UnbindFromRenderStep(cameraBinding .. "After")
-    end })
+    track({ Disconnect = function() enabled = false restoreSpin() end })
     return spinToggle
 end
 spinToggle = buildSpinbot(makeSection(MiscTab.Left, "Spinbot"))
@@ -11623,88 +11595,6 @@ function Settings.SetupColdWarWeaponTuning()
     end)
 end
 
-function Settings.SetupColdWarSteadyGun()
-    local previous = ENV.SunsetColdWarSteadyGun
-    if previous and type(previous.Restore) == "function" then previous.Restore() end
-    local steady = { Enabled = false, Available = false }
-    Settings.ColdWarSteadyGun, ENV.SunsetColdWarSteadyGun = steady, steady
-    local hooks = ENV.SunsetColdWarSteadyGunHooks or {}
-    ENV.SunsetColdWarSteadyGunHooks = hooks
-    local destroyed, nextRetry = false, 0
-    local function install()
-        local storage = game:GetService("ReplicatedStorage")
-        local client = storage:FindFirstChild("Client")
-        local tools = client and client:FindFirstChild("Tools")
-        local weapon = tools and tools:FindFirstChild("Weapon")
-        local controllers = weapon and weapon:FindFirstChild("controllers")
-        local module = controllers and controllers:FindFirstChild("WeaponViewmodel")
-        if not module or not rivalsModuleLoaded(module) then return false end
-        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
-        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
-        if identity then setId(2) end
-        local result = table.pack(pcall(require, module))
-        if identity then setId(identity) end
-        if not result[1] then error(result[2], 0) end
-        local viewmodel = result[2]
-        if hooks.Viewmodel == viewmodel and hooks.Installed then return true end
-        local read, write = debug and debug.getupvalues, debug and debug.setupvalue
-        if type(read) ~= "function" or type(write) ~= "function" or type(hookfunction) ~= "function"
-            or type(viewmodel) ~= "table" or type(viewmodel.attach) ~= "function" then
-            error("No Sway needs the observed viewmodel and executor upvalue hooks")
-        end
-        local attach = read(viewmodel.attach)
-        local update = attach[37]
-        if attach[36] ~= RunService or type(update) ~= "function" then
-            error("Cold War viewmodel update layout changed")
-        end
-        local outputs = read(update)
-        local sway, shake = outputs[5], outputs[9]
-        if type(sway) ~= "function" or type(shake) ~= "function" then
-            error("Cold War sway helpers changed")
-        end
-        local swayValues, shakeValues = read(sway), read(shake)
-        if typeof(swayValues[9]) ~= "CFrame" or typeof(swayValues[10]) ~= "CFrame"
-            or typeof(shakeValues[4]) ~= "CFrame" then error("Cold War sway outputs changed") end
-        local nativeSway, nativeShake
-        nativeSway = hookfunction(sway, function(...)
-            local result = table.pack(nativeSway(...))
-            if hooks.Active then
-                write(nativeSway, 9, CFrame.identity)
-                write(nativeSway, 10, CFrame.identity)
-            end
-            return table.unpack(result, 1, result.n)
-        end)
-        nativeShake = hookfunction(shake, function(...)
-            local result = table.pack(nativeShake(...))
-            if hooks.Active then write(nativeShake, 4, CFrame.identity) end
-            return table.unpack(result, 1, result.n)
-        end)
-        if type(nativeSway) ~= "function" or type(nativeShake) ~= "function" then
-            error("Could not install No Sway")
-        end
-        hooks.Viewmodel, hooks.Installed = viewmodel, true
-        return true
-    end
-    function steady.Update()
-        hooks.Active = not destroyed and steady.Enabled and Settings.SelectedGame == "Cold War"
-        if not hooks.Active or steady.Available or os.clock() < nextRetry then return end
-        nextRetry = os.clock() + 1
-        local ok, result = pcall(install)
-        steady.Available = ok and result == true
-        if not ok and steady.LastError ~= tostring(result) then
-            steady.LastError = tostring(result)
-            warn("[Rift] No Sway: " .. steady.LastError)
-        end
-    end
-    function steady.Restore()
-        destroyed, steady.Enabled, hooks.Active = true, false, false
-    end
-    track(RunService.RenderStepped:Connect(steady.Update))
-    track({ Disconnect = steady.Restore })
-    local section = gameSection("Cold War", VisualsTab.Left, "No Sway")
-    Elements.Toggle(section, "No Sway", false, function(on) steady.Enabled = on steady.Update() end)
-end
-
 function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
@@ -12332,7 +12222,6 @@ function Settings.SetupColdWarSeated()
     local hooks = ENV.SunsetColdWarSeatHooks or {}
     ENV.SunsetColdWarSeatHooks = hooks
     local destroyed, nextRetry, lastApplied = false, 0, nil
-    local lastSeat, lastWeapon, nextEquip, equipAttempts, pendingEquip = nil, nil, 0, 0, false
     local function nativeCall(fn, ...)
         local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
         local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
@@ -12423,33 +12312,6 @@ function Settings.SetupColdWarSeated()
                 nativeCall(hooks.NativeSeat, false)
                 lastApplied = hum
             end
-            local inventory = hooks.Inventory
-            if type(inventory.getEquipped) == "function" and type(inventory.getTools) == "function" then
-                local equipped = nativeCall(inventory.getEquipped)
-                if equipped and equipped:GetAttribute("ToolType") == "Weapon" then lastWeapon = equipped end
-                local seat = inSeat(hum) and hum.SeatPart or nil
-                if seat ~= lastSeat then lastSeat, equipAttempts, nextEquip = seat, 0, 0 end
-                if seat and not equipped and not pendingEquip and equipAttempts < 3 and os.clock() >= nextEquip then
-                    local tools = nativeCall(inventory.getTools)
-                    local candidate = table.find(tools, lastWeapon) and lastWeapon or nil
-                    if not candidate then
-                        for _, tool in ipairs(tools) do
-                            if tool:GetAttribute("ToolType") == "Weapon" then candidate = tool break end
-                        end
-                    end
-                    if candidate and candidate.Parent then
-                        pendingEquip, nextEquip, equipAttempts = true, os.clock() + 1, equipAttempts + 1
-                        task.spawn(function()
-                            if not destroyed and seated.Enabled and LocalPlayer.Character
-                                and humanoid() == hum and inSeat(hum) and hum.SeatPart == seat then
-                                local ok, err = pcall(nativeCall, inventory.equip, candidate)
-                                if not ok then warn("[Rift] Shoot While Seated equip: " .. tostring(err)) end
-                            end
-                            pendingEquip = false
-                        end)
-                    end
-                end
-            end
         end
     end
     local function restore()
@@ -12459,7 +12321,7 @@ function Settings.SetupColdWarSeated()
             local hum = humanoid()
             pcall(nativeCall, hooks.NativeSeat, hum and hum.Sit == true or false)
         end
-        seated.Available, lastApplied, lastSeat = false, nil, nil
+        seated.Available, lastApplied = false, nil
     end
     function seated.Restore() destroyed = true restore() end
     track(RunService.RenderStepped:Connect(seated.Update))
@@ -12532,7 +12394,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSeated()
     Settings.SetupColdWarWeaponTuning()
-    Settings.SetupColdWarSteadyGun()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")
     Elements.Toggle(atmosphere, "Atmosphere", false, setAtmosphereEnabled)

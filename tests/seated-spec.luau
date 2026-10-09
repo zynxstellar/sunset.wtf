@@ -9,22 +9,11 @@ local LocalPlayer = { Character = { FindFirstChildOfClass = function() return hu
 local conscious = true
 local wielder = { isConscious = function() return conscious end }
 local function nativeGate() return not hum.Sit and not hum.PlatformStand end
-local equipGate = nativeGate
 local seatEvents = 0
 local function onSeatState() seatEvents += 1 return "native event" end
 local calls, blocked = 0, true
-local equipped, equipCalls = nil, 0
-local rifle = { Parent = {}, GetAttribute = function() return "Weapon" end }
-local function nativeSeat(on)
-    calls += 1 blocked = on
-    if on then equipped = nil end
-    return "native seat", nil, 3
-end
-local inventory = { new = function() end, equip = function(tool)
-    equipCalls += 1
-    if equipGate() then equipped = tool end
-end, setSeated = nativeSeat,
-    getEquipped = function() return equipped end, getTools = function() return {rifle} end }
+local function nativeSeat(on) calls += 1 blocked = on return "native seat", nil, 3 end
+local inventory = { new = function() end, equip = function() end, setSeated = nativeSeat }
 local gateValues = { false, 0, false, true, false, false, wielder, hum, LocalPlayer }
 local upvalues = { [inventory.equip] = { [3] = nativeGate },
     [inventory.new] = { [28] = onSeatState }, [nativeGate] = gateValues,
@@ -33,7 +22,6 @@ local debug = { getupvalues = function(fn) return upvalues[fn] or {} end }
 local replacements, hookCount = {}, 0
 local function hookfunction(fn, replacement)
     replacements[fn] = replacement
-    if fn == nativeGate then equipGate = replacement end
     hookCount += 1
     return fn
 end
@@ -48,12 +36,6 @@ local function getthreadidentity() return identity end
 local function setthreadidentity(value) identity = value end
 local function require(m) assert(m == module and identity == 2) requires += 1 return inventory end
 local function warn() end
-local tasks = {}
-local task = { spawn = function(fn) table.insert(tasks, fn) end }
-local function finishTasks()
-    local pending = tasks tasks = {}
-    for _, fn in ipairs(pending) do fn() end
-end
 local connections = {}
 local function track(c) table.insert(connections, c) end
 local RunService = { RenderStepped = { Connect = function() return { Disconnect = function() end } end } }
@@ -71,9 +53,6 @@ assert(requires == 0, "uninitialized module was required")
 loaded, now = true, 12
 feature.Update()
 assert(feature.Available and hookCount == 2 and identity == 8 and not blocked)
-assert(equipped == nil and #tasks == 1, "equip was not deferred")
-finishTasks()
-assert(equipped == rifle and equipCalls == 1, "already holstered seated weapon was not equipped")
 local gate, seat = replacements[nativeGate], replacements[onSeatState]
 assert(gate(), "seated equip stayed blocked")
 local result = table.pack(inventory.setSeated(true))
@@ -109,12 +88,7 @@ toggle(true)
 now += 2
 feature.Update()
 assert(gate() and not blocked and hookCount == 2, "re-enable stacked seat hooks")
-equipped, hum.SeatPart = nil, {}
-feature.Update()
-assert(#tasks == 1)
 feature.Restore()
-finishTasks()
-assert(equipped == nil and equipCalls == 1, "unload allowed a pending seated equip")
 assert(blocked and not gate() and inventory.setSeated == nativeSeat)
 Settings.SetupColdWarSeated()
 toggle(true)
