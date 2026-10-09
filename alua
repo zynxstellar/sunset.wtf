@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-remove-hit-sounds-k309"
+local SUNSET_BUILD = "20261009-rift-steady-gun-camera-k308"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12124,6 +12124,206 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarHitSounds()
+    local previous = ENV.SunsetColdWarHitSounds
+    if previous and type(previous.Restore) == "function" then previous.Restore() end
+    local sounds = { Enabled = false, Choice = "Bell 1", Volume = 50, Pitch = 1, Queue = {},
+        AudioReady = false, LastError = nil }
+    Settings.ColdWarHitSounds, ENV.SunsetColdWarHitSounds = sounds, sounds
+    local choices, files = {}, {}
+    for _, spec in ipairs({ { "Bell", "impactBell_heavy" }, { "Glass", "impactGlass_light" },
+        { "Metal", "impactMetal_light" }, { "Punch", "impactPunch_medium" },
+        { "Soft", "impactSoft_medium" }, { "Tin", "impactTin_medium" },
+        { "Wood", "impactWood_light" }, { "Click", "impactGeneric_light" } }) do
+        for i = 1, 3 do
+            local label = spec[1] .. " " .. i
+            table.insert(choices, label)
+            files[label] = spec[2] .. string.format("_%03d.ogg", i - 1)
+        end
+    end
+    local destroyed, nextRetry, lastPlayed = false, 0, -math.huge
+    local api, original, wrapper
+    local assets, pending, previews, pool, seen, probes = {}, {}, {}, {}, {}, {}
+    local active = false
+    local poolIndex = 0
+    local function play(asset)
+        if destroyed or not asset then return end
+        poolIndex = poolIndex % 6 + 1
+        local sound = pool[poolIndex]
+        if not sound then
+            sound = new("Sound", { Name = "RiftHitSound" }, game:GetService("SoundService"))
+            pool[poolIndex] = sound
+        end
+        sound:Stop()
+        sound.SoundId, sound.Volume, sound.PlaybackSpeed = asset, sounds.Volume / 100, sounds.Pitch
+        sound.TimePosition = 0
+        sound:Play()
+    end
+    local function loadAudio(asset)
+        local probe = new("Sound", { Name = "RiftHitSoundLoad", SoundId = asset, Volume = 0 },
+            game:GetService("SoundService"))
+        probes[probe] = true
+        local ok, err = pcall(function()
+            game:GetService("ContentProvider"):PreloadAsync({ probe })
+            if not probe.IsLoaded then error("Roblox could not decode the selected audio file") end
+        end)
+        probes[probe] = nil
+        probe:Destroy()
+        if not ok then error(err, 0) end
+        return asset
+    end
+    local function prepare(preview)
+        local label = sounds.Choice
+        local filename = files[label]
+        if not filename or destroyed then return end
+        if assets[filename] then
+            sounds.Asset, sounds.AudioReady = assets[filename], true
+            if preview then play(sounds.Asset) end
+            return
+        end
+        if preview then previews[filename] = true end
+        if pending[filename] then return end
+        pending[filename] = true
+        task.spawn(function()
+            local ok, asset = pcall(function()
+                local getter = ENV.getcustomasset or getcustomasset or ENV.getsynasset or getsynasset
+                local save = ENV.writefile or writefile
+                local exists = ENV.isfile or isfile
+                local folder = ENV.makefolder or makefolder
+                if type(getter) ~= "function" or type(save) ~= "function" then
+                    error("Hit Sounds needs getcustomasset and writefile")
+                end
+                local path = "RiftAssets/hitsounds_v1_" .. filename
+                if type(exists) ~= "function" or not exists(path) then
+                    local data = game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/"
+                        .. "cd25bf679f5c56449332741079e304229cfd1ee5/assets/hitsounds/" .. filename)
+                    if type(data) ~= "string" or data:sub(1, 4) ~= "OggS" then error("Sound download failed") end
+                    if destroyed then return nil end
+                    if type(folder) == "function" then pcall(folder, "RiftAssets") end
+                    save(path, data)
+                end
+                if destroyed then return nil end
+                local asset = getter(path)
+                if type(asset) ~= "string" or asset == "" then error("Executor did not return an audio asset") end
+                return loadAudio(asset)
+            end)
+            pending[filename] = nil
+            if destroyed then return end
+            if ok and type(asset) == "string" and asset ~= "" then
+                assets[filename] = asset
+                if sounds.Choice == label then
+                    sounds.Asset, sounds.AudioReady, sounds.LastError = asset, true, nil
+                    if previews[filename] then
+                        local played, err = pcall(play, asset)
+                        if not played then sounds.LastError = tostring(err) warn("[Rift] Hit Sounds: " .. sounds.LastError) end
+                    end
+                end
+            elseif not ok then
+                sounds.AudioReady, sounds.LastError = false, tostring(asset)
+                warn("[Rift] Hit Sounds: " .. sounds.LastError)
+            end
+            previews[filename] = nil
+        end)
+    end
+    local function unhook()
+        if api and api.sendClaim == wrapper then api.sendClaim = original end
+        api, original, wrapper = nil, nil, nil
+        table.clear(sounds.Queue)
+        table.clear(seen)
+    end
+    local function install()
+        if api and api.sendClaim == wrapper then return end
+        local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+        local client = scripts and scripts:FindFirstChild("BallisticsClient")
+        local module = client and client:FindFirstChild("HitReporter")
+        if not module or not rivalsModuleLoaded(module) then return end
+        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
+        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
+        if identity then setId(2) end
+        local result = table.pack(pcall(require, module))
+        if identity then setId(identity) end
+        if not result[1] then error(result[2], 0) end
+        local reporter = result[2]
+        if type(reporter) ~= "table" or type(reporter.sendClaim) ~= "function" then return end
+        if destroyed or not sounds.Enabled then return end
+        api, original = reporter, reporter.sendClaim
+        local native = original
+        wrapper = function(id, impact, ...)
+            local result = table.pack(native(id, impact, ...))
+            if not destroyed and sounds.Enabled and type(impact) == "table" and id ~= nil then
+                if #sounds.Queue >= 32 then table.remove(sounds.Queue, 1) end
+                table.insert(sounds.Queue, { Id = id, Part = impact.Instance, Time = os.clock() })
+            end
+            return table.unpack(result, 1, result.n)
+        end
+        api.sendClaim = wrapper
+    end
+    function sounds.Update()
+        if destroyed then return end
+        if not sounds.Enabled or Settings.SelectedGame ~= "Cold War" then
+            unhook()
+            if active then
+                for _, sound in ipairs(pool) do sound:Stop() end
+            end
+            active = false
+            return
+        end
+        active = true
+        if os.clock() >= nextRetry then
+            nextRetry = os.clock() + 0.5
+            local ok, err = pcall(install)
+            if not ok then warn("[Rift] Hit Sounds: " .. tostring(err)) end
+        end
+        local queue = sounds.Queue
+        sounds.Queue = {}
+        for _, event in ipairs(queue) do
+            pcall(function()
+                local part = event.Part
+                local model = part and part:FindFirstAncestorOfClass("Model")
+                local player = model and Players:GetPlayerFromCharacter(model)
+                local team = player and player.Team and player.Team.Name
+                local mine = LocalPlayer.Team and LocalPlayer.Team.Name
+                if not player or player == LocalPlayer or team == mine
+                    or (team ~= "NATO" and team ~= "PACT") then return end
+                local last = seen[player]
+                if last and last.Id == event.Id and event.Time - last.Time < 2 then return end
+                seen[player] = event
+                if os.clock() - event.Time > 0.5 or os.clock() - lastPlayed < 0.04 then return end
+                if not sounds.Asset then prepare(false) return end
+                play(sounds.Asset)
+                lastPlayed = os.clock()
+            end)
+        end
+    end
+    function sounds.Restore()
+        destroyed, sounds.Enabled = true, false
+        unhook()
+        for _, sound in ipairs(pool) do sound:Destroy() end
+        for probe in pairs(probes) do probe:Destroy() end
+        table.clear(pool)
+        table.clear(probes)
+    end
+    track(RunService.RenderStepped:Connect(sounds.Update))
+    track({ Disconnect = sounds.Restore })
+    local section = gameSection("Cold War", VisualsTab.Left, "Hit Sounds")
+    Elements.Toggle(section, "Hit Sounds", false, function(on)
+        sounds.Enabled = on
+        if on then prepare(false) end
+        sounds.Update()
+    end)
+    Elements.Dropdown(section, "Sound", choices, "Bell 1", function(value)
+        if not files[value] then return end
+        sounds.Choice, sounds.Asset, sounds.AudioReady, sounds.LastError = value, nil, false, nil
+        if sounds.Enabled then prepare(false) end
+    end)
+    Elements.Slider(section, "Volume", 0, 100, 50, "%", function(value) sounds.Volume = value end)
+    Elements.Slider(section, "Pitch", 50, 200, 100, "%", function(value) sounds.Pitch = value / 100 end)
+    Elements.Button(section, "Preview", function()
+        local ok, err = pcall(prepare, true)
+        if not ok then sounds.LastError = tostring(err) warn("[Rift] Hit Sounds: " .. sounds.LastError) end
+    end)
+end
+
 function Settings.SetupColdWarSeated()
     local previous = ENV.SunsetColdWarSeated
     if previous and type(previous.Restore) == "function" then previous.Restore() end
@@ -12320,9 +12520,6 @@ function Settings.SetupColdWarSession()
 end
 
 function Settings.SetupColdWar()
-    local retiredSounds = ENV.SunsetColdWarHitSounds
-    if retiredSounds and type(retiredSounds.Restore) == "function" then pcall(retiredSounds.Restore) end
-    ENV.SunsetColdWarHitSounds = nil
     local retiredSpeed = ENV.SunsetColdWarBulletSpeed
     if retiredSpeed and type(retiredSpeed.Restore) == "function" then pcall(retiredSpeed.Restore) end
     ENV.SunsetColdWarBulletSpeed = nil
@@ -12331,6 +12528,7 @@ function Settings.SetupColdWar()
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
+    Settings.SetupColdWarHitSounds()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSeated()
     Settings.SetupColdWarWeaponTuning()

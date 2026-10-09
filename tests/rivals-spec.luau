@@ -1121,14 +1121,8 @@ end
     local cleanupIndex=#connections+1
     local restoredSpeed=0
     ENV.SunsetColdWarBulletSpeed={Restore=function() restoredSpeed+=1 end}
-    local restoredSounds=0
-    ENV.SunsetColdWarHitSounds={Restore=function() restoredSounds+=1 end}
     Settings.SetupColdWar()
     assert(restoredSpeed==1 and ENV.SunsetColdWarBulletSpeed==nil,"retired Bullet Speed hook was not restored")
-    assert(restoredSounds==1 and ENV.SunsetColdWarHitSounds==nil,"retired Hit Sounds hook was not restored")
-    for _,control in ipairs(ConfigControls) do
-        assert(control.Key~="Visuals/Cold War/Hit Sounds/Hit Sounds","removed Hit Sounds control remains")
-    end
     local board=Settings.GameBoards["Cold War"]
     assert(board and board.Name=="RiftCold WarBoard" and BedWarsUI==oldBedwarsBoard,
         "Cold War did not register its own board")
