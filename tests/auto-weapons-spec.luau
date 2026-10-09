@@ -90,7 +90,8 @@ local function require(module)
     return wielder
 end
 local ENV={getgc=function() return {current} end}
-local Settings={SelectedGame="Cold War",ColdWarAim={Enabled=false,MaxDistance=1000,HitChance=100}}
+local Settings={SelectedGame="Cold War",ColdWarAim={Enabled=false,Available=true,MaxDistance=1000,HitChance=100,
+    SetEnabled=function() end}}
 local tasks={}
 local task={spawn=function(fn) table.insert(tasks,fn) end}
 local function finishTasks() local q=tasks tasks={} for _,f in ipairs(q) do f() end end
@@ -102,6 +103,12 @@ local RaycastParams={new=function() return {} end}
 local hit=instance("Head",enemyModel)
 local workspace={CurrentCamera={CFrame={Position=vector,LookVector=vector},Focus={Position=vector}},
     FindFirstChild=function() return nil end,Raycast=function() return hit and {Instance=hit} end}
+Settings.ColdWarAim.Resolve=function(_,_,_,_,_,strict)
+    assert(strict==true)
+    if not enemy.Dead and hit and hit:IsDescendantOf(enemyModel) then
+        return vector,nil,enemyModel,{Position=vector}
+    end
+end
 local now=0
 local os={clock=function() return now end}
 local warnings={}

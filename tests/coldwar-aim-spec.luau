@@ -276,6 +276,14 @@ assert(picked==inside.Character,"FOV targeting used crosshair distance instead o
 aim.FOVVisible=false
 _,_,picked=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1))
 assert(picked==outside.Character,"hidden FOV circle still restricted target radius")
+aim.SetEnabled(false)
+Settings.ColdWarAutoWeapons={ShootEnabled=true}
+aim.SetEnabled(false)
+fire()
+assert(directions[1]:Dot((outside.Character:FindFirstChild("Head").Position-origin).Unit)>0.99999,
+    "Auto Shoot did not redirect its volley to the closest eligible player")
+Settings.ColdWarAutoWeapons=nil
+aim.SetEnabled(true)
 hiddenModel=outside.Character
 _,_,picked=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1))
 assert(picked==inside.Character,"hidden nearest enemy prevented visible fallback")
@@ -301,6 +309,14 @@ nativeFailure=true local ok,err=pcall(fire) assert(not ok and tostring(err):find
 assert(calls==beforeFailure+1 and aim.Enabled,"native error caused duplicate firing or changed module state")
 aim.SetEnabled(false)
 fire() assert(directions[1].X==0,"disable did not restore native firing after failure")
+Settings.ColdWarAutoWeapons={ShootEnabled=true}
+aim.SetEnabled(false)
+assert(aim.IsActive() and not aim.Enabled and aim.Available,"Auto Shoot did not activate direction correction")
+fire() assert(directions[1].X>0,"Auto Shoot fired a straight uncorrected shot")
+Settings.ColdWarAutoWeapons.ShootEnabled=false
+aim.SetEnabled(false)
+fire() assert(directions[1].X==0,"Auto Shoot left direction correction active after disabling")
+Settings.ColdWarAutoWeapons=nil
 local recorded=0
 Settings.ColdWarBulletTrails={Enabled=true,Record=function(t,m,b,o,ds)
     recorded+=1 assert(t==tool and m==2 and b==3 and o==origin and ds==directions)

@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-nearest-aim-audio-k306"
+local SUNSET_BUILD = "20261009-rift-session-autoshoot-seated-k307"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -698,9 +698,7 @@ do
             data.RivalsAim = { Enabled = RivalsAim.Enabled,
                 FOVVisible = RivalsAim.FOVVisible, Radius = RivalsAim.Radius }
         end
-        if gameName == "BedWars" and BedWars and BedWars.Session then
-            data.Session = BedWars.Session
-        end
+        -- Session counters belong to this injection, never to a saved config.
         ENV.SunsetSettingsSnapshot = data
         if type(ENV.SunsetSettingsSnapshots) ~= "table" then ENV.SunsetSettingsSnapshots = {} end
         ENV.SunsetSettingsSnapshots[gameName] = data
@@ -741,32 +739,7 @@ do
                 end
             end
         end
-        if gameName == "BedWars" and BedWars and BedWars.Session
-            and type(data.Session) == "table" then
-            local target = BedWars.Session
-            for _, key in ipairs({ "Seconds", "Kills", "Beds", "Wins", "Games", "LastKillCount" }) do
-                local value = data.Session[key]
-                if type(value) == "number" and value >= 0 and value < 1000000000 then
-                    target[key] = value
-                end
-            end
-            if type(data.Session.LastJobId) == "string" then
-                target.LastJobId = data.Session.LastJobId
-            end
-            if type(data.Session.SourceValues) == "table" then
-                for _, key in ipairs({ "Beds", "Wins" }) do
-                    local value = data.Session.SourceValues[key]
-                    if type(value) == "number" and value >= 0 then
-                        target.SourceValues[key] = value
-                    end
-                end
-            end
-            if type(data.Session.Observed) == "table" then
-                for _, key in ipairs({ "Kills", "Beds", "Wins" }) do
-                    target.Observed[key] = data.Session.Observed[key] == true
-                end
-            end
-        end
+        -- Ignore Session in older snapshots too: reinjection starts at zero.
         local byKey = {}
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
@@ -2945,9 +2918,78 @@ BedWars = {
     HealthDisplayOn = false, TargetHUDBarTime = 0.6,
     CrosshairOn = false, CrosshairColor = Color3.fromRGB(255, 255, 255),
     FOVOn = false, FOVValue = 80,
-    Session = { Seconds = 0, Kills = 0, Beds = 0, Wins = 0, Games = 0,
-        LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
+    Session = { Seconds = 0, Kills = 0, Deaths = 0, Beds = 0, Wins = 0, Games = 0,
+        LastJobId = "", SourceValues = {}, Observed = {} },
 }
+function Settings.SessionNumber(names)
+    for _, name in ipairs(names) do
+        local value = LocalPlayer:GetAttribute(name)
+        if type(value) == "number" and value == value and value >= 0 and value < 1000000000 then
+            return value, "attribute/" .. name
+        end
+    end
+    for _, folderName in ipairs({ "leaderstats", "stats", "Stats" }) do
+        local folder = LocalPlayer:FindFirstChild(folderName)
+        if folder then
+            for _, name in ipairs(names) do
+                local object = folder:FindFirstChild(name)
+                if object and object:IsA("ValueBase") and type(object.Value) == "number"
+                    and object.Value == object.Value and object.Value >= 0 and object.Value < 1000000000 then
+                    return object.Value, folderName .. "/" .. name
+                end
+            end
+        end
+    end
+end
+
+function Settings.NewSessionTracker(session, gameName, countKills)
+    local alive, character, humanoid, deathConnection = true, nil, nil, nil
+    local lastClock, lastJob = os.clock(), game.JobId
+    local baselines, seen = {}, setmetatable({}, { __mode = "k" })
+    local fields = { Deaths = { "Deaths", "deaths", "DeathCount" } }
+    if countKills then fields.Kills = { "Kills", "kills", "KillCount", "Eliminations" } end
+    local function disconnectDeath()
+        if deathConnection then deathConnection:Disconnect() deathConnection = nil end
+    end
+    local function step()
+        if not alive then return end
+        local now = os.clock()
+        if countKills then session.Seconds += math.max(0, now - lastClock) end
+        lastClock = now
+        if lastJob ~= game.JobId then baselines = {} lastJob = game.JobId end
+        for title, names in pairs(fields) do
+            local value, source = Settings.SessionNumber(names)
+            if value ~= nil then
+                local previous = baselines[title]
+                if previous and previous.Source == source and value > previous.Value then
+                    session[title] += value - previous.Value
+                end
+                baselines[title] = { Source = source, Value = value }
+                session.Observed[title] = true
+            end
+        end
+        local current = LocalPlayer.Character
+        local currentHumanoid = current and current:FindFirstChildOfClass("Humanoid")
+        if current ~= character or currentHumanoid ~= humanoid then
+            disconnectDeath()
+            character, humanoid = current, currentHumanoid
+            if humanoid and humanoid.Health > 0 then
+                local bound = humanoid
+                session.Observed.Deaths = true
+                deathConnection = bound.Died:Connect(function()
+                    if not alive or seen[bound] then return end
+                    seen[bound] = true
+                    -- Prefer the replicated death counter when the game supplies one.
+                    -- Otherwise count a real local death, never a respawn/removal.
+                    if Settings.SessionNumber(fields.Deaths) == nil then session.Deaths += 1 end
+                end)
+            end
+        end
+    end
+    track({ Disconnect = function() alive = false disconnectDeath() end })
+    step()
+    return step
+end
 Settings.StartupStage("Preparing Cold War...")
 function Settings.SetupBedWarsRuntime()
 do
@@ -6553,6 +6595,7 @@ Persistence.HUDFrames.TargetHUD = targetHUD
 
 local sessionClock = os.clock()
 local sessionStore
+local updateSessionDeaths = Settings.NewSessionTracker(BedWars.Session, "BedWars", false)
 do
     local kitLabels = {
         miner = "Miner", adetunde = "Adetunde", ragnar = "Ragnar",
@@ -6968,15 +7011,15 @@ do
 end
 local sessionPanel = new("Frame", {
     Name = "BedWarsSessionInfo", Visible = false,
-    Position = UDim2.new(0, 15, 1, -205),
-    Size = UDim2.fromOffset(190, 177),
+    Position = UDim2.new(0, 15, 1, -226),
+    Size = UDim2.fromOffset(190, 198),
     BackgroundColor3 = T.inner,
     BackgroundTransparency = 0.08, BorderSizePixel = 0,
 }, Gui)
 new("UICorner", { CornerRadius = UDim.new(0, 12) }, sessionPanel)
 border(sessionPanel, T.accent)
 BedWars.SessionPanel = sessionPanel
-local sessionTitle = label(sessionPanel, "SESSION INFO", 14, T.gold)
+local sessionTitle = label(sessionPanel, "SESSION STATS", 14, T.gold)
 sessionTitle.Font = Enum.Font.GothamBold
 sessionTitle.Position = UDim2.fromOffset(12, 10)
 sessionTitle.Size = UDim2.new(1, -24, 0, 20)
@@ -6986,7 +7029,7 @@ new("Frame", {
     BackgroundColor3 = T.accent, BorderSizePixel = 0,
 }, sessionPanel)
 local sessionLines = {}
-for index, title in ipairs({ "Time Played", "Kills", "Beds", "Wins", "Games", "Map" }) do
+for index, title in ipairs({ "Time Played", "Kills", "Deaths", "Beds", "Wins", "Games", "Map" }) do
     local row = label(sessionPanel, title .. ": --", 12,
         T.text)
     row.Font = Enum.Font.GothamMedium
@@ -7128,13 +7171,14 @@ do
 end
 local function updateSession()
     local session = BedWars.Session
+    updateSessionDeaths()
     local now = os.clock()
     session.Seconds = session.Seconds + math.max(0, math.min(5, now - sessionClock))
     sessionClock = now
     local mapName = sessionMap()
     if mapName ~= "Unknown" and game.JobId ~= "" and session.LastJobId ~= game.JobId then
         session.LastJobId = game.JobId
-        session.LastKillCount = 0
+        session.LastKillCount = nil
         session.Games = session.Games + 1
     end
     local kills = currentBedWarsKills()
@@ -7148,7 +7192,7 @@ local function updateSession()
         end
         BedWars.KillChatLastCount = kills
         session.Observed.Kills = true
-        if kills > session.LastKillCount then
+        if session.LastKillCount ~= nil and kills > session.LastKillCount then
             session.Kills = session.Kills + kills - session.LastKillCount
         end
         session.LastKillCount = kills
@@ -7178,7 +7222,7 @@ task.spawn(function()
             local seconds = math.floor(session.Seconds)
             sessionLines["Time Played"].Text = string.format("Time Played: %02d:%02d:%02d",
                 math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
-            for _, title in ipairs({ "Kills", "Beds", "Wins" }) do
+            for _, title in ipairs({ "Kills", "Deaths", "Beds", "Wins" }) do
                 sessionLines[title].Text = title .. ": " ..
                     (session.Observed[title] and tostring(session[title]) or "--")
             end
@@ -10680,6 +10724,10 @@ function Settings.SetupColdWarAim(playerModel)
         end
         return nil, "No clear ballistic path to the selected targets"
     end
+    function aim.IsActive()
+        local auto = Settings.ColdWarAutoWeapons
+        return aim.Enabled or (auto and auto.ShootEnabled == true) or false
+    end
     local function install()
         if api and api[field] == wrapper then return true end
         restoreHandler()
@@ -10705,7 +10753,7 @@ function Settings.SetupColdWarAim(playerModel)
             end
         end
         if not key then error("Cold War firing interface is unavailable", 0) end
-        if state.Destroyed or not (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return false end
+        if state.Destroyed or not (aim.IsActive() or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return false end
         trajectory, weaponSource = tr, ws
         aim.Trajectory, aim.WeaponSource = tr, ws
         api, field, original = cf, key, cf[key]
@@ -10717,14 +10765,16 @@ function Settings.SetupColdWarAim(playerModel)
             local diagnostic = aim.Diagnostics
             diagnostic.Shots = diagnostic.Shots + 1
             diagnostic.LastReason = "Shot passed through: disabled, menu open, or unsupported firing arguments"
-            if aim.Enabled and not state.Destroyed and Settings.SelectedGame == "Cold War"
+            if aim.IsActive() and not state.Destroyed and Settings.SelectedGame == "Cold War"
                 and not aim.MenuOpen and opts == nil and typeof(tool) == "Instance"
                 and typeof(origin) == "Vector3" and type(directions) == "table" and vector(directions[1]) then
                 local ok, result, reason = pcall(function()
                     if aim.HitChance <= 0 or (aim.HitChance < 100 and math.random() * 100 >= aim.HitChance) then
                         return nil, "Hit Chance: native shot preserved"
                     end
-                    local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1])
+                    local auto = Settings.ColdWarAutoWeapons
+                    local selected, why = aim.Resolve(tool, muzzle, bullet, origin, directions[1],
+                        auto and auto.ShootEnabled == true)
                     if not vector(selected) then return nil, why end
                     -- Match the reference volley: preserve the game's directions table
                     -- and update its existing entries before its original firing call.
@@ -10753,7 +10803,7 @@ function Settings.SetupColdWarAim(playerModel)
         return true
     end
     function aim.TryInstall()
-        if pending or state.Destroyed or not (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return end
+        if pending or state.Destroyed or not (aim.IsActive() or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled)) then return end
         pending = true
         nextRetry = os.clock() + 1
         task.spawn(function()
@@ -10767,7 +10817,7 @@ function Settings.SetupColdWarAim(playerModel)
     end
     function aim.SetEnabled(on)
         aim.Enabled = on == true and not state.Destroyed
-        if aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled) then
+        if aim.IsActive() or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled) then
             if not aim.Available then aim.TryInstall() end
         else aim.Available = false restoreHandler() end
     end
@@ -10776,7 +10826,7 @@ function Settings.SetupColdWarAim(playerModel)
         -- The native weapon thread cannot access gethui/CoreGui instances.
         -- Read our UI here and give firing only the cached Lua boolean.
         aim.MenuOpen = anyMenuVisible()
-        if (aim.Enabled or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled))
+        if (aim.IsActive() or (Settings.ColdWarBulletTrails and Settings.ColdWarBulletTrails.Enabled))
             and not aim.Available and os.clock() >= nextRetry then aim.TryInstall() end
         local camera = workspace.CurrentCamera
         local visible = aim.FOVVisible and camera and Settings.SelectedGame == "Cold War" and not aim.MenuOpen
@@ -11545,147 +11595,6 @@ function Settings.SetupColdWarWeaponTuning()
     end)
 end
 
-function Settings.SetupColdWarBulletSpeed(playerModel)
-    local previous = ENV.SunsetColdWarBulletSpeed
-    if previous and type(previous.Restore) == "function" then pcall(previous.Restore) end
-    local speed = { Enabled = false, Multiplier = 2, Available = false,
-        ModifiedShots = 0, LastCheck = "No check run" }
-    Settings.ColdWarBulletSpeed, ENV.SunsetColdWarBulletSpeed = speed, speed
-    local api, original, wrapper
-    local destroyed, pending, nextRetry, nextWarning, checkToken = false, false, 0, 0, 0
-    local function restore()
-        if api and api.toFireParams == wrapper then api.toFireParams = original end
-        api, original, wrapper = nil, nil, nil
-        speed.Available = false
-    end
-    local function install()
-        if api and api.toFireParams == wrapper then return true end
-        restore()
-        local storage = game:GetService("ReplicatedStorage")
-        local shared = storage:FindFirstChild("Shared")
-        local ballistics = shared and shared:FindFirstChild("Ballistics")
-        local sources = ballistics and ballistics:FindFirstChild("Sources")
-        local module = sources and sources:FindFirstChild("WeaponSource")
-        if not module or not rivalsModuleLoaded(module) then return false end
-        local getIdentity = getthreadidentity or getidentity
-        local setIdentity = setthreadidentity or setidentity
-        local identity = type(getIdentity) == "function" and type(setIdentity) == "function" and getIdentity() or nil
-        if identity then setIdentity(2) end
-        local result = table.pack(pcall(require, module))
-        if identity then setIdentity(identity) end
-        if not result[1] then error(result[2], 0) end
-        local source = result[2]
-        if type(source) ~= "table" or type(source.toFireParams) ~= "function" then
-            error("Cold War bullet source changed", 0)
-        end
-        api, original = source, source.toFireParams
-        local native = original
-        wrapper = function(request, ...)
-            local params = native(request, ...)
-            if speed.Enabled and not destroyed and Settings.SelectedGame == "Cold War"
-                and type(request) == "table" and request.Owner == LocalPlayer
-                and type(request.Seed) == "number" and type(params) == "table"
-                and type(params.Weapon) == "table"
-                and type(params.Weapon.MuzzleSpeed) == "number" then
-                -- WeaponSource makes a new profile for each shot. Copy it so
-                -- the native config and other players' projectiles stay intact.
-                local profile = table.clone(params.Weapon)
-                profile.MuzzleSpeed = profile.MuzzleSpeed * math.clamp(speed.Multiplier, 1, 100)
-                params.Weapon = profile
-                speed.ModifiedShots = speed.ModifiedShots + 1
-            end
-            return params
-        end
-        api.toFireParams = wrapper
-        return true
-    end
-    function speed.Update()
-        if destroyed or not speed.Enabled or Settings.SelectedGame ~= "Cold War"
-            or pending or os.clock() < nextRetry then return end
-        if api and api.toFireParams == wrapper then speed.Available = true return end
-        pending = true
-        nextRetry = os.clock() + 0.5
-        task.spawn(function()
-            local ok, result = pcall(install)
-            pending = false
-            speed.Available = ok and result == true
-            if not ok and os.clock() >= nextWarning then
-                nextWarning = os.clock() + 5
-                warn("[Rift] Bullet Speed: " .. tostring(result))
-            end
-        end)
-    end
-    track(RunService.RenderStepped:Connect(speed.Update))
-    function speed.Restore()
-        destroyed = true
-        speed.Enabled = false
-        checkToken = checkToken + 1
-        restore()
-    end
-    track({ Disconnect = speed.Restore })
-    local section = gameSection("Cold War", AimTab.Left, "Bullet Speed")
-    Elements.Toggle(section, "Bullet Speed", false, function(on)
-        speed.Enabled = on
-        if on then speed.Update() else restore() end
-    end)
-    Elements.Slider(section, "Speed Multiplier", 1, 100, 2, "x", function(value)
-        speed.Multiplier = value
-    end)
-    local status = Elements.Label(section, "Check: ready")
-    local function healthSnapshot()
-        local values = {}
-        local ownTeam = LocalPlayer.Team
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Team ~= ownTeam then
-                local model = playerModel and playerModel(player) or player.Character
-                if model then
-                    for _, name in ipairs({ "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" }) do
-                        local part = model:FindFirstChild(name)
-                        local health = part and part:FindFirstChild("Health")
-                        if health and type(health.Value) == "number" then values[health] = health.Value end
-                    end
-                end
-            end
-        end
-        return values
-    end
-    function speed.Check()
-        checkToken = checkToken + 1
-        local token = checkToken
-        if not speed.Enabled or not speed.Available then
-            speed.LastCheck = "Enable Bullet Speed and equip a gun first"
-            status.Text = speed.LastCheck
-            return
-        end
-        local before = healthSnapshot()
-        local startShots = speed.ModifiedShots
-        speed.LastCheck = "Checking shots and enemy health for 4s..."
-        status.Text = speed.LastCheck
-        task.delay(4, function()
-            if destroyed or checkToken ~= token then return end
-            local shots = speed.ModifiedShots - startShots
-            local damage, tracked = 0, 0
-            for health, old in pairs(before) do
-                if health.Parent and type(health.Value) == "number" then
-                    tracked = tracked + 1
-                    damage = damage + math.max(0, old - health.Value)
-                end
-            end
-            if shots == 0 then
-                speed.LastCheck = "No sped-up shots observed"
-            elseif tracked == 0 then
-                speed.LastCheck = string.format("%d sped-up pellets; enemy health unavailable", shots)
-            else
-                speed.LastCheck = string.format("%d sped-up pellets; %.0f enemy HP lost", shots, damage)
-            end
-            status.Text = speed.LastCheck
-            print("[Rift] Bullet Speed check: " .. speed.LastCheck
-                .. " (health loss may include other players' shots)")
-        end)
-    end
-    Elements.Button(section, "Check Bullet Speed", speed.Check)
-end
-
 function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
@@ -11878,7 +11787,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
             return ok and (not hit or (hit.Instance and hit.Instance:IsDescendantOf(model)))
         end
         local aim = Settings.ColdWarAim
-        if aim and aim.Enabled then
+        if aim then
             if not aim.Available or aim.HitChance <= 0 then return false end
             local bullet = muzzle:getBulletIndex()
             -- Discharge fires from the viewmodel only while it is shown in
@@ -11896,28 +11805,6 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
             -- must have an unobstructed direct line to the selected player.
             return clearLine(camera.CFrame.Position, targetPart.Position, targetModel)
                 and clearLine(origin, targetPart.Position, targetModel)
-        end
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { LocalPlayer.Character, workspace:FindFirstChild("Ignore") }
-        local hit = workspace:Raycast(camera.CFrame.Position,
-            camera.CFrame.LookVector * (aim and aim.MaxDistance or 1000), params)
-        if not hit then return false end
-        local ownTeam = LocalPlayer.Team and LocalPlayer.Team.Name
-        for _, player in ipairs(Players:GetPlayers()) do
-            local team = player.Team and player.Team.Name
-            if player ~= LocalPlayer and (team == "NATO" or team == "PACT") and team ~= ownTeam then
-                local model = playerModel(player)
-                if model and not model:FindFirstChildOfClass("ForceField") and hit.Instance:IsDescendantOf(model) then
-                    local values = model:FindFirstChild("CharacterValues")
-                    local down = values and values:FindFirstChild("Unconscious")
-                    if not down or not down.Value then
-                        local attachment = muzzle.attachment
-                        return attachment and clearLine(attachment.WorldPosition,
-                            hit.Position or hit.Instance.Position, model) or false
-                    end
-                end
-            end
         end
         return false
     end
@@ -12014,6 +11901,8 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         destroyed = true
         auto.ShootEnabled, auto.ReloadEnabled, auto.TimerEnabled = false, false, false
         auto.InstantEquipEnabled = false
+        local aim = Settings.ColdWarAim
+        if aim then aim.SetEnabled(aim.Enabled) end
         detach()
         if timerFrame then timerFrame:Destroy() timerFrame = nil end
     end
@@ -12022,6 +11911,8 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     local shoot = gameSection("Cold War", AimTab.Left, "Auto Shoot")
     Elements.Toggle(shoot, "Auto Shoot", false, function(on)
         auto.ShootEnabled = on
+        local aim = Settings.ColdWarAim
+        if aim then aim.SetEnabled(aim.Enabled) end
         if not on then release() end
         if not on and not auto.ReloadEnabled and not auto.TimerEnabled then detach() end
     end)
@@ -12323,14 +12214,185 @@ function Settings.SetupColdWarHitSounds()
     end)
 end
 
+function Settings.SetupColdWarSeated()
+    local previous = ENV.SunsetColdWarSeated
+    if previous and type(previous.Restore) == "function" then previous.Restore() end
+    local seated = { Enabled = false, Available = false }
+    Settings.ColdWarSeated, ENV.SunsetColdWarSeated = seated, seated
+    local hooks = ENV.SunsetColdWarSeatHooks or {}
+    ENV.SunsetColdWarSeatHooks = hooks
+    local destroyed, nextRetry, lastApplied = false, 0, nil
+    local function nativeCall(fn, ...)
+        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
+        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
+        if identity then setId(2) end
+        local result = table.pack(pcall(fn, ...))
+        if identity then setId(identity) end
+        if not result[1] then error(result[2], 0) end
+        return table.unpack(result, 2, result.n)
+    end
+    local function humanoid()
+        local character = LocalPlayer.Character
+        return character and character:FindFirstChildOfClass("Humanoid")
+    end
+    local function inSeat(hum)
+        return hum and hum.Health > 0 and hum.Sit and hum.SeatPart ~= nil and not hum.PlatformStand
+    end
+    local function install()
+        local storage = game:GetService("ReplicatedStorage")
+        local client = storage:FindFirstChild("Client")
+        local character = client and client:FindFirstChild("Character")
+        local module = character and character:FindFirstChild("InventoryController")
+        if not module or not rivalsModuleLoaded(module) then return false end
+        local inventory = nativeCall(require, module)
+        if hooks.Inventory == inventory and hooks.Installed then
+            inventory.setSeated = hooks.SeatWrapper
+            return true
+        end
+        local read = debug and debug.getupvalues
+        if type(read) ~= "function" or type(hookfunction) ~= "function"
+            or type(inventory) ~= "table" or type(inventory.equip) ~= "function"
+            or type(inventory.new) ~= "function" or type(inventory.setSeated) ~= "function" then
+            error("Shoot While Seated needs the observed inventory interface and executor hooks")
+        end
+        local gate = read(inventory.equip)[3]
+        local onSeat = read(inventory.new)[28]
+        if type(gate) ~= "function" or type(onSeat) ~= "function" then
+            error("Cold War seat/equip layout changed")
+        end
+        local values, seatValues = read(gate), read(onSeat)
+        if values[10] ~= nil or values[9] ~= LocalPlayer or type(values[2]) ~= "number"
+            or type(values[7]) ~= "table" or type(values[7].isConscious) ~= "function"
+            or seatValues[1] ~= values[8] then error("Cold War seat guards changed") end
+        hooks.Inventory, hooks.NativeSeat = inventory, inventory.setSeated
+        hooks.SeatWrapper = function(on, ...)
+            return hooks.NativeSeat(on and not (hooks.Enabled and Settings.SelectedGame == "Cold War"), ...)
+        end
+        local originalGate
+        originalGate = hookfunction(gate, function(...)
+            if not hooks.Enabled or Settings.SelectedGame ~= "Cold War" then return originalGate(...) end
+            local current = read(originalGate)
+            local hum = current[8]
+            if not inSeat(hum) then return originalGate(...) end
+            -- Reproduce the observed switch guard, omitting only the seated checks.
+            return not current[1] and os.clock() - current[2] >= 0.3 and not current[3]
+                and not current[5] and not current[6] and current[7]:isConscious()
+                and LocalPlayer:GetAttribute("CarryingTarget") == nil
+                and LocalPlayer:GetAttribute("ShoulderCarryTarget") == nil
+                and LocalPlayer:GetAttribute("Reviving") == nil
+        end)
+        local originalSeat
+        originalSeat = hookfunction(onSeat, function(...)
+            if hooks.Enabled and Settings.SelectedGame == "Cold War" and inSeat(humanoid()) then return end
+            return originalSeat(...)
+        end)
+        if type(originalGate) ~= "function" or type(originalSeat) ~= "function" then
+            error("Could not install Cold War seat guards")
+        end
+        hooks.Installed = true
+        inventory.setSeated = hooks.SeatWrapper
+        return true
+    end
+    function seated.Update()
+        if destroyed or not seated.Enabled or Settings.SelectedGame ~= "Cold War" then return end
+        if not seated.Available then
+            if os.clock() < nextRetry then return end
+            nextRetry = os.clock() + 1
+            local ok, result = pcall(install)
+            seated.Available = ok and result == true
+            if not ok and seated.LastError ~= tostring(result) then
+                seated.LastError = tostring(result)
+                warn("[Rift] Shoot While Seated: " .. seated.LastError)
+            end
+        end
+        if seated.Available then
+            hooks.Enabled = true
+            local hum = humanoid()
+            if lastApplied ~= hum then
+                nativeCall(hooks.NativeSeat, false)
+                lastApplied = hum
+            end
+        end
+    end
+    local function restore()
+        seated.Enabled, hooks.Enabled = false, false
+        if hooks.Inventory and hooks.Inventory.setSeated == hooks.SeatWrapper then
+            hooks.Inventory.setSeated = hooks.NativeSeat
+            local hum = humanoid()
+            pcall(nativeCall, hooks.NativeSeat, hum and hum.Sit == true or false)
+        end
+        seated.Available, lastApplied = false, nil
+    end
+    function seated.Restore() destroyed = true restore() end
+    track(RunService.RenderStepped:Connect(seated.Update))
+    track({ Disconnect = seated.Restore })
+    local section = gameSection("Cold War", AimTab.Left, "Shoot While Seated")
+    Elements.Toggle(section, "Shoot While Seated", false, function(on)
+        seated.Enabled = on
+        if on then seated.Update() else restore() end
+    end)
+end
+
+function Settings.SetupColdWarSession()
+    local session = { Seconds = 0, Kills = 0, Deaths = 0, Observed = {}, Enabled = false }
+    Settings.ColdWarSession = session
+    local step = Settings.NewSessionTracker(session, "Cold War", true)
+    local panel = new("Frame", {
+        Name = "ColdWarSessionInfo", Visible = false,
+        Position = UDim2.new(0, 15, 1, -163), Size = UDim2.fromOffset(190, 135),
+        BackgroundColor3 = T.inner, BackgroundTransparency = 0.08, BorderSizePixel = 0,
+    }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 12) }, panel)
+    border(panel, T.accent)
+    local title = label(panel, "SESSION STATS", 14, T.gold)
+    title.Font = Enum.Font.GothamBold
+    title.Position, title.Size = UDim2.fromOffset(12, 10), UDim2.new(1, -24, 0, 20)
+    new("Frame", { Position = UDim2.fromOffset(12, 34), Size = UDim2.new(1, -24, 0, 1),
+        BackgroundColor3 = T.accent, BorderSizePixel = 0 }, panel)
+    local rows = {}
+    for index, name in ipairs({ "Time Played", "Kills", "Deaths", "K/D" }) do
+        local row = label(panel, name .. ": --", 12, T.text)
+        row.Font = Enum.Font.GothamMedium
+        row.Position, row.Size = UDim2.fromOffset(12, 39 + (index - 1) * 21), UDim2.new(1, -24, 0, 18)
+        rows[name] = row
+    end
+    makeDraggable(panel, panel)
+    Persistence.HUDFrames.ColdWarSessionInfo = panel
+    local elapsed, alive = 0, true
+    function session.Update()
+        if not alive then return end
+        step()
+        local seconds = math.floor(session.Seconds)
+        rows["Time Played"].Text = string.format("Time Played: %02d:%02d:%02d",
+            math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
+        for _, name in ipairs({ "Kills", "Deaths" }) do
+            rows[name].Text = name .. ": " .. (session.Observed[name] and tostring(session[name]) or "--")
+        end
+        rows["K/D"].Text = "K/D: " .. (session.Observed.Kills and session.Observed.Deaths
+            and string.format("%.2f", session.Kills / math.max(1, session.Deaths)) or "--")
+        panel.Visible = Settings.SelectedGame == "Cold War" and session.Enabled
+    end
+    track(RunService.Heartbeat:Connect(function(dt)
+        elapsed += dt
+        if elapsed >= 0.25 then elapsed = 0 session.Update() end
+    end))
+    track({ Disconnect = function() alive = false panel:Destroy() end })
+    local section = gameSection("Cold War", VisualsTab.Left, "Session Info")
+    Elements.Toggle(section, "Session Info", false, function(on) session.Enabled = on session.Update() end)
+end
+
 function Settings.SetupColdWar()
+    local retiredSpeed = ENV.SunsetColdWarBulletSpeed
+    if retiredSpeed and type(retiredSpeed.Restore) == "function" then pcall(retiredSpeed.Restore) end
+    ENV.SunsetColdWarBulletSpeed = nil
     local options, playerModel = Settings.SetupPlayerESP("Cold War")
     local list = gameSection("Cold War", SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
-    Settings.SetupColdWarBulletSpeed(playerModel)
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarHitSounds()
+    Settings.SetupColdWarSession()
+    Settings.SetupColdWarSeated()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

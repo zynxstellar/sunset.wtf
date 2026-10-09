@@ -151,12 +151,24 @@ def main():
         delta_path = temp / 'project-delta-spec.luau'
         delta_path.write_text(delta_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(delta_path)], check=True)
-        speed_spec = (ROOT / 'tests' / 'coldwar-speed-spec.luau').read_text(encoding='utf-8')
-        speed_spec = speed_spec.replace('-- INSERT_COLDWAR_SPEED_PRODUCTION',
-            between(inner, 'function Settings.SetupColdWarBulletSpeed(', '\nfunction Settings.SetupColdWarAutoWeapons('))
-        speed_path = temp / 'coldwar-speed-spec.luau'
-        speed_path.write_text(speed_spec, encoding='utf-8')
-        subprocess.run([str(runtime), str(speed_path)], check=True)
+        assert 'function Settings.SetupColdWarBulletSpeed(' not in inner
+        assert 'gameSection("Cold War", AimTab.Left, "Bullet Speed")' not in inner
+        session_spec = (ROOT / 'tests' / 'session-spec.luau').read_text(encoding='utf-8')
+        session_spec = session_spec.replace('-- INSERT_SESSION_TRACKER',
+            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing Cold War...")'))
+        session_spec = session_spec.replace('-- INSERT_SESSION_HUD',
+            between(inner, 'function Settings.SetupColdWarSession()', '\nfunction Settings.SetupColdWar()'))
+        session_spec = session_spec.replace('-- INSERT_BEDWARS_SESSION_UPDATE',
+            between(inner, 'local function updateSession()', '\ntask.spawn(function()'))
+        session_path = temp / 'session-spec.luau'
+        session_path.write_text(session_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(session_path)], check=True)
+        seated_spec = (ROOT / 'tests' / 'seated-spec.luau').read_text(encoding='utf-8')
+        seated_spec = seated_spec.replace('-- INSERT_SEATED_PRODUCTION',
+            between(inner, 'function Settings.SetupColdWarSeated()', '\nfunction Settings.SetupColdWarSession()'))
+        seated_path = temp / 'seated-spec.luau'
+        seated_path.write_text(seated_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(seated_path)], check=True)
         extras_spec = (ROOT / 'tests' / 'visual-extras-spec.luau').read_text(encoding='utf-8')
         extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
             between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarWeaponTuning('))
@@ -186,6 +198,7 @@ def main():
         auto_path.write_text(auto_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(auto_path)], check=True)
         rivals_chunks = [
+            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing Cold War...")'),
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),

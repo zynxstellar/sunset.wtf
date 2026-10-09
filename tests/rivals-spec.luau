@@ -381,6 +381,7 @@ function Camera:WorldToViewportPoint(position)
     return Vector3.new(960+position.X,540-position.Y,position.Z),true
 end
 
+local game = { JobId = "mock-session" }
 -- INSERT_RIVALS_PRODUCTION
 
 local search={Text="test",ReleaseFocus=function(self) self.released=true end,
@@ -1118,7 +1119,10 @@ end
     for _,board in pairs(Settings.GameBoards) do board.Visible=false end
     local oldBedwarsBoard=BedWarsUI
     local cleanupIndex=#connections+1
+    local restoredSpeed=0
+    ENV.SunsetColdWarBulletSpeed={Restore=function() restoredSpeed+=1 end}
     Settings.SetupColdWar()
+    assert(restoredSpeed==1 and ENV.SunsetColdWarBulletSpeed==nil,"retired Bullet Speed hook was not restored")
     local board=Settings.GameBoards["Cold War"]
     assert(board and board.Name=="RiftCold WarBoard" and BedWarsUI==oldBedwarsBoard,
         "Cold War did not register its own board")

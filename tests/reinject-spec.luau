@@ -9,6 +9,7 @@ local ConfigControls={control}
 local bedWarsHiddenSections={}
 local Persistence={HUDFrames={}}
 local RivalsAim={}
+local BedWars={Session={Seconds=0,Kills=0,Deaths=0}}
 local task={spawn=function() end,wait=function() end}
 local typeof=type
 local detectedGame="Rivals"
@@ -32,6 +33,20 @@ end
 -- INSERT_CANCEL_PRODUCTION
 
 -- INSERT_PERSISTENCE_PRODUCTION
+do
+    local previousGame=Settings.SelectedGame
+    Settings.SelectedGame="BedWars"
+    BedWars.Session.Seconds,BedWars.Session.Kills=60,3
+    assert(Persistence.Save())
+    assert(ENV.SunsetSettingsSnapshot.Session==nil,"session leaked into auto-save")
+    ENV.SunsetSettingsSnapshot.Session={Seconds=100,Kills=12,Deaths=5}
+    BedWars.Session={Seconds=0,Kills=0,Deaths=0}
+    assert(Persistence.Restore("BedWars"))
+    assert(BedWars.Session.Seconds==0 and BedWars.Session.Kills==0 and BedWars.Session.Deaths==0,
+        "old saved session was restored on reinjection")
+    ENV.SunsetSettingsSnapshot,ENV.SunsetSettingsSnapshots=nil,nil
+    Settings.SelectedGame=previousGame
+end
 
 ENV.SunsetSettingsSnapshot={Version=5,Game="Rivals",Controls={
     {Key=control.Key,Kind="toggle",Value=false}}}
