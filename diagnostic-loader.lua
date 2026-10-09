@@ -1,7 +1,8 @@
 -- Restart Roblox first. This starts Rift with optional modules off and preserves saved settings.
 local build = "20261009-rift-performance-music-k310"
-assert(game.PlaceId == 13687899540 or game.GameId == 4750561026,
-    "Rift crash diagnostic is for Cold War")
+assert(game.PlaceId == 13687899540 or game.GameId == 4750561026
+    or game.PlaceId == 6872265039 or game.GameId == 2619619496,
+    "Rift crash diagnostic supports Cold War and BedWars")
 local url = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/3bc9da81ec561738e4a4e5b4dfbd6cbf46420e73/alua"
 local ok, source = pcall(game.HttpGet, game, url)
 assert(ok and type(source) == "string", "Rift diagnostic download failed")
@@ -19,7 +20,7 @@ replaceOnce("    Persistence.Restore(detectedGame, menuKeyControl)", [==[
         if control.Kind == "toggle" then control.Set(false) end
     end
     for _, control in ipairs(ConfigControls) do
-        if control.Key == "Visuals/Cold War/Session Info/Session Info" then control.Set(true) end
+        if control.Key == "Visuals/" .. detectedGame .. "/Session Info/Session Info" then control.Set(true) end
     end
     local diagnosticAge, diagnosticSample, diagnosticFrames, diagnosticFPS = 0, 0, 0, 0
     track(RunService.RenderStepped:Connect(function(dt)
@@ -35,13 +36,14 @@ replaceOnce("    Persistence.Restore(detectedGame, menuKeyControl)", [==[
             if control.Kind == "toggle" and control.Get() == true then enabled[#enabled + 1] = control.Key end
         end
         pcall(writefile, "SunsetConfigs/RiftCrashDiagnostic.txt",
-            "Build: " .. SUNSET_BUILD .. "\nDiagnostic UI start: true\nAlive seconds: "
+            "Build: " .. SUNSET_BUILD .. "\nGame: " .. tostring(detectedGame)
+            .. "\nDiagnostic UI start: true\nAlive seconds: "
             .. math.floor(diagnosticAge) .. "\nFPS: " .. diagnosticFPS
             .. "\nEnabled controls:\n" .. table.concat(enabled, "\n"))
     end))
     print("[Rift diagnostic] UI started; optional modules and auto reinject are off. Saved settings are untouched.")
 ]==])
-local chunk, errorMessage = loadstring(source, "=Rift Cold War crash diagnostic")
+local chunk, errorMessage = loadstring(source, "=Rift crash diagnostic")
 assert(chunk, errorMessage)
 print("[Rift diagnostic] Verified " .. build)
 chunk()
