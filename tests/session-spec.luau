@@ -92,10 +92,10 @@ local function makeDraggable(panel) panel.Draggable = true end
 local T = {}
 local UDim = { new = function(...) return {...} end }
 local UDim2 = { new = function(...) return {...} end, fromOffset = function(...) return {...} end }
-local Enum = { Font = { GothamBold = "bold", GothamMedium = "medium" } }
+local Enum = { Font = { GothamBold = "bold", GothamMedium = "medium" }, TextXAlignment = { Right = "right" } }
 local Gui = {}
 local Persistence = { HUDFrames = {} }
-local RunService = { Heartbeat = signal() }
+local RunService = { Heartbeat = signal(), RenderStepped = signal() }
 local VisualsTab = { Left = {} }
 local function gameSection(_, _, title) return title end
 local controls = {}
@@ -104,6 +104,13 @@ local Elements = { Toggle = function(section, name, _, callback) controls[sectio
 Settings.SetupColdWarSession()
 local hud = Persistence.HUDFrames.ColdWarSessionInfo
 assert(hud and hud.Draggable and not hud.Visible)
+local fps
+for _, object in ipairs(objects) do if object.Name == "SessionFPS" then fps = object end end
+assert(fps and fps.TextXAlignment == "right", "session FPS missing from right side")
+for _ = 1, 60 do RunService.RenderStepped:Fire(1 / 60) end
+assert(fps.Text == "60 FPS", "frame rate did not use elapsed frame time")
+for _ = 1, 30 do RunService.RenderStepped:Fire(1 / 30) end
+assert(fps.Text == "30 FPS", "frame rate sample retained previous interval")
 controls["Session Info/Session Info"](true)
 assert(hud.Visible)
 local hasUnknownKills = false

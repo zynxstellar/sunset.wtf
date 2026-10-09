@@ -63,7 +63,9 @@ collision=true fire() trails.Update()
 assert(#trails.Paths[1].Points==2 and trails.Paths[1].ImpactDot,"path crossed first collision")
 for _=1,100 do fire() end
 assert(#trails.Queue==24,"shot queue is unbounded")
-trails.Update() assert(#trails.Paths==24,"path storage is unbounded")
+trails.Update() assert(#trails.Paths<=trails.MaxBuildsPerFrame+1,"queued shots caused an unbounded build spike")
+for _=1,30 do trails.Update() end
+assert(#trails.Paths==12,"path storage is unbounded")
 controls["Bullet Tracers/Bullet Tracers"].Set(false)
 assert(#trails.Paths==0 and #trails.Queue==0)
 for _,line in ipairs(lines) do assert(line.Removed,"disable leaked drawing") end

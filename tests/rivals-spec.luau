@@ -1458,10 +1458,12 @@ end)();
         local cacheCasts=#casts options.Apply() options.Apply()
         assert(#casts==cacheCasts,"visibility rays were not cached")
         clockNow+=0.02 options.Apply()
-        assert(#casts>cacheCasts,"default visibility refresh still waits 120ms")
+        assert(#casts==cacheCasts,"default visibility cache did not reduce repeated raycasts")
+        clockNow+=0.1 options.Apply()
+        assert(#casts>cacheCasts,"visibility cache did not refresh")
         set("Visibility Refresh",0)
         cacheCasts=#casts options.Apply()
-        assert(#casts>cacheCasts,"zero visibility interval did not update every pass")
+        assert(#casts==cacheCasts,"legacy visibility interval bypassed the performance floor")
         set("Visibility Refresh",16)
         local palette={}
         for i,name in ipairs({"Name Color","Class Color","Info Color","Status Color","Tracer Color",
