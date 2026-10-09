@@ -1,4 +1,4 @@
-local Settings = {IsColdWar = true, StartupStage = function() end}
+local Settings = {IsColdWar = true}
 local BedWars = {Running = false}
 -- This is the entire production setup definition, not a replacement. Running
 -- it here would immediately touch unavailable game/UI APIs and fail the test.

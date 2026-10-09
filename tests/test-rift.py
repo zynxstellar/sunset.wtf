@@ -26,13 +26,12 @@ def main():
     source = (ROOT / 'alua').read_text(encoding='utf-8')
     inner = between(source, 'local source = [========[', ']========]')
     inner = inner[len('local source = [========['):]
-    assert 'hookmetamethod(game, "__newindex"' not in inner, 'global menu hook returned'
     startup_guard = inner.split('local ENV =', 1)[0]
     assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
         'Project Delta is supported but the startup guard returns before building its UI'
     chunks = [
         between(inner, 'function Persistence.SavedHUDPositions()', '\ndo\n    local lastSavedJSON'),
-        between(inner, 'do\n    BedWars.NotifyGui', '\nSettings.SetupMusicHUD()'),
+        between(inner, 'do\n    BedWars.NotifyGui', '\ndo\n    BedWars.SpotifyPanel'),
         between(inner, 'BedWars.VoidWater = {}', '\nlocal sprintController'),
         between(inner, 'function BedWars.AttackRange()', '\nfunction BedWars.MeleeItem'),
         between(inner, 'function BedWars.HostileNpc(', '\nfunction BedWars.Visible('),
@@ -72,22 +71,8 @@ def main():
         loader_path.write_text(loader_spec, encoding='utf-8')
         subprocess.run([str(compiler), '--null', str(ROOT / 'loader.lua')], check=True)
         subprocess.run([str(runtime), str(loader_path)], check=True)
-        diagnostic_spec = (ROOT / 'tests' / 'diagnostic-loader-spec.luau').read_text(encoding='utf-8')
-        diagnostic_spec = diagnostic_spec.replace('-- INSERT_DIAGNOSTIC_RELEASE',
-            'local releaseSource = [==========[' + source + ']==========]')
-        diagnostic_spec = diagnostic_spec.replace('-- INSERT_DIAGNOSTIC_LOADER',
-            (ROOT / 'diagnostic-loader.lua').read_text(encoding='utf-8'))
-        diagnostic_path = temp / 'diagnostic-loader-spec.luau'
-        diagnostic_path.write_text(diagnostic_spec, encoding='utf-8')
-        subprocess.run([str(runtime), str(diagnostic_path)], check=True)
-        trace_spec = (ROOT / 'tests' / 'startup-trace-spec.luau').read_text(encoding='utf-8')
-        trace_spec = trace_spec.replace('-- INSERT_STARTUP_WRAPPER', source.split(']========]', 1)[1])
-        trace_path = temp / 'startup-trace-spec.luau'
-        trace_path.write_text(trace_spec, encoding='utf-8')
-        subprocess.run([str(runtime), str(trace_path)], check=True)
         print('PASS pinned loader: current release, stale/missing version rejection, download/compile failures, recovery')
         universal_source = (ROOT / 'universal.lua').read_text(encoding='utf-8')
-        assert 'hookmetamethod(game, "__newindex"' not in universal_source, 'universal global menu hook returned'
         universal_inner = between(universal_source, 'local source = [========[', ']========]')
         universal_inner = universal_inner[len('local source = [========['):]
         universal_ui = between(universal_inner, 'function RivalsAim.BuildUI()',
@@ -177,21 +162,14 @@ def main():
         assert 'gameSection("Cold War", AimTab.Left, "Bullet Speed")' not in inner
         session_spec = (ROOT / 'tests' / 'session-spec.luau').read_text(encoding='utf-8')
         session_spec = session_spec.replace('-- INSERT_SESSION_TRACKER',
-            between(inner, 'function Settings.SessionNumber(', '\nfunction Settings.AttachSessionFPS('))
+            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing Cold War...")'))
         session_spec = session_spec.replace('-- INSERT_SESSION_HUD',
-            between(inner, 'function Settings.AttachSessionFPS(', '\nSettings.StartupStage("Preparing Cold War...")') + '\n' +
             between(inner, 'function Settings.SetupColdWarSession()', '\nfunction Settings.SetupColdWar()'))
         session_spec = session_spec.replace('-- INSERT_BEDWARS_SESSION_UPDATE',
             between(inner, 'local function updateSession()', '\ntask.spawn(function()'))
         session_path = temp / 'session-spec.luau'
         session_path.write_text(session_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(session_path)], check=True)
-        music_spec = (ROOT / 'tests' / 'music-hud-spec.luau').read_text(encoding='utf-8')
-        music_spec = music_spec.replace('-- INSERT_MUSIC_HUD',
-            between(inner, 'function Settings.SetupMusicHUD()', '\nfunction Settings.SetupBedWarsRuntime()'))
-        music_path = temp / 'music-hud-spec.luau'
-        music_path.write_text(music_spec, encoding='utf-8')
-        subprocess.run([str(runtime), str(music_path)], check=True)
         seated_spec = (ROOT / 'tests' / 'seated-spec.luau').read_text(encoding='utf-8')
         seated_spec = seated_spec.replace('-- INSERT_SEATED_PRODUCTION',
             between(inner, 'function Settings.SetupColdWarSeated()', '\nfunction Settings.SetupColdWarSession()'))
@@ -228,7 +206,6 @@ def main():
         auto_path.write_text(auto_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(auto_path)], check=True)
         rivals_chunks = [
-            between(inner, 'function Settings.SetupMusicHUD()', '\nfunction Settings.SetupBedWarsRuntime()'),
             between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing Cold War...")'),
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),

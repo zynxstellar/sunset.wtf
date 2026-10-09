@@ -60,7 +60,7 @@ assert(not hookPolicy(), "Cold War installed a global property hook")
 game.PlaceId, game.GameId = 1, 4750561026
 assert(not hookPolicy(), "Cold War subplace installed a global property hook")
 game.PlaceId, game.GameId = 17625359962, 6035872082
-assert(not hookPolicy(), "Rivals installed a global menu property hook")
+assert(hookPolicy(), "Rivals hook policy changed")
 game.PlaceId, game.GameId = 6872265039, 2619619496
-assert(not hookPolicy(), "BedWars installed a global menu property hook")
+assert(hookPolicy(), "BedWars hook policy changed")
 print("PASS loading: synchronous handoff, no task/tween dependency, stale/unload ownership, cleanup failure, Cold War hook isolation")

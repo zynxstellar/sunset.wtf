@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-startup-stability-k311"
+local SUNSET_BUILD = "20261009-rift-remove-hit-sounds-k309"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -329,7 +329,6 @@ new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
 TweenService:Create(ENV.SunsetLoading.Fill, TweenInfo.new(1.2, Enum.EasingStyle.Quad,
     Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.88, 1) }):Play()
 function Settings.StartupStage(message)
-    if type(ENV.SunsetStartupTrace) == "function" then ENV.SunsetStartupTrace(message) end
     if not Settings.IsColdWar then return end
     print("[Rift startup " .. SUNSET_BUILD .. "] " .. message)
     local loading = ENV.SunsetLoading
@@ -399,9 +398,9 @@ end))
 
 -- Cold War visuals only need our own UI and player characters. Leave native
 -- property writes alone; unlock the menu cursor through forceUnlock instead.
--- Menu input is handled by our render callback, without a global property hook.
-local canHook = false
-local useScriptable = false
+local canHook = game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026
+    and typeof(hookmetamethod) == "function" and typeof(newcclosure) == "function" and typeof(checkcaller) == "function"
+local useScriptable = not canHook
 
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 local savedMenuInput
@@ -487,6 +486,19 @@ track(RunService.Stepped:Connect(forceUnlock))
 track(RunService.Heartbeat:Connect(forceUnlock))
 
 
+if canHook then
+    local oldNewIndex
+    oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
+        if not checkcaller() and Window and Window.Parent and anyMenuVisible() then
+            if self == UIS then
+                rememberGameInput(key, value)
+                if key == "MouseBehavior" then value = Enum.MouseBehavior.Default end
+                if key == "MouseIconEnabled" then value = true end
+            end
+        end
+        return oldNewIndex(self, key, value)
+    end))
+end
 
 track({ Disconnect = function()
     pcall(RunService.UnbindFromRenderStep, RunService, UNLOCK_NAME)
@@ -1704,7 +1716,6 @@ task.spawn(function()
     track(RunService.RenderStepped:Connect(function()
         frames += 1
         if os.clock() - last >= 1 then
-            frames = math.floor(frames / (os.clock() - last) + 0.5)
             local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
             Watermark.Text = Settings.GameBoards[Settings.SelectedGame] ~= nil
                 and string.format("RIFT  •  %s  •  %d FPS  •  %d MS", LocalPlayer.Name, frames, ping)
@@ -3007,28 +3018,78 @@ function Settings.NewSessionTracker(session, gameName, countKills)
     step()
     return step
 end
-function Settings.AttachSessionFPS(panel, title)
-    title.TextSize = 12
-    title.Size = UDim2.new(1, -76, 0, 20)
-    local fps = label(panel, "-- FPS", 10, T.text)
-    fps.Name = "SessionFPS"
-    fps.Position, fps.Size = UDim2.new(1, -66, 0, 10), UDim2.fromOffset(54, 20)
-    fps.TextXAlignment = Enum.TextXAlignment.Right
-    local frames, elapsed = 0, 0
-    track(RunService.RenderStepped:Connect(function(dt)
-        if type(dt) ~= "number" or dt <= 0 then return end
-        frames += 1
-        elapsed += dt
-        if elapsed + 1e-6 >= 1 then
-            fps.Text = tostring(math.floor(frames / elapsed + 0.5)) .. " FPS"
-            frames, elapsed = 0, 0
-        end
-    end))
-    return fps
-end
 Settings.StartupStage("Preparing Cold War...")
-function Settings.SetupMusicHUD()
-    if BedWars.SpotifyPanel and BedWars.SpotifyPanel.Parent then return end
+function Settings.SetupBedWarsRuntime()
+do
+    BedWars.NotifyGui = new("ScreenGui", {
+        Name = "RiftNotifications", ResetOnSpawn = false,
+        IgnoreGuiInset = true, DisplayOrder = 2147483646,
+    }, PlayerGui)
+    local stack = new("Frame", {
+        AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, -14, 1, -18),
+        Size = UDim2.fromOffset(260, 275),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, BedWars.NotifyGui)
+    BedWars.NotifyStack = stack
+    new("UIListLayout", { Padding = UDim.new(0, 4),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
+    local slots = {}
+    local order = 0
+    function BedWars.Notify(title, message, force)
+        if not BedWars.Running or (not BedWars.NotifyOn and not force) then return end
+        order += 1
+        local slot = new("Frame", {
+            Size = UDim2.fromOffset(260, 50), LayoutOrder = order,
+            BackgroundTransparency = 1, BorderSizePixel = 0,
+        }, stack)
+        table.insert(slots, slot)
+        if #slots > 5 then
+            local oldest = table.remove(slots, 1)
+            if oldest.Parent then oldest:Destroy() end
+        end
+        BedWars.NotifyActiveCount = #slots
+        local toast = new("Frame", {
+            Position = UDim2.fromOffset(276, 0),
+            Size = UDim2.fromOffset(260, 50),
+            BackgroundColor3 = T.inner,
+            BackgroundTransparency = 0.25, BorderSizePixel = 0,
+        }, slot)
+        new("UICorner", { CornerRadius = UDim.new(0, 7) }, toast)
+        border(toast, T.accent)
+        local strip = new("Frame", {
+            Size = UDim2.fromOffset(3, 32), Position = UDim2.fromOffset(8, 9),
+            BackgroundColor3 = T.gold, BorderSizePixel = 0,
+        }, toast)
+        new("UICorner", { CornerRadius = UDim.new(0, 2) }, strip)
+        local heading = label(toast, tostring(title):sub(1, 45), 11,
+            T.gold)
+        heading.Font = Enum.Font.GothamBold
+        heading.Position = UDim2.fromOffset(20, 5)
+        heading.Size = UDim2.new(1, -30, 0, 17)
+        local body = label(toast, tostring(message):sub(1, 130), 10,
+            T.text)
+        body.Position = UDim2.fromOffset(20, 22)
+        body.Size = UDim2.new(1, -30, 0, 22)
+        body.TextWrapped = true
+        TweenService:Create(toast, TweenInfo.new(0.3,
+            Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            { Position = UDim2.fromOffset(0, 0) }):Play()
+        task.delay(4.2, function()
+            if not slot.Parent then return end
+            TweenService:Create(toast, TweenInfo.new(0.24,
+                Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                { Position = UDim2.fromOffset(276, 0),
+                    BackgroundTransparency = 0.8 }):Play()
+            task.wait(0.25)
+            if slot.Parent then slot:Destroy() end
+            local index = table.find(slots, slot)
+            if index then table.remove(slots, index) end
+            BedWars.NotifyActiveCount = #slots
+        end)
+    end
+end
 do
     BedWars.SpotifyPanel = new("Frame", {
         Name = "SunsetMusicOverlay", AnchorPoint = Vector2.new(1, 1),
@@ -3039,8 +3100,7 @@ do
     }, Gui)
     function BedWars.MusicOverlayVisible()
         return Gui.Parent ~= nil and ((Settings.SelectedGame == "BedWars" and BedWars.SpotifyHUDOn)
-            or (Settings.SelectedGame == "Rivals" and RivalsVisuals.MusicOverlayOn)
-            or (Settings.SelectedGame == "Cold War" and Settings.ColdWarMusicOn)) == true
+            or (Settings.SelectedGame == "Rivals" and RivalsVisuals.MusicOverlayOn)) == true
     end
     Persistence.HUDFrames.MusicOverlay = BedWars.SpotifyPanel
     new("UICorner", { CornerRadius = UDim.new(0, 12) }, BedWars.SpotifyPanel)
@@ -3212,80 +3272,6 @@ do
         BedWars.SpotifyPanel.Visible = false
     end)
 end
-end
-function Settings.SetupBedWarsRuntime()
-do
-    BedWars.NotifyGui = new("ScreenGui", {
-        Name = "RiftNotifications", ResetOnSpawn = false,
-        IgnoreGuiInset = true, DisplayOrder = 2147483646,
-    }, PlayerGui)
-    local stack = new("Frame", {
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -14, 1, -18),
-        Size = UDim2.fromOffset(260, 275),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, BedWars.NotifyGui)
-    BedWars.NotifyStack = stack
-    new("UIListLayout", { Padding = UDim.new(0, 4),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
-    local slots = {}
-    local order = 0
-    function BedWars.Notify(title, message, force)
-        if not BedWars.Running or (not BedWars.NotifyOn and not force) then return end
-        order += 1
-        local slot = new("Frame", {
-            Size = UDim2.fromOffset(260, 50), LayoutOrder = order,
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-        }, stack)
-        table.insert(slots, slot)
-        if #slots > 5 then
-            local oldest = table.remove(slots, 1)
-            if oldest.Parent then oldest:Destroy() end
-        end
-        BedWars.NotifyActiveCount = #slots
-        local toast = new("Frame", {
-            Position = UDim2.fromOffset(276, 0),
-            Size = UDim2.fromOffset(260, 50),
-            BackgroundColor3 = T.inner,
-            BackgroundTransparency = 0.25, BorderSizePixel = 0,
-        }, slot)
-        new("UICorner", { CornerRadius = UDim.new(0, 7) }, toast)
-        border(toast, T.accent)
-        local strip = new("Frame", {
-            Size = UDim2.fromOffset(3, 32), Position = UDim2.fromOffset(8, 9),
-            BackgroundColor3 = T.gold, BorderSizePixel = 0,
-        }, toast)
-        new("UICorner", { CornerRadius = UDim.new(0, 2) }, strip)
-        local heading = label(toast, tostring(title):sub(1, 45), 11,
-            T.gold)
-        heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(20, 5)
-        heading.Size = UDim2.new(1, -30, 0, 17)
-        local body = label(toast, tostring(message):sub(1, 130), 10,
-            T.text)
-        body.Position = UDim2.fromOffset(20, 22)
-        body.Size = UDim2.new(1, -30, 0, 22)
-        body.TextWrapped = true
-        TweenService:Create(toast, TweenInfo.new(0.3,
-            Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            { Position = UDim2.fromOffset(0, 0) }):Play()
-        task.delay(4.2, function()
-            if not slot.Parent then return end
-            TweenService:Create(toast, TweenInfo.new(0.24,
-                Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                { Position = UDim2.fromOffset(276, 0),
-                    BackgroundTransparency = 0.8 }):Play()
-            task.wait(0.25)
-            if slot.Parent then slot:Destroy() end
-            local index = table.find(slots, slot)
-            if index then table.remove(slots, index) end
-            BedWars.NotifyActiveCount = #slots
-        end)
-    end
-end
-Settings.SetupMusicHUD()
-
 do
     local function executorName()
         local identify = type(ENV.identifyexecutor) == "function"
@@ -7065,7 +7051,6 @@ local sessionTitle = label(sessionPanel, "SESSION STATS", 14, T.gold)
 sessionTitle.Font = Enum.Font.GothamBold
 sessionTitle.Position = UDim2.fromOffset(12, 10)
 sessionTitle.Size = UDim2.new(1, -24, 0, 20)
-BedWars.SessionFPS = Settings.AttachSessionFPS(sessionPanel, sessionTitle)
 new("Frame", {
     Position = UDim2.fromOffset(12, 34),
     Size = UDim2.new(1, -24, 0, 1),
@@ -8346,9 +8331,7 @@ if Settings.IsColdWar then
     -- avoid running BedWars.Stop's attribute and native controller writes.
     function BedWars.Stop() BedWars.Running = false end
 else
-    Settings.StartupStage("Preparing game runtime...")
     Settings.SetupBedWarsRuntime()
-    Settings.StartupStage("Game runtime ready")
 end
 
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
@@ -10911,7 +10894,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         VisibleOnly = false, ShowAllPlayers = gameName == "Cold War" or gameName == "Project Delta",
         DimHidden = true, MaxDistance = 100000, UnlimitedRange = true, TextSize = 13, EdgeOn = true,
         VehiclesOn = true, EmptyVehicles = false,
-        UsePlayerColors = true, VisibilityInterval = 0.1,
+        UsePlayerColors = true, VisibilityInterval = 1 / 60,
         NameColor = Color3.fromRGB(240, 240, 240), ClassColor = Color3.fromRGB(240, 240, 240),
         InfoColor = Color3.fromRGB(240, 240, 240), FlagsColor = Color3.fromRGB(255, 214, 90),
         TracerColor = Color3.fromRGB(139, 92, 246), SkeletonColor = Color3.fromRGB(77, 224, 208),
@@ -11036,7 +11019,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             local direct = ok and (not hit or hit.Instance:IsDescendantOf(model))
             local penetrable = ok and not direct and canWallbang(model, head, camera, hit)
             cache = { Model = model, Visible = direct, Wallbangable = penetrable,
-                Next = os.clock() + math.max(0.05, options.VisibilityInterval) }
+                Next = os.clock() + options.VisibilityInterval }
             visibility[player] = cache
         end
         return (not options.VisibleOnly or cache.Visible or cache.Wallbangable or
@@ -11055,9 +11038,6 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
         end
         hide(entry)
         local head = model:FindFirstChild("Head")
-        -- Reject players behind the camera before raycasts and limb projections.
-        -- Edge indicators keep their existing visibility/color behavior.
-        if not options.EdgeOn and camera:WorldToViewportPoint(head.Position).Z < -10 then return end
         local allowed, teammate, distance, visible, wallbangable = options.Allow(player, model, camera)
         if not allowed then return end
         local color = teammate and options.TeamColor or visible and options.VisibleColor
@@ -11287,13 +11267,7 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             if not used[model] then removeDrawing(object) vehicles[model] = nil end
         end
     end
-    local renderElapsed = 0
-    track(RunService.RenderStepped:Connect(function(dt)
-        renderElapsed += type(dt) == "number" and dt or 1 / 60
-        if renderElapsed + 1e-6 < 1 / 60 then return end
-        renderElapsed %= 1 / 60
-        options.Apply()
-    end))
+    track(RunService.RenderStepped:Connect(options.Apply))
     track({ Disconnect = function()
         destroyed = true
         options.BoxesOn, options.OutlinesOn = false, false
@@ -11355,8 +11329,8 @@ function Settings.SetupPlayerESP(gameName, resolveModel)
             options.Apply()
         end)
     end
-    Elements.Slider(boxes, "Visibility Refresh", 50, 500, 100, "ms", function(value)
-        options.VisibilityInterval = math.max(50, value) / 1000
+    Elements.Slider(boxes, "Visibility Refresh", 0, 120, 16, "ms", function(value)
+        options.VisibilityInterval = value / 1000
         table.clear(visibility)
         options.Apply()
     end)
@@ -11392,7 +11366,6 @@ end
 
 function Settings.SetupColdWarVisualExtras()
     local trails = { Enabled = false, Lifetime = 1.5, Thickness = 2, Glow = true, Impact = true,
-        MaxPaths = 12, MaxBuildsPerFrame = 4,
         Color = Color3.fromRGB(139, 92, 246), Queue = {}, Paths = {} }
     Settings.ColdWarBulletTrails = trails
     local fov = { Enabled = false, Value = 90 }
@@ -11441,7 +11414,7 @@ function Settings.SetupColdWarVisualExtras()
             table.insert(path.Points, hit and hit.Position or point)
             if hit then path.Impact = true break end
         end
-        if #trails.Paths >= trails.MaxPaths then remove(table.remove(trails.Paths, 1)) end
+        if #trails.Paths >= 24 then remove(table.remove(trails.Paths, 1)) end
         table.insert(trails.Paths, path)
     end
     function trails.Update()
@@ -11454,17 +11427,13 @@ function Settings.SetupColdWarVisualExtras()
         else restoreFOV() end
         if not trails.Enabled or not active or not drawing or type(drawing.new) ~= "function" then clear() return end
         local now = os.clock()
-        local built = 0
-        while #trails.Queue > 0 and built < trails.MaxBuildsPerFrame do
-            local shot = trails.Queue[1]
-            shot.NextDirection = shot.NextDirection or 1
-            if now - shot.Started >= trails.Lifetime or shot.NextDirection > #shot.Directions then
-                table.remove(trails.Queue, 1)
-            else
-                local direction = shot.Directions[shot.NextDirection]
-                shot.NextDirection += 1
-                built += 1
-                if typeof(direction) == "Vector3" and direction.Magnitude > 1e-6 then pcall(build, shot, direction) end
+        local queue = trails.Queue
+        trails.Queue = {}
+        for _, shot in ipairs(queue) do
+            if now - shot.Started < trails.Lifetime then
+                for _, direction in ipairs(shot.Directions) do
+                    if typeof(direction) == "Vector3" and direction.Magnitude > 1e-6 then pcall(build, shot, direction) end
+                end
             end
         end
         for i = #trails.Paths, 1, -1 do
@@ -11472,16 +11441,12 @@ function Settings.SetupColdWarVisualExtras()
             local progress = (now - path.Started) / trails.Lifetime
             if progress >= 1 then remove(path) table.remove(trails.Paths, i)
             else
-                -- Adjacent segments share endpoints: project each point once.
-                local projected = {}
-                if current then
-                    for index, point in ipairs(path.Points) do projected[index] = current:WorldToViewportPoint(point) end
-                end
                 for segment = 1, #path.Points - 1 do
                     local ok = pcall(function()
                         local line = path.Lines[segment]
                         if not line then line = drawing.new("Line") line.ZIndex = 2 path.Lines[segment] = line end
-                        local a, b = projected[segment], projected[segment + 1]
+                        local a = current and current:WorldToViewportPoint(path.Points[segment])
+                        local b = current and current:WorldToViewportPoint(path.Points[segment + 1])
                         line.Visible = a ~= nil and b ~= nil and a.Z > 0 and b.Z > 0
                         if line.Visible then
                             line.From, line.To = Vector2.new(a.X, a.Y), Vector2.new(b.X, b.Y)
@@ -11519,13 +11484,7 @@ function Settings.SetupColdWarVisualExtras()
             end
         end
     end
-    local trailElapsed = 0
-    track(RunService.RenderStepped:Connect(function(dt)
-        trailElapsed += type(dt) == "number" and dt or 1 / 60
-        if trailElapsed + 1e-6 < 1 / 60 then return end
-        trailElapsed %= 1 / 60
-        trails.Update()
-    end))
+    track(RunService.RenderStepped:Connect(trails.Update))
     track({ Disconnect = function() destroyed = true trails.Enabled = false clear() restoreFOV() end })
     local section = gameSection("Cold War", VisualsTab.Left, "Bullet Tracers")
     Elements.Toggle(section, "Bullet Tracers", false, function(on)
@@ -12326,7 +12285,6 @@ function Settings.SetupColdWarSession()
     local title = label(panel, "SESSION STATS", 14, T.gold)
     title.Font = Enum.Font.GothamBold
     title.Position, title.Size = UDim2.fromOffset(12, 10), UDim2.new(1, -24, 0, 20)
-    Settings.AttachSessionFPS(panel, title)
     new("Frame", { Position = UDim2.fromOffset(12, 34), Size = UDim2.new(1, -24, 0, 1),
         BackgroundColor3 = T.accent, BorderSizePixel = 0 }, panel)
     local rows = {}
@@ -12374,12 +12332,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
-    Settings.SetupMusicHUD()
-    local music = gameSection("Cold War", VisualsTab.Left, "Music Overlay")
-    Elements.Toggle(music, "Music Overlay", false, function(on)
-        Settings.ColdWarMusicOn = on
-        BedWars.SpotifyPanel.Visible = BedWars.MusicOverlayVisible()
-    end)
     Settings.SetupColdWarSeated()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarSteadyGun()
@@ -12685,7 +12637,7 @@ do
     end
 end
 if detectedGame then
-    Settings.StartupStage("Restoring game settings...")
+    Settings.StartupStage("Restoring Cold War settings...")
     Persistence.Restore(detectedGame, menuKeyControl)
     Persistence.Start()
     track(LocalPlayer.OnTeleport:Connect(function(state)
@@ -12708,24 +12660,6 @@ if typeof(writefile) == "function" then
         writefile("SunsetConfigs/SunsetCurrent.lua", source)
     end)
 end
-environment.SunsetStartupTrace = function(stage)
-    if typeof(writefile) ~= "function" then return end
-    pcall(function()
-        if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
-        writefile("SunsetConfigs/RiftStartup.txt", "Build: 20261009-rift-startup-stability-k311\nPlace: "
-            .. tostring(game.PlaceId) .. "\nStage: " .. tostring(stage) .. "\nClock: " .. tostring(os.clock()))
-    end)
-end
-environment.SunsetStartupTrace("Compiling client")
 local chunk, err = loadstring(source)
-if not chunk then
-    environment.SunsetStartupTrace("Compile failed: " .. tostring(err))
-    error("Rift source did not compile: " .. tostring(err))
-end
-environment.SunsetStartupTrace("Executing client")
-local started, failure = pcall(chunk)
-if not started then
-    environment.SunsetStartupTrace("Startup error: " .. tostring(failure))
-    error(failure, 0)
-end
-environment.SunsetStartupTrace("Ready")
+if not chunk then error("Rift source did not compile: " .. tostring(err)) end
+chunk()
