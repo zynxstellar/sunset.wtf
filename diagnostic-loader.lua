@@ -1,9 +1,9 @@
 -- Restart Roblox first. This starts Rift with optional modules off and preserves saved settings.
-local build = "20261009-rift-performance-music-k310"
+local build = "20261009-rift-startup-stability-k311"
 assert(game.PlaceId == 13687899540 or game.GameId == 4750561026
     or game.PlaceId == 6872265039 or game.GameId == 2619619496,
     "Rift crash diagnostic supports Cold War and BedWars")
-local url = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/3bc9da81ec561738e4a4e5b4dfbd6cbf46420e73/alua"
+local url = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/f64232e1af423c413313cfb59618286e1e536040/alua"
 local ok, source = pcall(game.HttpGet, game, url)
 assert(ok and type(source) == "string", "Rift diagnostic download failed")
 assert(source:match('local SUNSET_BUILD = "([^"]+)"') == build, "Rift diagnostic received a different build")
