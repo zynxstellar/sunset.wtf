@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-remove-jump-delay-k332"
+local SUNSET_BUILD = "20261010-rift-config-confirm-k333"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -2784,7 +2784,8 @@ do
     end, true)
     local status = Elements.Label(s, "Ready")
     status.TextColor3 = T.dim
-    local pendingDelete
+    local pendingAction
+    local confirmButton, cancelButton
     local function cleanName(text)
         local name = tostring(text or ""):match("^%s*(.-)%s*$")
             :gsub("[^%w%-_]", "_"):sub(1, 32)
@@ -2796,6 +2797,38 @@ do
     local function configPath(name)
         return "SunsetConfigs/" .. gamePrefix() .. cleanName(name) .. ".json"
     end
+    local function cancelAction(message)
+        pendingAction = nil
+        if confirmButton then confirmButton.Visible = false end
+        if cancelButton then cancelButton.Visible = false end
+        if message then status.Text = message end
+    end
+    local function requestAction(action, name, execute)
+        pendingAction = { Action = action, Name = name, Path = configPath(name),
+            Game = Settings.SelectedGame, Expires = os.clock() + 15, Execute = execute }
+        status.Text = action .. ' "' .. name .. '"? Confirm below.'
+        confirmButton.Text = "Confirm " .. action
+        confirmButton.Visible, cancelButton.Visible = true, true
+    end
+    confirmButton = Elements.Button(s, "Confirm", function()
+        local pending = pendingAction
+        if not pending then return end
+        local currentName = pending.Action == "Delete" and selector.Value ~= noConfigs
+            and selector.Value or cleanName(nameBox.Text)
+        if os.clock() > pending.Expires or Settings.SelectedGame ~= pending.Game
+            or configPath(currentName) ~= pending.Path then
+            cancelAction("Confirmation expired or config changed. Try again.")
+            return
+        end
+        cancelAction()
+        pending.Execute(pending.Name, pending.Path)
+    end)
+    cancelButton = Elements.Button(s, "Cancel", function() cancelAction("Cancelled") end)
+    cancelAction()
+    track(nameBox:GetPropertyChangedSignal("Text"):Connect(function()
+        if pendingAction then cancelAction("Config changed. Try again.") end
+    end))
+    track({ Disconnect = function() cancelAction() end })
     local function ensureFolder()
         if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
     end
@@ -2822,13 +2855,13 @@ do
     end
     RefreshConfigList = refreshConfigs
     Elements.Button(s, "Refresh Configs", function()
+        cancelAction()
         local names = refreshConfigs()
         status.Text = #names > 0 and ("Found " .. #names .. " configs") or "No saved configs"
     end)
-    Elements.Button(s, "Save Config", function()
+    local function saveConfig(name, path)
         if typeof(writefile) ~= "function" then status.Text = "File saving unavailable" return end
         ensureFolder()
-        local name = cleanName(nameBox.Text)
         local saved = {}
         for _, control in ipairs(ConfigControls) do
             if Persistence.ControlApplies(control, Settings.SelectedGame) then
@@ -2841,16 +2874,19 @@ do
                     Value = value, Bind = bind and bind.Name or nil }
             end
         end
-        local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
             Version = 5, Game = Settings.SelectedGame, Controls = saved, RiftThemeVersion = 1,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions(),
         }))
         status.Text = ok and "Saved " .. name or "Could not save config"
         if ok then nameBox.Text = name refreshConfigs(name) end
-        pendingDelete = nil
+    end
+    Elements.Button(s, "Save Config", function()
+        if typeof(writefile) ~= "function" then status.Text = "File saving unavailable" return end
+        requestAction("Save", cleanName(nameBox.Text), saveConfig)
     end)
     Elements.Button(s, "Load Config", function()
+        cancelAction()
         if typeof(readfile) ~= "function" then status.Text = "File loading unavailable" return end
         local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
         local ok, data = pcall(function() return HttpService:JSONDecode(readfile(configPath(name))) end)
@@ -2922,21 +2958,17 @@ do
         if BedWars and BedWars.Notify and Settings.SelectedGame == "BedWars" then
             BedWars.Notify(BRAND, name .. " loaded", true)
         end
-        pendingDelete = nil
     end)
-    Elements.Button(s, "Delete Config", function()
-        local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
-        local path = configPath(name)
-        if pendingDelete ~= path then
-            pendingDelete = path
-            status.Text = "Click Delete again: " .. name
-            return
-        end
-        pendingDelete = nil
+    local function deleteConfig(name, path)
         if typeof(delfile) ~= "function" then status.Text = "File deletion unavailable" return end
         local ok = pcall(delfile, path)
         status.Text = ok and ("Deleted " .. name) or "Could not delete config"
         if ok then refreshConfigs() end
+    end
+    Elements.Button(s, "Delete Config", function()
+        if typeof(delfile) ~= "function" then status.Text = "File deletion unavailable" return end
+        local name = selector.Value ~= noConfigs and selector.Value or cleanName(nameBox.Text)
+        requestAction("Delete", name, deleteConfig)
     end)
 end
 do
