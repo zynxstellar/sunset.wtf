@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-small-void-water-k339"
+local SUNSET_BUILD = "20261010-rift-coldwar-car-fly-k340"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12237,6 +12237,91 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarCarFly()
+    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, Destroyed = false }
+    Settings.ColdWarCarFly = fly
+    local vehicleRoot, attachment, velocity, orientation
+    local lastError = -math.huge
+    local function clear()
+        -- Remove only this module's constraints; native vehicle physics resumes.
+        for _, object in pairs({ velocity, orientation, attachment }) do object:Destroy() end
+        vehicleRoot, attachment, velocity, orientation = nil, nil, nil, nil
+    end
+    local function driverSeat(character, humanoid)
+        local seat = humanoid.SeatPart
+        if seat and seat:IsA("VehicleSeat") and seat.Occupant == humanoid then return seat end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        -- Cold War also uses a Motor6D attached to the character instead of SeatPart.
+        for _, joint in ipairs(root:GetJoints()) do
+            local other = joint.Part1 == root and joint.Part0 or joint.Part0 == root and joint.Part1
+            if other and other:IsA("BasePart") and not other:IsDescendantOf(character)
+                and (other.Name == "DriverSeat" or other:IsA("VehicleSeat")) then return other end
+        end
+    end
+    function fly.Step(dt)
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if fly.Destroyed or not fly.Enabled or Settings.SelectedGame ~= "Cold War"
+            or not humanoid or humanoid.Health <= 0 then clear() return end
+        local seat = driverSeat(character, humanoid)
+        local root = seat and seat.AssemblyRootPart
+        if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then clear() return end
+        local camera = workspace.CurrentCamera
+        if not camera then clear() return end
+        if root ~= vehicleRoot then
+            clear()
+            vehicleRoot = root
+            attachment = new("Attachment", { Name = "RiftCarFlyAttachment" }, root)
+            velocity = new("LinearVelocity", { Name = "RiftCarFlyVelocity", Attachment0 = attachment,
+                RelativeTo = Enum.ActuatorRelativeTo.World, VelocityConstraintMode = Enum.VelocityConstraintMode.Vector,
+                VectorVelocity = Vector3.zero, ForceLimitsEnabled = true,
+                MaxForce = math.max(root.AssemblyMass * workspace.Gravity * 20, 10000) }, root)
+            orientation = new("AlignOrientation", { Name = "RiftCarFlyOrientation", Attachment0 = attachment,
+                Mode = Enum.OrientationAlignmentMode.OneAttachment, CFrame = root.CFrame.Rotation,
+                MaxTorque = math.max(root.AssemblyMass * workspace.Gravity * 100, 10000),
+                MaxAngularVelocity = 4, Responsiveness = 15, RigidityEnabled = false }, root)
+        end
+        local forward = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
+        if forward.Magnitude < 0.001 then
+            forward = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+        end
+        if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) end
+        forward = forward.Unit
+        local right = Vector3.new(-forward.Z, 0, forward.X)
+        local movement, vertical = Vector3.zero, 0
+        if not anyMenuVisible() and not UIS:GetFocusedTextBox() then
+            if UIS:IsKeyDown(Enum.KeyCode.W) then movement += forward end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then movement -= forward end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then movement += right end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then movement -= right end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then vertical += 1 end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then vertical -= 1 end
+        end
+        if movement.Magnitude > 1 then movement = movement.Unit end
+        velocity.VectorVelocity = movement * fly.Speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
+        if fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
+    end
+    track(RunService.PreSimulation:Connect(function(dt)
+        local ok, err = pcall(fly.Step, dt)
+        if not ok then
+            clear()
+            fly.Enabled = false
+            if os.clock() - lastError >= 5 then
+                lastError = os.clock()
+                Settings.Notify("Car Fly paused", tostring(err), "error")
+            end
+        end
+    end))
+    track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false clear() end })
+    local section = gameSection("Cold War", MainTab.Left, "Car Fly")
+    Elements.Toggle(section, "Car Fly", false, function(on) fly.Enabled = on if not on then clear() end end)
+    Elements.Slider(section, "Speed", 5, 150, 45, "studs/s", function(value) fly.Speed = value end)
+    Elements.Slider(section, "Vertical Speed", 5, 100, 25, "studs/s", function(value) fly.VerticalSpeed = value end)
+    Elements.Toggle(section, "Face Camera", true, function(on) fly.FaceCamera = on end)
+    Elements.Label(section, "Driver seat: WASD, Space up, Left Ctrl down.")
+end
+
 function Settings.SetupColdWarSpider()
     local spider = { Enabled = false, Speed = 12, Mantle = true, LeaveOnCorrection = true, Destroyed = false }
     Settings.ColdWarSpider = spider
@@ -12391,6 +12476,7 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarLocalEffects()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSpider()
+    Settings.SetupColdWarCarFly()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

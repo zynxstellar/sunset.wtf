@@ -273,6 +273,11 @@ def main():
         local_effects_path = temp / 'local-effects-spec.luau'
         local_effects_path.write_text(local_effects_spec.replace('-- INSERT_LOCAL_EFFECTS', local_effects_source), encoding='utf-8')
         subprocess.run([str(runtime), str(local_effects_path)], check=True)
+        car_fly_spec = (ROOT / 'tests' / 'car-fly-spec.luau').read_text(encoding='utf-8-sig')
+        car_fly_path = temp / 'car-fly-spec.luau'
+        car_fly_path.write_text(car_fly_spec.replace('-- INSERT_CAR_FLY',
+            between(inner, 'function Settings.SetupColdWarCarFly()', '\nfunction Settings.SetupColdWarSpider()')), encoding='utf-8')
+        subprocess.run([str(runtime), str(car_fly_path)], check=True)
         rivals_chunks = [
             'atmosphereColorControls = (function()\n' + between(inner, 'local atmosphereEnabled, atmospherePreset', '\ndo\n    local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")') + '\nreturn atmosphereColorControls end)()\n',
             between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing game runtime...")'),
