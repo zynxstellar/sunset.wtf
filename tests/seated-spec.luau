@@ -60,7 +60,7 @@ local inputHandler
 local UIS = { InputBegan = {Connect=function(_, fn)
     inputHandler = fn return {Disconnect=function() end}
 end}, GetFocusedTextBox=function() return nil end }
-local task = { defer=function(fn) fn() end }
+local task = { defer=function(fn) fn() end, delay=function(_, fn) fn() end }
 local toggle, checkButton
 local Elements = { Toggle = function(_, _, _, callback) toggle = callback end,
     Button = function(_, name, callback) assert(name == "Check Seated") checkButton = callback end }
@@ -126,11 +126,35 @@ local status = checkButton()
 assert(string.find(status, "seat=true", 1, true) and string.find(status, "hooks=true", 1, true))
 assert(string.find(status, "gateHumanoid=true", 1, true))
 assert(#notices > 0 and notices[#notices][1] == "Shoot While Seated")
-local noticeBaseline = #notices
+local tools = {{Name="PKM"},{Name="PM"}}
+local equipped, equipCalls = nil, 0
+inventory.getTools = function() assert(identity==2) return tools end
+inventory.getEquipped = function() assert(identity==2) return equipped end
+inventory.equip = function(tool)
+    assert(identity==2)
+    equipCalls += 1
+    if replacements[nativeGate]() then equipped=tool end
+end
 inputHandler({KeyCode={Name="One"}})
-assert(#notices==noticeBaseline+1, "weapon key did not show seated status")
+assert(equipped==tools[1] and equipCalls==1 and identity==8, "number key did not equip through native inventory")
 inputHandler({KeyCode={Name="One"}})
-assert(#notices==noticeBaseline+1, "weapon key spam flooded notifications")
+assert(equipCalls==1, "key spam repeated native equip")
+now += 1
+inputHandler({KeyCode={Name="One"}})
+assert(equipCalls==1 and equipped==tools[1], "already equipped tool was toggled by fallback")
+now += 1
+inputHandler({KeyCode={Name="Two"}})
+assert(equipped==tools[2] and equipCalls==2, "slot selection did not use native tool order")
+gateValues[5]=true
+equipped=nil
+assert(not feature.EquipSlot(1) and equipped==nil, "fallback bypassed swimming guard")
+gateValues[5]=false
+local successfulEquip=inventory.equip
+inventory.equip=function() error("native equip failure") end
+assert(not feature.EquipSlot(1) and notices[#notices][3]=="error" and identity==8,
+    "native equip exception leaked or did not show an error notification")
+inventory.equip=successfulEquip
+assert(feature.EquipSlot(1), "native equip did not recover after an exception")
 
 local customResult = table.pack(inventory.setSeated(true))
 assert(not blocked and customResult.n == 3)

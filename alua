@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-seat-platform-k320"
+local SUNSET_BUILD = "20261009-rift-seated-input-k321"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12208,6 +12208,42 @@ function Settings.SetupColdWarSeated()
         Settings.Notify("Shoot While Seated", summary, seated.LastError and "error" or nil)
         return message
     end
+    local equipRunning = false
+    function seated.EquipSlot(index)
+        if destroyed or not seated.Enabled or not seated.Available or equipRunning
+            or Settings.SelectedGame ~= "Cold War" or not hooks.InSeat(humanoid()) then return false end
+        local inventory = hooks.Inventory
+        if not inventory or type(inventory.getTools) ~= "function"
+            or type(inventory.getEquipped) ~= "function" then
+            Settings.Notify("Shoot While Seated", "Inventory equip interface is unavailable.", "error")
+            return false
+        end
+        local tools = nativeCall(inventory.getTools)
+        local tool = type(tools) == "table" and tools[index]
+        if not tool then
+            Settings.Notify("Shoot While Seated", "No tool found in slot " .. tostring(index) .. ".", "error")
+            return false
+        end
+        if nativeCall(inventory.getEquipped) == tool then return true end
+        if hooks.ReadGate and hooks.ReadGate()[1] then return false end
+        equipRunning = true
+        local ok, err = pcall(nativeCall, inventory.equip, tool)
+        equipRunning = false
+        if not ok then
+            seated.LastError = tostring(err)
+            Settings.Notify("Seated equip error", seated.LastError, "error")
+            warn("[Rift] Seated equip: " .. seated.LastError)
+            return false
+        end
+        if destroyed or not seated.Enabled then return false end
+        if nativeCall(inventory.getEquipped) == tool then
+            Settings.Notify("Shoot While Seated", "Equipped " .. tostring(tool.Name) .. ".")
+            return true
+        end
+        seated.Check()
+        Settings.Notify("Seated equip incomplete", "The native equip call returned without equipping the tool.", "error")
+        return false
+    end
     function seated.Restore() destroyed = true restore() end
     track(RunService.RenderStepped:Connect(seated.Update))
     track({ Disconnect = seated.Restore })
@@ -12219,16 +12255,25 @@ function Settings.SetupColdWarSeated()
     end)
     Elements.Button(section, "Check Seated", seated.Check)
     if UIS and UIS.InputBegan then
-        local lastCheck = -math.huge
-        local numberKeys = { One=true, Two=true, Three=true, Four=true, Five=true,
-            Six=true, Seven=true, Eight=true, Nine=true, Zero=true }
+        local lastAttempt = -math.huge
+        local numberKeys = { One=1, Two=2, Three=3, Four=4, Five=5,
+            Six=6, Seven=7, Eight=8, Nine=9, Zero=10 }
         track(UIS.InputBegan:Connect(function(input)
             if not seated.Enabled or Settings.SelectedGame ~= "Cold War"
                 or not input.KeyCode or not numberKeys[input.KeyCode.Name]
-                or UIS:GetFocusedTextBox() or os.clock() - lastCheck < 2 then return end
-            lastCheck = os.clock()
-            task.defer(function()
-                if not destroyed and seated.Enabled then seated.Check() end
+                or UIS:GetFocusedTextBox() or os.clock() - lastAttempt < 0.35 then return end
+            lastAttempt = os.clock()
+            local index, character = numberKeys[input.KeyCode.Name], LocalPlayer.Character
+            local inventory = hooks.Inventory
+            local wasEquipped = false
+            if inventory and inventory.getTools and inventory.getEquipped then
+                local tools = nativeCall(inventory.getTools)
+                wasEquipped = tools[index] ~= nil and nativeCall(inventory.getEquipped) == tools[index]
+            end
+            -- Give the normal input action the first attempt. Never toggle an already equipped tool.
+            task.delay(0.08, function()
+                if destroyed or not seated.Enabled or LocalPlayer.Character ~= character then return end
+                if not wasEquipped then seated.EquipSlot(index) end
             end)
         end))
     end
