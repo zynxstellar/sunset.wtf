@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-remove-gravity-k331"
+local SUNSET_BUILD = "20261010-rift-remove-jump-delay-k332"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12073,33 +12073,6 @@ function Settings.SetupColdWarSpider()
     track({ Disconnect = function() spider.Enabled, spider.Destroyed = false, true reset() end })
 end
 
-function Settings.SetupColdWarJump()
-    local jump = { Enabled = false, Destroyed = false }
-    Settings.ColdWarJump = jump
-    function jump.Request()
-        if jump.Destroyed or not jump.Enabled or Settings.SelectedGame ~= "Cold War"
-            or anyMenuVisible() or UIS:GetFocusedTextBox() then return end
-        local character = LocalPlayer.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if not root or root.Anchored or not humanoid or humanoid.Health <= 0
-            or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == Enum.Material.Air
-            or humanoid:GetState() == Enum.HumanoidStateType.Swimming then return end
-        local speed = humanoid.UseJumpPower and humanoid.JumpPower
-            or math.sqrt(2 * workspace.Gravity * humanoid.JumpHeight)
-        if type(speed) ~= "number" or speed <= 0 or speed ~= speed or speed == math.huge then return end
-        local velocity = root.AssemblyLinearVelocity
-        root.AssemblyLinearVelocity = Vector3.new(velocity.X, math.max(velocity.Y, speed), velocity.Z)
-        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-    local section = gameSection("Cold War", MainTab.Left, "No Jump Delay")
-    Elements.Toggle(section, "No Jump Delay", false, function(on)
-        jump.Enabled = on == true and not jump.Destroyed
-    end)
-    track(UIS.JumpRequest:Connect(jump.Request))
-    track({ Disconnect = function() jump.Enabled, jump.Destroyed = false, true end })
-end
-
 function Settings.SetupColdWarSession()
     local session = { Seconds = 0, Kills = 0, Deaths = 0, Observed = {}, Enabled = false }
     Settings.ColdWarSession = session
@@ -12170,7 +12143,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSpider()
-    Settings.SetupColdWarJump()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")
