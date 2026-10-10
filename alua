@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-compact-ui-k327"
+local SUNSET_BUILD = "20261010-rift-flat-blue-ui-k328"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -92,20 +92,20 @@ end
 
 
 local T = {
-    bg        = Color3.fromRGB(16, 18, 29),
-    panel     = Color3.fromRGB(22, 27, 41),
-    inner     = Color3.fromRGB(26, 32, 48),
-    element   = Color3.fromRGB(34, 40, 59),
-    elementHi = Color3.fromRGB(47, 54, 78),
-    border    = Color3.fromRGB(52, 60, 89),
-    outer     = Color3.fromRGB(74, 64, 128),
-    red       = Color3.fromRGB(139, 92, 246),
-    accent    = Color3.fromRGB(139, 92, 246),
-    gold      = Color3.fromRGB(77, 224, 208),
+    bg        = Color3.fromRGB(11, 17, 28),
+    panel     = Color3.fromRGB(17, 26, 42),
+    inner     = Color3.fromRGB(21, 33, 51),
+    element   = Color3.fromRGB(27, 43, 65),
+    elementHi = Color3.fromRGB(35, 56, 84),
+    border    = Color3.fromRGB(42, 63, 89),
+    outer     = Color3.fromRGB(51, 80, 115),
+    red       = Color3.fromRGB(64, 145, 255),
+    accent    = Color3.fromRGB(64, 145, 255),
+    gold      = Color3.fromRGB(112, 182, 255),
     text      = Color3.fromRGB(242, 244, 255),
     dim       = Color3.fromRGB(154, 167, 195),
     muted     = Color3.fromRGB(154, 167, 195),
-    font      = Enum.Font.Code,
+    font      = Enum.Font.GothamMedium,
 }
 local BedWars
 local bedWarsHiddenSections = {}
@@ -424,7 +424,7 @@ ENV.SunsetLoading.Track = new("Frame", {
 }, ENV.SunsetLoading.Overlay)
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Track)
 ENV.SunsetLoading.Fill = new("Frame", {
-    Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = Color3.fromRGB(139, 92, 246),
+    Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = T.accent,
     BorderSizePixel = 0, ZIndex = 1002,
 }, ENV.SunsetLoading.Track)
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
@@ -1095,7 +1095,6 @@ function Elements.ColorPicker(parent, text, default, callback)
         Text = "", AutoButtonColor = false,
     }, wheel)
     border(brightness, T.border)
-    local brightnessGradient = new("UIGradient", {}, brightness)
     local brightnessMarker = new("Frame", {
         Size = UDim2.fromOffset(3, 20), AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0, 0.5), BackgroundColor3 = T.text,
@@ -1110,7 +1109,7 @@ function Elements.ColorPicker(parent, text, default, callback)
         local angle = hue * math.pi * 2 - math.pi / 2
         selected.Position = UDim2.fromOffset(76 + math.cos(angle) * saturation * 72,
             76 + math.sin(angle) * saturation * 72)
-        brightnessGradient.Color = ColorSequence.new(Color3.fromHSV(hue, saturation, 1), Color3.new(0, 0, 0))
+        brightness.BackgroundColor3 = color
         brightnessMarker.Position = UDim2.new(1 - value, 0, 0.5, 0)
         if notify ~= false and callback then task.spawn(Settings.RunCallback, callback, color) end
     end
@@ -1812,7 +1811,7 @@ task.spawn(function()
         if os.clock() - last >= 1 then
             local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
             Watermark.Text = Settings.GameBoards[Settings.SelectedGame] ~= nil
-                and string.format("RIFT  â€¢  %s  â€¢  %d FPS  â€¢  %d MS", LocalPlayer.Name, frames, ping)
+                and string.format("RIFT | %s | %d FPS | %d MS", LocalPlayer.Name, frames, ping)
                 or string.format("Rift | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
             frames, last = 0, os.clock()
         end
@@ -2617,7 +2616,7 @@ do
     local original = {}
     for role, value in pairs(T) do original[role] = value end
     local accents = {
-        Rift = Color3.fromRGB(139, 92, 246),
+        Rift = Color3.fromRGB(64, 145, 255),
         Sunset = Color3.fromRGB(255, 132, 92),
         Ocean = Color3.fromRGB(83, 176, 237),
         Amethyst = Color3.fromRGB(177, 120, 245),
@@ -2660,15 +2659,6 @@ do
                 end
                 if object:IsA("UIStroke") then update("Color") end
                 if object:IsA("ScrollingFrame") then update("ScrollBarImageColor3") end
-                if object:IsA("UIGradient") then
-                    if not originalColors.Gradient then originalColors.Gradient = object.Color end
-                    local points = {}
-                    for _, point in ipairs(originalColors.Gradient.Keypoints) do
-                        points[#points + 1] = ColorSequenceKeypoint.new(point.Time,
-                            name == "Rift" and point.Value or tintColor(point.Value, hue))
-                    end
-                    object.Color = ColorSequence.new(points)
-                end
             end
         end
     end
@@ -3116,7 +3106,7 @@ do
         Image = "", ScaleType = Enum.ScaleType.Crop,
     }, BedWars.SpotifyPanel)
     new("UICorner", { CornerRadius = UDim.new(0, 9) }, cover)
-    local icon = label(cover, "â™«", 29, T.gold, Enum.TextXAlignment.Center)
+    local icon = label(cover, "Music", 16, T.gold, Enum.TextXAlignment.Center)
     icon.Size = UDim2.fromScale(1, 1)
     local heading = label(BedWars.SpotifyPanel, "MUSIC OVERLAY", 10,
         T.gold)
@@ -3513,7 +3503,7 @@ do
     title.Active = true
     local close = new("TextButton", {
         Position = UDim2.new(1, -42, 0, 8), Size = UDim2.fromOffset(30, 30),
-        Text = "Ã—", Font = Enum.Font.GothamBold, TextSize = 20,
+        Text = "X", Font = Enum.Font.GothamBold, TextSize = 20,
         TextColor3 = Color3.fromRGB(255, 226, 210),
         BackgroundColor3 = Color3.fromRGB(55, 38, 48), BorderSizePixel = 0,
     }, explorer)
@@ -3587,7 +3577,7 @@ do
                 BackgroundTransparency = count % 2 == 0 and 0.78 or 1,
                 BackgroundColor3 = Color3.fromRGB(85, 54, 70),
                 Text = string.rep("  ", math.min(depth, 12))
-                    .. (#children > 0 and (expanded[instance] and "â–¾ " or "â–¸ ") or "  ")
+                    .. (#children > 0 and (expanded[instance] and "v " or "> ") or "  ")
                     .. instance.Name .. "  [" .. instance.ClassName .. "]",
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 TextXAlignment = Enum.TextXAlignment.Left,
@@ -6750,7 +6740,7 @@ do
                 local valid = nearest and distance <= 6
                     and nearest.PrimaryPart
                     and CollectionService:HasTag(nearest.PrimaryPart, "MinerInteraction")
-                table.insert(lines, valid and "Gather valid Â· hold 2.5s"
+                table.insert(lines, valid and "Gather valid | hold 2.5s"
                     or "Gather unavailable")
             end
             if BedWars.MinerRewardsOn then
@@ -8554,11 +8544,11 @@ function BedWars.BuildUI(boardGame)
         and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
         or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
     local boardWidth = 880
-    local accent = Color3.fromRGB(139, 92, 246)
-    local gold = Color3.fromRGB(77, 224, 208)
-    local dark = Color3.fromRGB(16, 18, 29)
-    local columnColor = Color3.fromRGB(26, 32, 48)
-    local cardColor = Color3.fromRGB(34, 40, 59)
+    local accent = T.accent
+    local gold = T.gold
+    local dark = T.bg
+    local columnColor = T.panel
+    local cardColor = T.element
     local muted = Color3.fromRGB(154, 167, 195)
     local board = new("Frame", {
         Name = "Rift" .. boardGame .. "Board", Visible = false, Active = true,
@@ -8602,24 +8592,10 @@ function BedWars.BuildUI(boardGame)
     }, board)
     makeDraggable(board, header)
     Settings.StartupStage("Drawing " .. boardGame .. " menu header...")
-    local logoId = riftAsset("rift-logo-transparent.png")
-    if logoId then
-        new("ImageLabel", {
-            Position = UDim2.fromOffset(19, 8), Size = UDim2.fromOffset(32, 32),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = logoId, ScaleType = Enum.ScaleType.Fit,
-        }, header)
-    else
-        local logoFallback = label(header, "R", 21, gold,
-            Enum.TextXAlignment.Center)
-        logoFallback.Font = Enum.Font.GothamBold
-        logoFallback.Position = UDim2.fromOffset(20, 8)
-        logoFallback.Size = UDim2.fromOffset(30, 30)
-    end
     local title = label(header, BRAND .. " | " .. string.upper(boardGame), 22, Color3.fromRGB(242, 244, 255))
     title.Font = Enum.Font.GothamBold
-    title.Position = UDim2.fromOffset(58, 10)
-    title.Size = UDim2.fromOffset(230, 27)
+    title.Position = UDim2.fromOffset(24, 12)
+    title.Size = UDim2.fromOffset(380, 27)
     local subtitle = label(header, string.upper(boardGame) .. "  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
     subtitle.Font = Enum.Font.Gotham
     subtitle.Position = UDim2.fromOffset(24, 38)
@@ -8629,8 +8605,8 @@ function BedWars.BuildUI(boardGame)
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchFrame)
-    border(searchFrame, Color3.fromRGB(74, 64, 128))
+    new("UICorner", { CornerRadius = UDim.new(0, 8) }, searchFrame)
+    border(searchFrame, T.border)
     local searchRing = new("Frame", {
         Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
         BackgroundTransparency = 1, BorderSizePixel = 0,
@@ -8654,7 +8630,7 @@ function BedWars.BuildUI(boardGame)
     end
     local searchBox = new("TextBox", {
         Position = UDim2.fromOffset(36, 3),
-        Size = UDim2.new(1, -75, 1, -6),
+        Size = UDim2.new(1, -48, 1, -6),
         BackgroundTransparency = 1, BorderSizePixel = 0,
         Font = Enum.Font.GothamMedium, TextSize = 15,
         TextColor3 = Color3.fromRGB(242, 244, 255),
@@ -8662,43 +8638,16 @@ function BedWars.BuildUI(boardGame)
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
     }, searchFrame)
     Settings.ActiveSearchBox = searchBox
-    local clearSearch = new("TextButton", {
-        Position = UDim2.new(1, -30, 0, 3), Size = UDim2.fromOffset(26, 30),
-        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
-        Font = Enum.Font.GothamBold, TextSize = 19, TextColor3 = muted,
-        AutoButtonColor = false, Visible = true,
-    }, searchFrame)
-    local trashId = riftAsset("trash.png")
-    local trashIcon
-    if trashId then
-        trashIcon = new("ImageLabel", {
-            Position = UDim2.fromOffset(2, 3), Size = UDim2.fromOffset(23, 23),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = trashId, ImageColor3 = gold,
-            ImageTransparency = 0, ScaleType = Enum.ScaleType.Fit,
-        }, clearSearch)
-    else
-        riftTrashFallback(clearSearch, gold)
-    end
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        if trashIcon then
-            trashIcon.ImageTransparency = 0
-        end
-    end)
-    clearSearch.MouseButton1Click:Connect(function()
-        searchBox.Text = ""
-        searchBox:CaptureFocus()
-    end)
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -41, 0, 29),
-        Size = UDim2.fromOffset(26, 26),
-        BackgroundColor3 = Color3.fromRGB(47, 39, 79), BorderSizePixel = 0,
+        Position = UDim2.new(1, -44, 0, 19),
+        Size = UDim2.fromOffset(28, 28),
+        BackgroundColor3 = cardColor, BorderSizePixel = 0,
         Font = Enum.Font.GothamBold, TextSize = 13,
         Text = "X", TextColor3 = Color3.fromRGB(242, 244, 255),
         AutoButtonColor = false,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
-    border(closeButton, accent)
+    new("UICorner", { CornerRadius = UDim.new(0, 7) }, closeButton)
+    border(closeButton, T.border)
     closeButton.MouseButton1Click:Connect(function() board.Visible = false end)
     Settings.StartupStage("Creating " .. boardGame .. " menu columns...")
     local columns = {}
@@ -8723,11 +8672,7 @@ function BedWars.BuildUI(boardGame)
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
         }, board)
         new("UICorner", { CornerRadius = UDim.new(0, 10) }, col)
-        border(col, Color3.fromRGB(74, 64, 128))
-        new("UIGradient", { Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 36, 56)),
-            ColorSequenceKeypoint.new(1, columnColor),
-        }), Rotation = 90 }, col)
+        border(col, T.border)
         local heading = label(col, string.upper(name == "Sunset" and BRAND or name), 14,
             Color3.fromRGB(242, 244, 255))
         heading.Font = Enum.Font.GothamBold
@@ -8928,7 +8873,7 @@ function BedWars.BuildUI(boardGame)
             local column = columns[category]
             local selected = category == name
             column.Frame.Visible = selected
-            column.Nav.BackgroundColor3 = selected and columnColor or dark
+            column.Nav.BackgroundColor3 = selected and T.element or dark
             column.Nav.TextColor3 = selected and T.text or muted
         end
     end
@@ -9352,7 +9297,7 @@ function BedWars.BuildUI(boardGame)
         BorderSizePixel = 0, ZIndex = 500,
     }, Gui)
     new("UICorner", { CornerRadius = UDim.new(0, 2) }, tooltip)
-    border(tooltip, Color3.fromRGB(139, 92, 246))
+    border(tooltip, T.border)
     local tooltipText = label(tooltip, "", 13,
         Color3.fromRGB(242, 244, 255))
     tooltipText.Position = UDim2.fromOffset(10, 7)
@@ -9401,18 +9346,18 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             local card = new("TextButton", {
-                Name = name, Size = UDim2.new(1, -3, 0, 35),
-                BackgroundColor3 = columnColor, BorderSizePixel = 0,
+                Name = name, Size = UDim2.new(1, -3, 0, 42),
+                BackgroundColor3 = T.inner, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
-            new("UICorner", { CornerRadius = UDim.new(0, 2) }, card)
+            new("UICorner", { CornerRadius = UDim.new(0, 7) }, card)
             local holder
             if hasSettings then
                 holder = new("Frame", {
                     Name = name .. "Settings", Visible = false,
                     Size = UDim2.new(1, -3, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundColor3 = Color3.fromRGB(22, 27, 41),
+                    BackgroundColor3 = T.inner,
                     BorderSizePixel = 0, LayoutOrder = index * 2 + 1,
                 }, columns[category].List)
                 new("UICorner", { CornerRadius = UDim.new(0, 2) }, holder)
@@ -9422,23 +9367,16 @@ function BedWars.BuildUI(boardGame)
                     if holder.Visible then columns[category].Reflow() end
                 end))
             end
-            local activeGradient = new("UIGradient", {
-                Enabled = false, Rotation = 0,
-                Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(106, 72, 173)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 111, 130)),
-                }),
-            }, card)
             local nameLabel = label(card, name, 14, Color3.fromRGB(242, 244, 255))
             nameLabel.Font = Enum.Font.GothamMedium
-            nameLabel.Position = UDim2.fromOffset(10, 7)
+            nameLabel.Position = UDim2.fromOffset(13, 10)
             nameLabel.Size = UDim2.new(1, hasSettings and -45 or -20, 0, 21)
             nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
             local options = new("TextButton", {
-                Position = UDim2.new(1, -31, 0, 4),
+                Position = UDim2.new(1, -34, 0, 7),
                 Size = UDim2.fromOffset(27, 27),
                 BackgroundTransparency = 1,
-                BorderSizePixel = 0, Text = "Â·Â·Â·",
+                BorderSizePixel = 0, Text = "...",
                 Font = Enum.Font.GothamBold, TextSize = 15,
                 TextColor3 = muted, AutoButtonColor = false,
                 Visible = hasSettings,
@@ -9487,7 +9425,7 @@ function BedWars.BuildUI(boardGame)
             table.insert(cards, { Category = category, Card = card, Control = control,
                 Name = nameLabel, Options = options, Holder = holder, Search = searchText,
                 Kit = category == "KIT" and (kitIds[spec[7]] or spec[8]) or nil,
-                Hovered = function() return hovered end, Gradient = activeGradient })
+                Hovered = function() return hovered end })
         end
     end
     local function refreshSearch()
@@ -9584,9 +9522,8 @@ function BedWars.BuildUI(boardGame)
             if board.Visible then
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
-                    entry.Gradient.Enabled = active
-                    local targetColor = active and Color3.new(1, 1, 1)
-                        or (entry.Hovered() and cardColor or columnColor)
+                    local targetColor = active and Color3.fromRGB(28, 70, 114)
+                        or (entry.Hovered() and cardColor or T.inner)
                     if entry.LastColor ~= targetColor then
                         entry.LastColor = targetColor
                         TweenService:Create(entry.Card, TweenInfo.new(0.18,
@@ -9623,8 +9560,7 @@ function BedWars.BuildUI(boardGame)
                 math.max(1, viewport.Y - 52) / math.max(1, contentHeight))
             moduleBrand.Text = BRAND
             for index, entry in ipairs(activeRows) do
-                local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
-                local color = gold:Lerp(Color3.fromRGB(139, 92, 246), progress)
+                local color = gold
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
                 entry.ModuleRow.Position = UDim2.new(1, 0, 0,
@@ -11480,7 +11416,7 @@ function Settings.SetupColdWarVisualExtras()
     Elements.Toggle(section, "Impact Dot", true, function(on) trails.Impact = on end)
     local cameraSection = gameSection("Cold War", VisualsTab.Left, "FOV")
     Elements.Toggle(cameraSection, "FOV", false, function(on) fov.Enabled = on if not on then restoreFOV() end end)
-    Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "Â°", function(value) fov.Value = value end)
+    Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "deg", function(value) fov.Value = value end)
 end
 
 function Settings.SetupColdWarWeaponTuning()
@@ -12182,7 +12118,7 @@ function Settings.SetupProjectDelta()
     track({ Disconnect = function() fov.Enabled = false restore() end })
     local fovSection = gameSection("Project Delta", VisualsTab.Left, "FOV")
     Elements.Toggle(fovSection, "FOV", false, function(on) fov.Enabled = on fov.Apply() end)
-    Elements.Slider(fovSection, "Value", 40, 120, 80, "Â°", function(value)
+    Elements.Slider(fovSection, "Value", 40, 120, 80, "deg", function(value)
         fov.Value = value
         fov.Apply()
     end)

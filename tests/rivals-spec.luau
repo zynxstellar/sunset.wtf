@@ -694,7 +694,7 @@ Camera.ViewportSize = Vector2.new(1920, 1080)
 Camera.signals.ViewportSize:Fire()
 assert(menuScale.Scale == 1, "menu did not resize after viewport replacement")
 end
-assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
+assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==42)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
 assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")

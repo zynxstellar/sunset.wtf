@@ -44,20 +44,20 @@ end
 
 
 local T = {
-    bg        = Color3.fromRGB(16, 18, 29),
-    panel     = Color3.fromRGB(22, 27, 41),
-    inner     = Color3.fromRGB(26, 32, 48),
-    element   = Color3.fromRGB(34, 40, 59),
-    elementHi = Color3.fromRGB(47, 54, 78),
-    border    = Color3.fromRGB(52, 60, 89),
-    outer     = Color3.fromRGB(74, 64, 128),
-    red       = Color3.fromRGB(139, 92, 246),
-    accent    = Color3.fromRGB(139, 92, 246),
-    gold      = Color3.fromRGB(77, 224, 208),
+    bg        = Color3.fromRGB(11, 17, 28),
+    panel     = Color3.fromRGB(17, 26, 42),
+    inner     = Color3.fromRGB(21, 33, 51),
+    element   = Color3.fromRGB(27, 43, 65),
+    elementHi = Color3.fromRGB(35, 56, 84),
+    border    = Color3.fromRGB(42, 63, 89),
+    outer     = Color3.fromRGB(51, 80, 115),
+    red       = Color3.fromRGB(64, 145, 255),
+    accent    = Color3.fromRGB(64, 145, 255),
+    gold      = Color3.fromRGB(112, 182, 255),
     text      = Color3.fromRGB(242, 244, 255),
     dim       = Color3.fromRGB(154, 167, 195),
     muted     = Color3.fromRGB(154, 167, 195),
-    font      = Enum.Font.Code,
+    font      = Enum.Font.GothamMedium,
 }
 local BedWars
 local bedWarsHiddenSections = {}
@@ -353,7 +353,7 @@ ENV.SunsetLoading.Track = new("Frame", {
 }, ENV.SunsetLoading.Overlay)
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Track)
 ENV.SunsetLoading.Fill = new("Frame", {
-    Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = Color3.fromRGB(139, 92, 246),
+    Size = UDim2.fromScale(0.05, 1), BackgroundColor3 = T.accent,
     BorderSizePixel = 0, ZIndex = 1002,
 }, ENV.SunsetLoading.Track)
 new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
@@ -1024,7 +1024,6 @@ function Elements.ColorPicker(parent, text, default, callback)
         Text = "", AutoButtonColor = false,
     }, wheel)
     border(brightness, T.border)
-    local brightnessGradient = new("UIGradient", {}, brightness)
     local brightnessMarker = new("Frame", {
         Size = UDim2.fromOffset(3, 20), AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.fromScale(0, 0.5), BackgroundColor3 = T.text,
@@ -1039,7 +1038,7 @@ function Elements.ColorPicker(parent, text, default, callback)
         local angle = hue * math.pi * 2 - math.pi / 2
         selected.Position = UDim2.fromOffset(76 + math.cos(angle) * saturation * 72,
             76 + math.sin(angle) * saturation * 72)
-        brightnessGradient.Color = ColorSequence.new(Color3.fromHSV(hue, saturation, 1), Color3.new(0, 0, 0))
+        brightness.BackgroundColor3 = color
         brightnessMarker.Position = UDim2.new(1 - value, 0, 0.5, 0)
         if notify ~= false and callback then task.spawn(Settings.RunCallback, callback, color) end
     end

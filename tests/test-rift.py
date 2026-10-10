@@ -28,6 +28,12 @@ def main():
     source = (ROOT / 'alua').read_text(encoding='utf-8')
     inner = between(source, 'local source = [========[', ']========]')
     inner = inner[len('local source = [========['):]
+    assert 'new("UIGradient"' not in inner, 'Flat UI still creates gradients'
+    for corrupt in ('Â', 'â€', 'Ã—', 'â™', 'â–'):
+        assert corrupt not in inner, 'UI text still contains encoding corruption'
+    board_ui = between(inner, 'function BedWars.BuildUI(boardGame)', '\nlocal function rivalsModuleLoaded(')
+    assert 'rift-logo-transparent.png' not in board_ui and 'trash.png' not in board_ui
+    assert 'riftTrashFallback(' not in board_ui, 'Removed trash icon is still rendered'
     startup_guard = inner.split('local ENV =', 1)[0]
     assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
         'Project Delta is supported but the startup guard returns before building its UI'
