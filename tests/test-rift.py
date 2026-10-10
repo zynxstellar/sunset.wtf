@@ -113,6 +113,15 @@ def main():
             lifecycle_path.write_text(lifecycle_spec, encoding='utf-8')
             subprocess.run([str(runtime), str(lifecycle_path)], check=True)
         assert 'pcall(environment.SunsetAbortStartup)' in universal_source
+        for client_name, client_inner in [('dedicated', inner), ('universal', universal_inner)]:
+            target_spec = (ROOT / 'tests' / 'target-index-spec.luau').read_text(encoding='utf-8')
+            target_spec = target_spec.replace('-- INSERT_PLAYER_INDEX',
+                between(client_inner, 'local TargetModels =', '\nlocal function modelPart'))
+            target_path = temp / (client_name + '-target-index.luau')
+            target_path.write_text(target_spec, encoding='utf-8')
+            subprocess.run([str(runtime), str(target_path)], check=True)
+            assert 'if game.PlaceId == 6872265039 or game.GameId == 2619619496 then\nfor _, node in ipairs(workspace:GetDescendants()) do indexBedWarsMapNode(node) end' in client_inner
+
 
         failure_spec = (ROOT / 'tests' / 'startup-failure-spec.luau').read_text(encoding='utf-8')
         failure_spec = failure_spec.replace('-- INSERT_STARTUP_ABORT',
@@ -168,7 +177,7 @@ def main():
         coldwar_spec = coldwar_spec.replace('-- INSERT_GAME_RUNTIME_DISPATCH',
             between(inner, 'if Settings.IsColdWar then\n    -- There are no BedWars', '\nlocal Fun ='))
         coldwar_spec = coldwar_spec.replace('-- INSERT_TARGET_DISPATCH',
-            between(inner, 'if not Settings.IsColdWar then\n    track(workspace.DescendantAdded', '\nlocal function modelPart'))
+            between(inner, 'if not Settings.IsColdWar then\n    -- Index player characters only', '\nlocal function modelPart'))
         coldwar_spec = coldwar_spec.replace('-- INSERT_ASSET_PRODUCTION',
             between(inner, 'local function riftAsset(', '\nlocal function riftTrashFallback'))
         coldwar_path = temp / 'coldwar-startup-spec.luau'

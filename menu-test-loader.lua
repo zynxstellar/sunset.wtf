@@ -119,7 +119,7 @@ local RivalsKillChat = { Enabled = false, Cooldown = 2, Queue = {} }
 local function new(class, props, parent)
     local i = Instance.new(class)
     for k, v in pairs(props) do i[k] = v end
-    if Settings.IsColdWar and class == "ScreenGui" and parent == PlayerGui then
+    if Settings.IsColdWar and not Settings.RecoveryMode and class == "ScreenGui" and parent == PlayerGui then
         i.Parent = parent
     else
         i.Parent = parent

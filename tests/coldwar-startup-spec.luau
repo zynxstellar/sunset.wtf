@@ -22,6 +22,10 @@ local workspace = {
     DescendantAdded = {Connect = function(_, fn) listeners += 1 return fn end},
 }
 local function registerTargetPart() targets += 1 end
+local Players = {
+    GetPlayers=function() return {{Character={},CharacterAdded={Connect=function() listeners+=1 return {} end}}} end,
+    PlayerAdded={Connect=function() listeners+=1 return {} end},
+}
 local function track(value) return value end
 local function initializeTargets()
     -- INSERT_TARGET_DISPATCH
@@ -31,7 +35,7 @@ initializeTargets()
 assert(scans == 0 and listeners == 0 and targets == 0, "Cold War scanned the entire map")
 Settings.IsColdWar = false
 initializeTargets()
-assert(scans == 1 and listeners == 1 and targets == 2)
+assert(scans == 0 and listeners == 2 and targets == 1, "startup scanned the map instead of player characters")
 
 local ENV = {}
 local SUNSET_BUILD = "test-build"

@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-universal-lifecycle-safety-k278"
+local SUNSET_BUILD = "20261010-rift-universal-full-ui-startup-k279"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -1665,16 +1665,22 @@ end
 
 
 
-local TargetModels = {}
-local function registerTargetPart(part)
-    if not part:IsA("BasePart") then return end
-    if part.Name ~= "Head" and part.Name ~= "HumanoidRootPart" and part.Name ~= "RootPart" then return end
-    if part:FindFirstAncestorOfClass("Tool") or part:FindFirstAncestorOfClass("Accessory") then return end
-    local model = part:FindFirstAncestorOfClass("Model")
-    if model then TargetModels[model] = true end
+local TargetModels = setmetatable({}, { __mode = "k" })
+local function registerTargetPart(character)
+    if character and character:IsA("Model") and Players:GetPlayerFromCharacter(character) then
+        TargetModels[character] = true
+    end
 end
-track(workspace.DescendantAdded:Connect(registerTargetPart))
-for _, descendant in ipairs(workspace:GetDescendants()) do registerTargetPart(descendant) end
+do
+    -- Index player characters only, rather than every part in the entire map.
+    local function attachPlayer(player)
+        if player.Character then registerTargetPart(player.Character) end
+        track(player.CharacterAdded:Connect(registerTargetPart))
+    end
+    for _, player in ipairs(Players:GetPlayers()) do attachPlayer(player) end
+    track(Players.PlayerAdded:Connect(attachPlayer))
+end
+
 local function modelPart(model, name)
     local direct = model:FindFirstChild(name)
     if direct and direct:IsA("BasePart") then return direct end
@@ -4901,6 +4907,7 @@ local function indexBedWarsMapNode(node)
         end
     end
 end
+if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
 for _, node in ipairs(workspace:GetDescendants()) do indexBedWarsMapNode(node) end
 track(workspace.DescendantAdded:Connect(indexBedWarsMapNode))
 track(workspace.DescendantRemoving:Connect(function(node)
@@ -4909,6 +4916,8 @@ track(workspace.DescendantRemoving:Connect(function(node)
     oreCandidates[node] = nil
     enchantCandidates[node] = nil
 end))
+end
+
 local function bedWarsTeamColor(bed, strictNames)
     local teams = game:GetService("Teams"):GetTeams()
     local function resolve(value)

@@ -84,3 +84,10 @@ for _, gameName in ipairs({"BedWars", "Rivals"}) do
 end
 assert(hiddenCalls == previousHidden and coreCalls == previousCore and #connections == previousConnections + 2)
 print("PASS UI hosting: Cold War roots use gethui/CoreGui, children/layout preserved, unload cleanup, denied/missing APIs handled, other games keep PlayerGui")
+
+Settings.IsColdWar, Settings.RecoveryMode = true, true
+local beforeHidden,beforeCore=hiddenCalls,coreCalls
+local recoveryGui=new("ScreenGui", {Name="RecoveryMenu"}, PlayerGui)
+assert(recoveryGui.Parent==PlayerGui and hiddenCalls==beforeHidden and coreCalls==beforeCore,
+    "recovery startup touched a protected executor UI container")
+print("PASS recovery UI hosting: standard PlayerGui with no protected UI API access")
