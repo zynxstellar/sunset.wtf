@@ -68,7 +68,7 @@ local function flushNotifications() uiHeartbeat() end
 local function warn() end
 local BedWars = {Running=true,ScaffoldOn=true,ScaffoldTowerOn=true,
     ScaffoldVoidRescue=true,ScaffoldTowerSpeed=38,AuraOn=true,AuraCPS=10,MusicCoverFiles={},
-    VoidWaterWidth=96,VoidWaterDepth=96,WaterFightRange=14}
+    VoidWaterWidth=48,VoidWaterDepth=16,WaterFightRange=14}
 local Persistence = { HUDFrames={} }
 local ENV = {}
 local held, root, humanoid, character
@@ -271,6 +271,8 @@ BedWars.VoidWaterGap=3
 BedWars.WaterGroundY=40
 waterStep()
 assert(BedWars.VoidWater.Mode()=="Void", "void water stopped working")
+assert(terrain.LastRegion.Max.X-terrain.LastRegion.Min.X==48, "default pool width")
+assert(terrain.LastRegion.Max.Y-terrain.LastRegion.Min.Y==16, "default pool depth")
 local swimmingCopies, swimmingRestores = copies, restores
 humanoid.FloorMaterial = Enum.Material.Water
 for frame = 1, 600 do
@@ -291,6 +293,12 @@ for frame = 1, 300 do
 end
 assert(copies - movingCopies <= 26, "moving water rebuilt terrain every frame")
 BedWars.VoidWater.Clear()
+BedWars.VoidWaterWidth, BedWars.VoidWaterDepth = 128, 192
+BedWars.VoidWater.Place(Vector3.new(0, 30, 0), 36, "Void")
+assert(terrain.LastRegion.Max.X-terrain.LastRegion.Min.X==64, "legacy pool width escaped cap")
+assert(terrain.LastRegion.Max.Y-terrain.LastRegion.Min.Y==24, "legacy pool depth escaped cap")
+BedWars.VoidWater.Clear()
+BedWars.VoidWaterWidth, BedWars.VoidWaterDepth = 48, 16
 print("PASS water: stable swimming for 600 frames, bounded terrain edits, mode switching, restoration and immediate death cleanup")
 
 waterGround=nil

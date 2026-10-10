@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-particle-controls-k338"
+local SUNSET_BUILD = "20261010-rift-small-void-water-k339"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -3102,7 +3102,7 @@ BedWars = {
     InfiniteJumpOn = false, InfiniteJumpMax = 6, InfiniteJumpCount = 0,
     GravityOn = false, GravityValue = 90,
     NameTagsOn = false, ZoomUnlockOn = false, ZoomDistance = 500,
-    VoidWaterWidth = 96, VoidWaterDepth = 96, VoidWaterGap = 3,
+    VoidWaterWidth = 48, VoidWaterDepth = 16, VoidWaterGap = 3,
     PickupOn = false, PickupRange = 8, AutoOreOn = false, AutoBedOn = false,
     MinerESPOn = false, NotifyOn = false, SpotifyHUDOn = false,
     MusicCoverFiles = {},
@@ -3660,9 +3660,9 @@ function BedWars.VoidWater.Place(position, surfaceY, mode)
     mode = mode or "Void"
     local width = mode == "Fight"
         and math.ceil(math.max(40, (BedWars.WaterFightRange + 8) * 2) / 4) * 4
-        or math.floor(BedWars.VoidWaterWidth / 4) * 4
+        or math.clamp(math.floor(BedWars.VoidWaterWidth / 4) * 4, 32, 64)
     local depth = mode == "Fight" and 32
-        or math.floor(BedWars.VoidWaterDepth / 4) * 4
+        or math.clamp(math.floor(BedWars.VoidWaterDepth / 4) * 4, 8, 24)
     if voidWaterCenter and voidWaterTop == surfaceY and voidWaterMode == mode
         and voidWaterWidth == width and voidWaterDepth == depth
         and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
@@ -7776,11 +7776,11 @@ do
             BedWars.VoidWater.Clear()
         end
     end)
-    Elements.Slider(waterSection, "Width", 32, 128, 96, "studs", function(value)
+    Elements.Slider(waterSection, "Width", 32, 64, 48, "studs", function(value)
         BedWars.VoidWaterWidth = value
         BedWars.VoidWater.Clear()
     end, 4)
-    Elements.Slider(waterSection, "Depth", 48, 192, 96, "studs", function(value)
+    Elements.Slider(waterSection, "Depth", 8, 24, 16, "studs", function(value)
         BedWars.VoidWaterDepth = value
         BedWars.VoidWater.Clear()
     end, 4)
