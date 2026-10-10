@@ -84,9 +84,20 @@ def main():
         for path in [ROOT / 'universal.lua', universal_inner_path]:
             subprocess.run([str(compiler), '--null', '-O0', '-g2', str(path)], check=True)
         print('PASS Universal source: wrapper and embedded game code compile')
+        for client_name, client_inner in [('dedicated', inner), ('universal', universal_inner)]:
+            lifecycle_spec = (ROOT / 'tests' / 'lifecycle-spec.luau').read_text(encoding='utf-8')
+            lifecycle_spec = lifecycle_spec.replace('-- INSERT_UNLOAD',
+                between(client_inner, 'ENV.SunsetUnload = function()', '\nprint(BRAND'))
+            lifecycle_spec = lifecycle_spec.replace('-- INSERT_EARLY_ABORT',
+                between(client_inner, 'ENV.SunsetAbortStartup = function()', '\nlocal Gui ='))
+            lifecycle_path = temp / (client_name + '-lifecycle-spec.luau')
+            lifecycle_path.write_text(lifecycle_spec, encoding='utf-8')
+            subprocess.run([str(runtime), str(lifecycle_path)], check=True)
+        assert 'pcall(environment.SunsetAbortStartup)' in universal_source
+
         failure_spec = (ROOT / 'tests' / 'startup-failure-spec.luau').read_text(encoding='utf-8')
         failure_spec = failure_spec.replace('-- INSERT_STARTUP_ABORT',
-            between(inner, 'ENV.SunsetAbortStartup = function()', '\nlocal Window ='))
+            between(inner, 'ENV.SunsetAbortStartup = function()', '\nlocal Gui ='))
         failure_spec = failure_spec.replace('-- INSERT_WRAPPER_HANDOFF',
             source[source.rindex('local chunk, err = loadstring(source)'):])
         failure_spec = failure_spec.replace('-- INSERT_KILL_GETTER',

@@ -8,6 +8,7 @@ local function destroyable()
 end
 local Settings = {MenuBlurEffect = destroyable()}
 local Gui = destroyable()
+Settings.RootGui = Gui
 ENV.SunsetLoading = {Gui = destroyable()}
 local Connections = {
     {Disconnect = function() error("already gone") end},

@@ -82,5 +82,5 @@ for _, gameName in ipairs({"BedWars", "Rivals"}) do
     Settings.SelectedGame = gameName
     assert(new("ScreenGui", {Name = "MenuUI"}, PlayerGui).Parent == PlayerGui)
 end
-assert(hiddenCalls == previousHidden and coreCalls == previousCore and #connections == previousConnections)
+assert(hiddenCalls == previousHidden and coreCalls == previousCore and #connections == previousConnections + 2)
 print("PASS UI hosting: Cold War roots use gethui/CoreGui, children/layout preserved, unload cleanup, denied/missing APIs handled, other games keep PlayerGui")

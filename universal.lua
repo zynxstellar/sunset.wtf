@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-universal-notification-context-k277"
+local SUNSET_BUILD = "20261010-rift-universal-lifecycle-safety-k278"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -166,6 +166,9 @@ local function new(class, props, parent)
     local i = Instance.new(class)
     for k, v in pairs(props) do i[k] = v end
     i.Parent = parent
+    if class == "ScreenGui" or class == "BlurEffect" then
+        track({ Disconnect = function() i:Destroy() end })
+    end
     return i
 end
 
@@ -241,12 +244,28 @@ for _, name in ipairs({ "MenuUI", "EspGui" }) do
     if old then old:Destroy() end
 end
 
+ENV.SunsetAbortStartup = function()
+    if BedWars then BedWars.Running = false end
+    for _, connection in ipairs(Connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    table.clear(Connections)
+    pcall(function() Settings.MenuBlurEffect:Destroy() end)
+    local loading = ENV.SunsetLoading
+    ENV.SunsetLoading = nil
+    if loading and loading.Gui then pcall(function() loading.Gui:Destroy() end) end
+    pcall(function() Settings.RootGui:Destroy() end)
+    ENV.SunsetAbortStartup = nil
+end
+
 local Gui = new("ScreenGui", { Name = "MenuUI", DisplayOrder = 2147483647, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, PlayerGui)
+Settings.RootGui = Gui
 function Settings.SetupNotifications()
     local screen = new("ScreenGui", { Name = "RiftNotifications", ResetOnSpawn = false,
         IgnoreGuiInset = true, DisplayOrder = 2147483646 }, PlayerGui)
     Settings.NotificationGui = screen
-    track({ Disconnect = function() screen:Destroy() end })
+    local alive = true
+    track({ Disconnect = function() alive = false screen:Destroy() end })
     local stack = new("Frame", { AnchorPoint = Vector2.new(1, 1),
         Position = UDim2.new(1, -18, 1, -20), Size = UDim2.fromOffset(280, 300),
         BackgroundTransparency = 1, BorderSizePixel = 0 }, screen)
@@ -256,7 +275,7 @@ function Settings.SetupNotifications()
     local slots, activeByKey, order = {}, {}, 0
     local pending = {}
     local function renderNotification(title, message, kind)
-        if not screen.Parent then return end
+        if not alive or not screen.Parent then return end
         title, message = tostring(title), tostring(message)
         local key = title .. ":" .. message
         if activeByKey[key] and activeByKey[key].Parent then return end
@@ -311,10 +330,11 @@ function Settings.SetupNotifications()
         TweenService:Create(progress, TweenInfo.new(duration, Enum.EasingStyle.Linear),
             { Size = UDim2.fromScale(0, 1) }):Play()
         task.delay(duration, function()
-            if not screen.Parent or not slot.Parent then return end
+            if not alive or not screen.Parent or not slot.Parent then return end
             TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
                 { Position = UDim2.fromOffset(300, 0) }):Play()
             task.wait(0.21)
+            if not alive then return end
             activeByKey[key] = nil
             slot:Destroy()
             local index = table.find(slots, slot)
@@ -324,6 +344,7 @@ function Settings.SetupNotifications()
         return slot
     end
     function Settings.Notify(title, message, kind)
+        if not alive then return end
         -- Game callbacks enqueue plain data; only the UI-owned connection touches instances.
         if #pending >= 16 then table.remove(pending, 1) end
         table.insert(pending, { tostring(title), tostring(message), kind })
@@ -1874,7 +1895,7 @@ task.spawn(function()
             local ping = math.floor(LocalPlayer:GetNetworkPing() * 1000)
             Watermark.Text = (Settings.SelectedGame == "BedWars"
                 or isRivalsMode(Settings.SelectedGame))
-                and string.format("RIFT  •  %s  •  %d FPS  •  %d MS", LocalPlayer.Name, frames, ping)
+                and string.format("RIFT  â€¢  %s  â€¢  %d FPS  â€¢  %d MS", LocalPlayer.Name, frames, ping)
                 or string.format("Rift | %s | %d fps | %dms", LocalPlayer.Name, frames, ping)
             frames, last = 0, os.clock()
         end
@@ -3082,7 +3103,7 @@ do
         Image = "", ScaleType = Enum.ScaleType.Crop,
     }, BedWars.SpotifyPanel)
     new("UICorner", { CornerRadius = UDim.new(0, 9) }, cover)
-    local icon = label(cover, "♫", 29, T.gold, Enum.TextXAlignment.Center)
+    local icon = label(cover, "â™«", 29, T.gold, Enum.TextXAlignment.Center)
     icon.Size = UDim2.fromScale(1, 1)
     local heading = label(BedWars.SpotifyPanel, "MUSIC OVERLAY", 10,
         T.gold)
@@ -3561,7 +3582,7 @@ do
     title.Active = true
     local close = new("TextButton", {
         Position = UDim2.new(1, -42, 0, 8), Size = UDim2.fromOffset(30, 30),
-        Text = "×", Font = Enum.Font.GothamBold, TextSize = 20,
+        Text = "Ã—", Font = Enum.Font.GothamBold, TextSize = 20,
         TextColor3 = Color3.fromRGB(255, 226, 210),
         BackgroundColor3 = Color3.fromRGB(55, 38, 48), BorderSizePixel = 0,
     }, explorer)
@@ -3635,7 +3656,7 @@ do
                 BackgroundTransparency = count % 2 == 0 and 0.78 or 1,
                 BackgroundColor3 = Color3.fromRGB(85, 54, 70),
                 Text = string.rep("  ", math.min(depth, 12))
-                    .. (#children > 0 and (expanded[instance] and "▾ " or "▸ ") or "  ")
+                    .. (#children > 0 and (expanded[instance] and "â–¾ " or "â–¸ ") or "  ")
                     .. instance.Name .. "  [" .. instance.ClassName .. "]",
                 TextTruncate = Enum.TextTruncate.AtEnd,
                 TextXAlignment = Enum.TextXAlignment.Left,
@@ -6505,6 +6526,7 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 function BedWars.Stop()
+    BedWars.Running = false
     if BedWars.NotifyGui then BedWars.NotifyGui:Destroy() end
     if BedWars.CrosshairGui then BedWars.CrosshairGui:Destroy() end
     BedWars.StopExtraMovement()
@@ -6780,7 +6802,7 @@ do
                 local valid = nearest and distance <= 6
                     and nearest.PrimaryPart
                     and CollectionService:HasTag(nearest.PrimaryPart, "MinerInteraction")
-                table.insert(lines, valid and "Gather valid · hold 2.5s"
+                table.insert(lines, valid and "Gather valid Â· hold 2.5s"
                     or "Gather unavailable")
             end
             if BedWars.MinerRewardsOn then
@@ -8321,6 +8343,7 @@ Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
     OrbitColor = Color3.fromRGB(130, 180, 255), OrbitRainbow = false,
     FootstepsOn = false,
     StepColor = Color3.fromRGB(95, 220, 255), StepRainbow = false }
+track({ Disconnect = function() Fun.Running, Fun.Enabled = false, false end })
 clearFunEffect = function(kind)
     for part, effect in pairs(Fun.Active) do
         if not kind or effect == kind then
@@ -9413,7 +9436,7 @@ function BedWars.BuildUI(boardGame)
                 Position = UDim2.new(1, -31, 0, 4),
                 Size = UDim2.fromOffset(27, 27),
                 BackgroundTransparency = 1,
-                BorderSizePixel = 0, Text = "···",
+                BorderSizePixel = 0, Text = "Â·Â·Â·",
                 Font = Enum.Font.GothamBold, TextSize = 15,
                 TextColor3 = muted, AutoButtonColor = false,
                 Visible = hasSettings,
@@ -11034,37 +11057,37 @@ end
 
 
 ENV.SunsetUnload = function()
-    Persistence.Save()
-    AutoReinject.Cancel()
+    if Settings.Unloaded then return end
+    Settings.Unloaded = true
+    -- Stop loop conditions first; a failed restoration must not leave workers running.
+    BedWars.Running, Fun.Running = false, false
+    pcall(Persistence.Save)
+    Fun.Enabled = false
+    Settings.FlyEnabled, Settings.WatermarkOn, RivalsAim.Enabled = false, false, false
+    pcall(function() AutoReinject.Cancel() end)
     AutoReinject.ready = false
-    RivalsAim.Enabled = false
     if type(ENV.SunsetRivalsAimHook) == "table" then
         ENV.SunsetRivalsAimHook.Active = false
         ENV.SunsetRivalsAimHook.Resolve = nil
         ENV.SunsetRivalsAimHook.Select = nil
     end
-    GhostPulse.Stop()
-    Fun.Running = false
-    Fun.Enabled = false
-    clearFunEffect()
-    Settings.FlyEnabled = false
-
-    Settings.WatermarkOn = false
-    BedWars.Stop()
-    setCloudRemoval(false)
-    restoreAtmosphere()
+    pcall(GhostPulse.Stop)
+    pcall(clearFunEffect)
+    pcall(BedWars.Stop)
+    pcall(setCloudRemoval, false)
+    pcall(restoreAtmosphere)
     pcall(Fly.Stop, false)
     pcall(ESP.Destroy)
     for _, c in ipairs(Connections) do
         pcall(function() c:Disconnect() end)
     end
     table.clear(Connections)
-    if ENV.SunsetLoading and ENV.SunsetLoading.Gui then
-        ENV.SunsetLoading.Gui:Destroy()
-    end
-    if Gui then Gui:Destroy() end
-    if Settings.MenuBlurEffect then Settings.MenuBlurEffect:Destroy() end
+    local loading = ENV.SunsetLoading
     ENV.SunsetLoading = nil
+    if loading and loading.Gui then pcall(function() loading.Gui:Destroy() end) end
+    pcall(function() Gui:Destroy() end)
+    pcall(function() Settings.MenuBlurEffect:Destroy() end)
+    ENV.SunsetAbortStartup = nil
     ENV.SunsetUnload = nil
 end
 
@@ -11267,5 +11290,9 @@ if not chunk then error("Rift source did not compile: " .. tostring(err)) end
 local started, runtimeError = xpcall(chunk, function(message)
     return debug.traceback(tostring(message), 2)
 end)
-if not started then error("[Rift Universal] Startup failed: " .. runtimeError, 0) end
+if not started then
+    if type(environment.SunsetAbortStartup) == "function" then pcall(environment.SunsetAbortStartup) end
+    error("[Rift Universal] Startup failed: " .. tostring(runtimeError), 0)
+end
+environment.SunsetAbortStartup = nil
 print("[Rift Universal] Initialization finished. RightShift toggles the menu.")

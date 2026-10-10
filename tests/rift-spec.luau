@@ -60,7 +60,8 @@ local Region3 = { new=function(a,b) return {Min=a,Max=b} end }
 local Region3int16 = Region3
 local Vector3int16 = Vector3
 local Settings = { SelectedGame="BedWars" }
-local function track() end
+local cleanupConnections={}
+local function track(connection) table.insert(cleanupConnections,connection) return connection end
 local uiHeartbeat
 local RunService = {Heartbeat={Connect=function(_, callback) uiHeartbeat=callback return {} end}}
 local function flushNotifications() uiHeartbeat() end
@@ -175,7 +176,7 @@ local function new(class, properties, parent)
     assert(uiAllowed, "protected UI accessed from native callback")
     properties.Parent=parent
     properties.ClassName=class
-    function properties:Destroy() self.Parent=nil end
+    function properties:Destroy() assert(uiAllowed, "retired UI touched after unload") self.Parent=nil end
     local attributes = {}
     function properties:SetAttribute(key, value) attributes[key] = value end
     function properties:GetAttribute(key) return attributes[key] end
@@ -466,3 +467,14 @@ advance(2.1)
 shopExports={ShopItems={offer}}
 assert(bedWarsShopCatalog().wool_white==offer, "direct native shop export was not supported")
 print("PASS shop catalog: late module, retry throttle, keyed/list exports, native offer preservation")
+
+Settings.Notify("Retiring", "Pending expiry")
+flushNotifications()
+advance(4.25)
+cleanupConnections[1]:Disconnect()
+uiAllowed=false
+Settings.Notify("Ignored", "After unload")
+flushNotifications()
+advance(1)
+uiAllowed=true
+print("PASS notifications: unload during expiry and calls after unload never touch retired UI")
