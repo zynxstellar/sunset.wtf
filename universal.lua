@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-universal-compact-notifications-k276"
+local SUNSET_BUILD = "20261009-rift-universal-notification-context-k277"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -254,7 +254,8 @@ function Settings.SetupNotifications()
     new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
         VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
     local slots, activeByKey, order = {}, {}, 0
-    function Settings.Notify(title, message, kind)
+    local pending = {}
+    local function renderNotification(title, message, kind)
         if not screen.Parent then return end
         title, message = tostring(title), tostring(message)
         local key = title .. ":" .. message
@@ -322,11 +323,24 @@ function Settings.SetupNotifications()
         end)
         return slot
     end
+    function Settings.Notify(title, message, kind)
+        -- Game callbacks enqueue plain data; only the UI-owned connection touches instances.
+        if #pending >= 16 then table.remove(pending, 1) end
+        table.insert(pending, { tostring(title), tostring(message), kind })
+    end
+    track(RunService.Heartbeat:Connect(function()
+        local batch = pending
+        pending = {}
+        for _, item in ipairs(batch) do
+            local ok, err = pcall(renderNotification, table.unpack(item))
+            if not ok then warn("[Rift] Notification error: " .. tostring(err)) end
+        end
+    end))
     function Settings.RunCallback(callback, ...)
         local result = table.pack(pcall(callback, ...))
         if not result[1] then
             warn("[Rift] Control error: " .. tostring(result[2]))
-            Settings.Notify("Control error", result[2], "error")
+            pcall(Settings.Notify, "Control error", result[2], "error")
             return
         end
         return table.unpack(result, 2, result.n)
@@ -405,9 +419,17 @@ local Window = new("Frame", {
 local BedWarsUI
 local RivalsUI
 Settings.ActiveSearchBox = nil
-local function anyMenuVisible()
+function Settings.ReadMenuVisible()
     return Window.Visible or (BedWarsUI and BedWarsUI.Visible)
         or (RivalsUI and RivalsUI.Visible) or false
+end
+Settings.MenuVisibleSnapshot = Settings.ReadMenuVisible()
+track(RunService.Heartbeat:Connect(function()
+    local ok, visible = pcall(Settings.ReadMenuVisible)
+    if ok then Settings.MenuVisibleSnapshot = visible end
+end))
+local function anyMenuVisible()
+    return Settings.MenuVisibleSnapshot
 end
 border(Window, T.outer, 1)
 local menuScale = new("UIScale", { Scale = 1 }, Window)

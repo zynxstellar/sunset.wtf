@@ -61,6 +61,9 @@ local Region3int16 = Region3
 local Vector3int16 = Vector3
 local Settings = { SelectedGame="BedWars" }
 local function track() end
+local uiHeartbeat
+local RunService = {Heartbeat={Connect=function(_, callback) uiHeartbeat=callback return {} end}}
+local function flushNotifications() uiHeartbeat() end
 local function warn() end
 local BedWars = {Running=true,ScaffoldOn=true,ScaffoldTowerOn=true,
     ScaffoldVoidRescue=true,ScaffoldTowerSpeed=38,AuraOn=true,AuraCPS=10,MusicCoverFiles={},
@@ -167,7 +170,9 @@ end
 local function bedWarsSafeGround() return nil,swimmingGrounded end
 local PlayerGui = {}
 local T = {inner={},accent={},gold={},text={}}
+local uiAllowed=true
 local function new(class, properties, parent)
+    assert(uiAllowed, "protected UI accessed from native callback")
     properties.Parent=parent
     properties.ClassName=class
     function properties:Destroy() self.Parent=nil end
@@ -407,6 +412,7 @@ Persistence.HUDFrames={ModuleList=listFrame,TargetHUD=hudFrame}
 Persistence.RestoreHUDPositions({ModuleList={1,-310,0,38},TargetHUD={0,50,0,60}},false)
 assert(listFrame.Position.X.Offset==-14 and hudFrame.Position.X.Offset==50, "saved shifted module position was restored")
 BedWars.Notify("Feature enabled","Scaffold",true)
+flushNotifications()
 assert(Settings.NotificationStack.AnchorPoint.X==1 and Settings.NotificationStack.Position.X.Scale==1
     and Settings.NotificationStack.Position.Y.Scale==1, "notifications are not bottom-right")
 assert(Persistence.SavedHUDPositions().ModuleList[2]==-14, "saved list position drifted")
@@ -414,21 +420,33 @@ advance(5)
 assert(Settings.NotificationActiveCount==0, "expired toast was not removed")
 for _, gameName in ipairs({"Cold War", "Rivals", "BedWars", "Project Delta", "Universal"}) do
     Settings.SelectedGame = gameName
-    assert(Settings.Notify("Ready", gameName), "notifications unavailable in " .. gameName)
+    Settings.Notify("Ready", gameName)
+    flushNotifications()
 end
 assert(Settings.NotificationActiveCount==4, "notification stack grew past its limit")
 local before = Settings.NotificationActiveCount
-assert(Settings.Notify("Ready", "Universal") == nil and Settings.NotificationActiveCount==before,
+Settings.Notify("Ready", "Universal")
+flushNotifications()
+assert(Settings.NotificationActiveCount==before,
     "duplicate notification was not suppressed")
 advance(5)
 assert(Settings.NotificationActiveCount==0)
+uiAllowed=false
 Settings.RunCallback(function() error("intentional callback failure") end)
+uiAllowed=true
+assert(Settings.NotificationActiveCount==0, "callback accessed UI before the UI heartbeat")
+flushNotifications()
 assert(Settings.NotificationActiveCount==1, "callback error did not produce a notification")
 advance(5)
 assert(Settings.NotificationActiveCount==1, "error notification expired too soon")
 advance(2)
 assert(Settings.NotificationActiveCount==0)
 assert(Settings.RunCallback(function() return 1,nil,3 end)==1)
+local savedNotify=Settings.Notify
+Settings.Notify=function() error("notification unavailable") end
+assert(pcall(Settings.RunCallback, function() error("original callback failure") end),
+    "notification failure escaped the callback error handler")
+Settings.Notify=savedNotify
 Settings.SelectedGame="BedWars"
 
 print("PASS UI: bottom-right toast, expiry, shifted-config repair, other HUD positions preserved")
