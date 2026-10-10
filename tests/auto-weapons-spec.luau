@@ -175,6 +175,17 @@ shown=false
 arcClear=true now+=1 step()
 assert(starts==beforeAim,"covered ballistic arc wasted ammo")
 assert(resolvedOrigin==worldOrigin,"sprint did not use the native world muzzle")
+do
+    local resolve=Settings.ColdWarAim.Resolve
+    controls.Wallbang(true)
+    step() assert(starts==beforeAim,"Wallbang fired without penetration validation")
+    Settings.ColdWarAim.Resolve=function() return vector,nil,enemyModel,{Position=vector},true end
+    step() assert(starts==beforeAim+1,"validated wallbang failed to shoot")
+    controls.Wallbang(false)
+    step() assert(starts==beforeAim+1,"disabled wallbang fired through cover")
+    Settings.ColdWarAim.Resolve=resolve
+    beforeAim=starts
+end
 shown=true
 arcClear=false
 hit=nil step()

@@ -342,6 +342,52 @@ aim.SetEnabled(false)
 fire() assert(directions[1].X==0,"Auto Shoot left direction correction active after disabling")
 Settings.ColdWarAutoWeapons=nil
 local recorded=0
+do
+    local previousRay=workspace.Raycast
+    local outcome="Pierce"
+    local cover=object("WallbangCover","BasePart",workspace)
+    function cover:GetAttribute() return nil end
+    function cover:FindFirstAncestorOfClass() return nil end
+    local im=object("Interactions","ModuleScript",ballistics)
+    im.Export={resolve=function(projectile,context)
+        return {Outcome=outcome,NewOrigin=context.Result.Position,NewDirection=context.IncomingDir,
+            NewSpeed=context.SpeedAtEnd*0.9,Thickness=1,Ignore=cover}
+    end}
+    local pt=object("ProjectileTypes","ModuleScript",ballistics)
+    pt.Export={withDefaults=function(w)
+        local copy=table.clone(w)
+        copy.PenetrationPower,copy.PierceMaxDeflectionDeg,copy.MaxDistance=5,0,1000
+        return copy
+    end}
+    tm.Export.GetVelocityAtTime=function(tr) return tr.Direction*tr.MuzzleSpeed end
+    tm.Export.GetForwardSpeed=function(tr) return tr.MuzzleSpeed end
+    params.RaycastParams.FilterType="Exclude" params.RaycastParams.FilterDescendantsInstances={}
+    Enum.RaycastFilterType.Include="Include"
+    local head=enemy.Character:FindFirstChild("Head")
+    head.Size=Vector3.new(2,2,2)
+    function workspace:Raycast(o,d,p)
+        if d.Z<=0 then return end
+        if not table.find(p.FilterDescendantsInstances or {},cover) and o.Z<=40 and o.Z+d.Z>=40 then
+            return {Instance=cover,Position=o+d*((40-o.Z)/d.Z)}
+        end
+        if o.Z<=head.Position.Z and o.Z+d.Z>=head.Position.Z then
+            local point=o+d*((head.Position.Z-o.Z)/d.Z)
+            if (point-head.Position).Magnitude<1 then return {Instance=head,Position=point} end
+        end
+    end
+    Settings.ColdWarAutoWeapons={ShootEnabled=true,WallbangEnabled=false}
+    assert(not aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1),true),"disabled wallbang selected covered enemy")
+    Settings.ColdWarAutoWeapons.WallbangEnabled=true
+    local direction,_,target,_,validated=aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1),true)
+    assert(direction and target==enemy.Character and validated,"enabled wallbang did not use native penetration rules")
+    outcome="Stop"
+    assert(not aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1),true),"native Stop authorized Auto Shoot")
+    outcome="Pierce"
+    assert(not aim.Resolve(tool,2,3,origin,Vector3.new(0,0,1),false),"wallbang leaked into manual Silent Aim")
+    Settings.ColdWarAutoWeapons=nil
+    workspace.Raycast=previousRay
+    aim.LastTarget=nil
+end
 Settings.ColdWarBulletTrails={Enabled=true,Record=function(t,m,b,o,ds)
     recorded+=1 assert(t==tool and m==2 and b==3 and o==origin and ds==directions)
 end}

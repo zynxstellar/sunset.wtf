@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-config-confirm-k333"
+local SUNSET_BUILD = "20261010-rift-underground-wallbang-k334"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -10352,6 +10352,77 @@ function RivalsAim.BuildUI()
 end
 
 
+function Settings.ColdWarPenetrationTrace(tr, interactions, types, params, origin, direction, time, model, part)
+    local weapon = types.withDefaults(params.Weapon)
+    if weapon.Explosive or weapon.Terminal or not tr.GetForwardSpeed or not tr.GetVelocityAtTime then return false end
+    local ray = RaycastParams.new()
+    ray.FilterType = params.RaycastParams.FilterType
+    if ray.FilterType ~= Enum.RaycastFilterType.Exclude then return false end
+    ray.FilterDescendantsInstances = table.clone(params.RaycastParams.FilterDescendantsInstances or {})
+    ray.IgnoreWater = params.RaycastParams.IgnoreWater
+    ray.RespectCanCollide = params.RaycastParams.RespectCanCollide
+    ray.CollisionGroup = params.RaycastParams.CollisionGroup
+    local projectile = { Weapon = weapon, Owner = LocalPlayer, PierceCount = 0, RicochetCount = 0,
+        PenetrationBudget = weapon.PenetrationPower or 0, Cosmetic = false,
+        Rng = { NextNumber = function() return 0.5 end } }
+    local function findExit(position, incoming, instance, budget)
+        local include = RaycastParams.new()
+        include.FilterType = Enum.RaycastFilterType.Include
+        include.FilterDescendantsInstances = { instance }
+        local exit = workspace:Raycast(position + incoming * budget, -incoming * budget, include)
+        if exit then return exit.Position, (exit.Position - position).Magnitude end
+    end
+    local arc = tr.new({ Origin = origin, Direction = direction, MuzzleSpeed = weapon.MuzzleSpeed,
+        K = weapon.K, Gravity = weapon.Gravity })
+    local elapsed, total, distance, segments, uncertainty = 0, 0, 0, 0, 0
+    local last = origin
+    local dt = math.min(1 / 30, time * 1.08 / 24)
+    if dt <= 0 then return false end
+    for _ = 1, 192 do
+        elapsed += dt
+        total += dt
+        if total > time * 1.5 or total > (weapon.MaxTime or 10) then return false end
+        local position = tr.GetPositionAtTime(arc, elapsed)
+        local hit = workspace:Raycast(last, position - last, ray)
+        distance += ((hit and hit.Position or position) - last).Magnitude
+        if distance > (weapon.MaxDistance or 1000) then return false end
+        if hit then
+            if hit.Instance:IsDescendantOf(model) then
+                return hit.Instance == part and uncertainty < math.min(part.Size.X, part.Size.Y, part.Size.Z) * 0.5
+            end
+            -- Do not authorize shooting through any other character.
+            local other = hit.Instance:FindFirstAncestorOfClass("Model")
+            if other and other:FindFirstChildOfClass("Humanoid") then return false end
+            segments += 1
+            if segments >= 12 then return false end
+            local velocity = tr.GetVelocityAtTime(arc, elapsed)
+            local incoming = velocity.Magnitude > 0.001 and velocity.Unit or direction
+            local speed = tr.GetForwardSpeed(arc, elapsed)
+            local decision = interactions.resolve(projectile, { Result = hit, IncomingDir = incoming,
+                SpeedAtEnd = speed, MuzzleSpeed = weapon.MuzzleSpeed, Rng = projectile.Rng, FindExit = findExit })
+            if not decision or decision.Outcome ~= "Pierce" or not decision.NewOrigin
+                or not decision.NewDirection or not decision.NewSpeed or decision.NewSpeed <= 0.001
+                or decision.Terminal then return false end
+            projectile.PierceCount += 1
+            projectile.PenetrationBudget -= decision.Thickness or 0
+            if (decision.Thickness or 0) > 0 and hit.Instance:GetAttribute("PenThreshold") == nil then
+                local spent = 1 - math.clamp(projectile.PenetrationBudget / math.max(weapon.PenetrationPower, 0.001), 0, 1)
+                uncertainty += math.tan(math.rad(weapon.PierceMaxDeflectionDeg or 0) * spent)
+                    * (part.Position - hit.Position).Magnitude
+            end
+            local ignore = table.clone(ray.FilterDescendantsInstances)
+            if decision.Ignore then table.insert(ignore, decision.Ignore) end
+            if decision.IgnoreList then for _, item in ipairs(decision.IgnoreList) do table.insert(ignore, item) end end
+            if not decision.Ignore and not decision.IgnoreList then return false end
+            ray.FilterDescendantsInstances = ignore
+            arc = tr.new({ Origin = decision.NewOrigin, Direction = decision.NewDirection,
+                MuzzleSpeed = decision.NewSpeed, K = weapon.K, Gravity = weapon.Gravity })
+            elapsed, last = 0, decision.NewOrigin
+        else last = position end
+    end
+    return false
+end
+
 function Settings.SetupColdWarAim(playerModel)
     local previous = ENV.SunsetColdWarAimHook
     if type(previous) == "table" and type(previous.Restore) == "function" then
@@ -10365,7 +10436,7 @@ function Settings.SetupColdWarAim(playerModel)
     Settings.ColdWarAim = aim
     local state = { Destroyed = false }
     ENV.SunsetColdWarAimHook = state
-    local api, field, original, wrapper, trajectory, weaponSource
+    local api, field, original, wrapper, trajectory, weaponSource, interactions, projectileTypes
     local pending, nextRetry = false, 0
     local drawing = type(ENV.Drawing) == "table" and ENV.Drawing or Drawing
     local circle
@@ -10442,6 +10513,18 @@ function Settings.SetupColdWarAim(playerModel)
         if not restored then error(err, 0) end
         if not result[1] then error(result[2], 0) end
         return result[2]
+    end
+    local function wallbangPath(params, origin, direction, time, model, part, velocity)
+        if velocity.Magnitude > 1 then return false end
+        if not interactions then
+            local shared = game:GetService("ReplicatedStorage"):FindFirstChild("Shared")
+            local ballistics = shared and shared:FindFirstChild("Ballistics")
+            local rules = loadedRequire(ballistics and ballistics:FindFirstChild("Interactions"), "Ballistics.Interactions")
+            local types = loadedRequire(ballistics and ballistics:FindFirstChild("ProjectileTypes"), "Ballistics.ProjectileTypes")
+            interactions, projectileTypes = rules, types
+        end
+        return Settings.ColdWarPenetrationTrace(trajectory, interactions, projectileTypes,
+            params, origin, direction, time, model, part)
     end
     local function makeTrajectory(origin, direction, weapon)
         return trajectory.new({ Origin = origin, Direction = direction,
@@ -10537,6 +10620,14 @@ function Settings.SetupColdWarAim(playerModel)
             or params.Weapon.Explosive or not params.RaycastParams then return nil, "Weapon parameters unavailable or unsupported" end
         local localTeam = LocalPlayer.Team and LocalPlayer.Team.Name
         if localTeam ~= "NATO" and localTeam ~= "PACT" then return nil, "Your team is not NATO or PACT" end
+        local auto = Settings.ColdWarAutoWeapons
+        local wallbang = strict and auto and auto.ShootEnabled and auto.WallbangEnabled
+        local penetrationChecks = 0
+        local function checkedWallbang(selected, time, model, part, velocity)
+            if not wallbang or penetrationChecks >= 3 then return false end
+            penetrationChecks += 1
+            return wallbangPath(params, origin, selected, time, model, part, velocity)
+        end
         local candidates = {}
         for _, player in ipairs(Players:GetPlayers()) do
             local team = player.Team and player.Team.Name
@@ -10599,11 +10690,12 @@ function Settings.SetupColdWarAim(playerModel)
                 local currentTeam = candidate.Player.Team and candidate.Player.Team.Name
                 if part and part:IsA("BasePart") and currentTeam ~= localTeam
                     and (currentTeam == "NATO" or currentTeam == "PACT")
-                    and visiblePart(camera, origin, part, candidate.Model) then
+                    and (visiblePart(camera, origin, part, candidate.Model) or (wallbang and withinFOV(camera, part))) then
                     local selected, time = solve(origin, part.Position, params.Weapon, velocity)
-                    if selected and clearArc(origin, selected, time, params, candidate.Model, velocity) then
+                    if selected and (clearArc(origin, selected, time, params, candidate.Model, velocity)
+                        or checkedWallbang(selected, time, candidate.Model, part, velocity)) then
                         aim.LastTarget = { Player = candidate.Player, Model = candidate.Model, Part = part, At = os.clock() }
-                        return selected, nil, candidate.Model, part
+                        return selected, nil, candidate.Model, part, wallbang == true
                     end
                 end
             end
@@ -11571,7 +11663,7 @@ end
 function Settings.SetupColdWarAutoWeapons(playerModel)
     local previous = ENV.SunsetColdWarAutoWeapons
     if previous and type(previous.Restore) == "function" then previous.Restore() end
-    local auto = { ShootEnabled = false, ReloadEnabled = false, TimerEnabled = false,
+    local auto = { ShootEnabled = false, WallbangEnabled = false, ReloadEnabled = false, TimerEnabled = false,
         InstantEquipEnabled = false,
         AmmoSaverEnabled = true, BurstRounds = 2, BurstPause = 0.25, Current = nil }
     Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
@@ -11771,9 +11863,10 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
                 or muzzle.attachment
             if not bullet or not attachment then return false end
             local origin = attachment.WorldPosition
-            local direction, _, targetModel, targetPart = aim.Resolve(object.tool,
+            local direction, _, targetModel, targetPart, wallbangValidated = aim.Resolve(object.tool,
                 object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector, true)
             if not direction or not targetModel or not targetPart then return false end
+            if auto.WallbangEnabled and wallbangValidated then return true end
             -- Auto Shoot conserves ammo: both the camera and the actual muzzle
             -- must have an unobstructed direct line to the selected player.
             return clearLine(camera.CFrame.Position, targetPart.Position, targetModel)
@@ -11874,6 +11967,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         destroyed = true
         auto.ShootEnabled, auto.ReloadEnabled, auto.TimerEnabled = false, false, false
         auto.InstantEquipEnabled = false
+        auto.WallbangEnabled = false
         local aim = Settings.ColdWarAim
         if aim then aim.SetEnabled(aim.Enabled) end
         detach()
@@ -11888,6 +11982,10 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if aim then aim.SetEnabled(aim.Enabled) end
         if not on then release() end
         if not on and not auto.ReloadEnabled and not auto.TimerEnabled then detach() end
+    end)
+    Elements.Toggle(shoot, "Wallbang", false, function(on)
+        auto.WallbangEnabled = on
+        release()
     end)
     Elements.Toggle(shoot, "Ammo Saver", true, function(on)
         auto.AmmoSaverEnabled = on
@@ -12105,6 +12203,95 @@ function Settings.SetupColdWarSpider()
     track({ Disconnect = function() spider.Enabled, spider.Destroyed = false, true reset() end })
 end
 
+function Settings.SetupColdWarUnderground()
+    local underground = { Enabled = false, Depth = 8, Speed = 6, Destroyed = false }
+    Settings.ColdWarUnderground = underground
+    local root, character, surface, savedRotation, addedConnection
+    local collisions = {}
+    local function restore(returnToSurface)
+        if addedConnection then addedConnection:Disconnect() addedConnection = nil end
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if returnToSurface and root and root.Parent and surface and not root.Anchored
+            and humanoid and humanoid.Health > 0 and not humanoid.Sit and not humanoid.PlatformStand then
+            root.CFrame = CFrame.new(surface + Vector3.new(0, 3.5, 0)) * savedRotation
+            root.AssemblyLinearVelocity = Vector3.new()
+            root.AssemblyAngularVelocity = Vector3.new()
+        end
+        for part, original in pairs(collisions) do
+            if part.Parent then part.CanCollide = original end
+        end
+        collisions = {}
+        root, character, surface, savedRotation = nil, nil, nil, nil
+    end
+    local function noCollision(part)
+        if part:IsA("BasePart") and collisions[part] == nil then
+            collisions[part] = part.CanCollide
+            part.CanCollide = false
+        end
+    end
+    local function stop(message, returnToSurface)
+        underground.Enabled = false
+        restore(returnToSurface)
+        if underground.Toggle then underground.Toggle.Set(false) end
+        if message then Settings.Notify("Underground stopped", message, "error") end
+    end
+    function underground.Step(dt)
+        if underground.Destroyed or not underground.Enabled then return end
+        local current = LocalPlayer.Character
+        local currentRoot = current and current:FindFirstChild("HumanoidRootPart")
+        local humanoid = current and current:FindFirstChildOfClass("Humanoid")
+        if Settings.SelectedGame ~= "Cold War" or not currentRoot or not humanoid
+            or humanoid.Health <= 0 or currentRoot.Anchored or humanoid.Sit or humanoid.PlatformStand then
+            stop(nil, currentRoot == root and humanoid and humanoid.Health > 0)
+            return
+        end
+        if root and currentRoot ~= root then stop(nil, false) return end
+        if dt <= 0 or dt > 0.25 then return end
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { current }
+        params.RespectCanCollide = true
+        params.IgnoreWater = true
+        if not root then
+            local ground = workspace:Raycast(currentRoot.Position, Vector3.new(0, -16, 0), params)
+            if not ground or ground.Normal.Y < 0.5 then stop("Stand on solid ground before enabling.", false) return end
+            root, character, surface, savedRotation = currentRoot, current, ground.Position, currentRoot.CFrame.Rotation
+            for _, part in ipairs(character:GetDescendants()) do noCollision(part) end
+            addedConnection = character.DescendantAdded:Connect(noCollision)
+        end
+        local movement = humanoid.MoveDirection
+        local direction = Vector3.new(movement.X, 0, movement.Z)
+        if direction.Magnitude > 1 then direction = direction.Unit end
+        if anyMenuVisible() or UIS:GetFocusedTextBox() then direction = Vector3.new() end
+        local nextSurface = surface + direction * underground.Speed * dt
+        local ground = workspace:Raycast(nextSurface + Vector3.new(0, 4, 0), Vector3.new(0, -8, 0), params)
+        if not ground or ground.Normal.Y < 0.5 then
+            stop("Ground ended. Returned to the last surface.", true)
+            return
+        end
+        surface = ground.Position
+        for part in pairs(collisions) do if part.Parent then part.CanCollide = false end end
+        root.CFrame = CFrame.new(surface - Vector3.new(0, underground.Depth, 0)) * savedRotation
+        root.AssemblyLinearVelocity = Vector3.new()
+        root.AssemblyAngularVelocity = Vector3.new()
+    end
+    local section = gameSection("Cold War", MainTab.Left, "Underground")
+    underground.Toggle = Elements.Toggle(section, "Underground", false, function(on)
+        underground.Enabled = on == true and not underground.Destroyed
+        if not underground.Enabled then restore(true) end
+    end)
+    Elements.Slider(section, "Depth", 6, 16, 8, "studs", function(value) underground.Depth = value end)
+    Elements.Slider(section, "Crawl Speed", 2, 12, 6, "studs/s", function(value) underground.Speed = value end)
+    track(RunService.PreSimulation:Connect(function(dt)
+        local ok, err = pcall(underground.Step, dt)
+        if not ok then stop("Movement failed: " .. tostring(err), true) end
+    end))
+    track({ Disconnect = function()
+        underground.Enabled, underground.Destroyed = false, true
+        restore(true)
+    end })
+end
+
 function Settings.SetupColdWarSession()
     local session = { Seconds = 0, Kills = 0, Deaths = 0, Observed = {}, Enabled = false }
     Settings.ColdWarSession = session
@@ -12175,6 +12362,7 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSpider()
+    Settings.SetupColdWarUnderground()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

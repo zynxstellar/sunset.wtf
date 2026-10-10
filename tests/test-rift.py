@@ -65,6 +65,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='rift-tests-') as temp:
         temp = Path(temp)
         for name, marker, production in [
+            ('coldwar-penetration', '-- INSERT_PENETRATION', between(inner, 'function Settings.ColdWarPenetrationTrace(', '\nfunction Settings.SetupColdWarAim(')),
+            ('coldwar-underground', '-- INSERT_UNDERGROUND', between(inner, 'function Settings.SetupColdWarUnderground()', '\nfunction Settings.SetupColdWarSession()')),
             ('config-confirm', '-- INSERT_CONFIG_CONFIRM', 'do\n' + between(inner, '    local s = makeSection(SettingsTab.Right, "Configs")', '\ndo\n    local s = makeSection(SettingsTab.Left, "Arena Travel")')),
             ('menu-drag', '-- INSERT_MENU_DRAG', between(inner, 'function Settings.MakeMenuDraggable(', '\nlocal function makeTab(')),
             ('coldwar-spider', '-- INSERT_COLDWAR_SPIDER', between(inner, 'function Settings.SetupColdWarSpider()', '\nfunction Settings.SetupColdWarSession()')),
@@ -209,7 +211,7 @@ def main():
         subprocess.run([str(runtime), str(ui_host_path)], check=True)
         aim_spec = (ROOT / 'tests' / 'coldwar-aim-spec.luau').read_text(encoding='utf-8')
         aim_spec = aim_spec.replace('-- INSERT_COLDWAR_AIM_PRODUCTION',
-            between(inner, 'function Settings.SetupColdWarAim(', '\nfunction Settings.SetupPlayerESP('))
+            between(inner, 'function Settings.ColdWarPenetrationTrace(', '\nfunction Settings.SetupPlayerESP('))
         aim_path = temp / 'coldwar-aim-spec.luau'
         aim_path.write_text(aim_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(aim_path)], check=True)
