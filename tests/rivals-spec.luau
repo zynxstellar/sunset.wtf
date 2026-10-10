@@ -165,8 +165,18 @@ local BedWarsUI,RivalsUI
 local Settings={SelectedGame="Rivals",MenuKey=Enum.KeyCode.RightShift,
     MenuBlurOn=true,ModuleListOn=true,GameBoards={},SetMenuBlur=function() end}
 local Camera={CameraType="Custom",CFrame=CFrame.new(Vector3.new()),ViewportSize=Vector2.new(1920,1080)}
+Camera.signals = {}
+function Camera:GetPropertyChangedSignal(name)
+    self.signals[name] = self.signals[name] or signal()
+    return self.signals[name]
+end
 Camera.CFrame.LookVector=Vector3.new(0,0,1)
 local workspace={CurrentCamera=Camera}
+workspace.signals = {}
+function workspace:GetPropertyChangedSignal(name)
+    self.signals[name] = self.signals[name] or signal()
+    return self.signals[name]
+end
 local RaycastParams={new=function() return {} end}
 local raycastResult,raycastFailure,casts=nil,false,{}
 function workspace:Raycast(origin,direction,params)
@@ -650,7 +660,7 @@ RivalsAim.Setup()
 state=ENV.SunsetRivalsAimHook
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
-assert(RivalsUI.Size.X.Offset==1740 and RivalsUI.Size.Y.Offset==770)
+assert(RivalsUI.Size.X.Offset==880 and RivalsUI.Size.Y.Offset==640)
 assert(Persistence.HUDFrames.RivalsMenu==RivalsUI and Persistence.HUDFrames.ModuleList)
 local cards,columns={},{}
 for _,o in ipairs(RivalsUI:GetDescendants()) do
@@ -667,6 +677,23 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o.Parent==RivalsUI and o:IsA("Frame") and o.Name~="Frame" then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
+assert(columns.Combat.Visible and not columns.Visuals.Visible, "multiple categories overlap at startup")
+do
+local visualsTab
+for _, object in ipairs(RivalsUI:GetDescendants()) do
+    if object.Name == "VisualsTab" then visualsTab = object end
+end
+assert(visualsTab, "category navigation is missing")
+visualsTab.MouseButton1Click:Fire()
+assert(columns.Visuals.Visible and not columns.Combat.Visible, "category selection does not switch content")
+local menuScale = RivalsUI:FindFirstChildOfClass("UIScale")
+Camera.ViewportSize = Vector2.new(640, 480)
+Camera.signals.ViewportSize:Fire()
+assert(menuScale.Scale < 1 and menuScale.Scale * 880 <= 608, "compact menu exceeds the viewport")
+Camera.ViewportSize = Vector2.new(1920, 1080)
+Camera.signals.ViewportSize:Fire()
+assert(menuScale.Scale == 1, "menu did not resize after viewport replacement")
+end
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==35)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
@@ -1054,6 +1081,7 @@ assert(row:FindFirstChildOfClass("TextLabel").TextYAlignment==Enum.TextYAlignmen
 Settings.ActiveSearchBox.Text="silent"
 Settings.ActiveSearchBox:GetPropertyChangedSignal("Text"):Fire()
 assert(cards.aim.Visible and not cards.fov.Visible,"shared search filtering failed")
+assert(columns.Combat.Visible and not columns.Visuals.Visible, "search left matching results in a hidden category")
 print("PASS Rivals board: shared BedWars layout/cards/search, game-specific controls, FOV slider")
 cards.outlines.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
@@ -1069,7 +1097,7 @@ print("PASS Rivals unload: camera binding removed and visual instances destroyed
 BedWars.KitCatalog=function() return {},{} end
 Settings.SelectedGame="BedWars"
 BedWars.BuildUI()
-assert(BedWarsUI.Name=="RiftBedWarsBoard" and BedWarsUI.Size.X.Offset==1955)
+assert(BedWarsUI.Name=="RiftBedWarsBoard" and BedWarsUI.Size.X.Offset==880)
 assert(Persistence.HUDFrames.BedWarsMenu==BedWarsUI)
 local kitColumn
 local bedwarsTitle=false
@@ -1077,7 +1105,7 @@ for _,o in ipairs(BedWarsUI:GetDescendants()) do if o.Text=="RIFT | BEDWARS" the
 assert(bedwarsTitle)
 for _,o in ipairs(BedWarsUI:GetChildren()) do if o.Name=="KIT" then kitColumn=o end end
 assert(kitColumn,"shared renderer lost BedWars kit column")
-print("PASS BedWars board: original dimensions and kit column retained")
+print("PASS compact board: category navigation, viewport resize, search selects results, BedWars kit controls retained")
 do
 BedWars.PlayersOn=true
 BedWars.PlayerOutlineColor=outlineColor

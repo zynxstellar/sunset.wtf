@@ -15,6 +15,7 @@ function game:HttpGet(url)
 end
 local function getgenv() return environment end
 local function print() end
+local function warn() end
 local function loadstring(source, name)
     compilations += 1
     assert(source == suppliedSource and name:find("RIFT", 1, true))
@@ -27,6 +28,7 @@ end
 suppliedSource = releaseSource
 run()
 assert(executions == 1 and requests == 1 and compilations == 1)
+assert(environment.SunsetRecovery == true, "loader restored saved modules by default")
 local pinnedUrl = environment.SunsetLoaderUrl
 assert(pinnedUrl and pinnedUrl:match("/[%da-f]+/alua$"), "reinject source was not pinned")
 for _, badSource in ipairs({ releaseSource:gsub("k%d+", "k1"), "-- no build declaration" }) do
@@ -46,18 +48,18 @@ run()
 assert(executions == 2, "loader did not recover after a failed request")
 game.PlaceId = 999999999
 suppliedSource = universalReleaseSource
+local beforeRequests, beforeCompilations = requests, compilations
 run()
-assert(executions == 3 and environment.SunsetLoaderUrl:match("/[%da-f]+/universal%.lua$"),
-    "an unlisted game did not load the Universal source")
+assert(executions == 2 and requests == beforeRequests and compilations == beforeCompilations,
+    "an unsupported game downloaded or started a client")
 suppliedSource = releaseSource
-assert(not pcall(run), "Universal route accepted the dedicated build")
+assert(pcall(run), "unsupported games should stop cleanly")
 game.PlaceId = 286090429
 suppliedSource = universalReleaseSource
 run()
-assert(executions == 4 and environment.SunsetLoaderUrl:match("/[%da-f]+/universal%.lua$"),
-    "Arsenal did not load the Universal source")
+assert(executions == 2 and requests == beforeRequests, "Arsenal downloaded a universal client")
 game.PlaceId = 17625359962
 suppliedSource = releaseSource
 run()
-assert(executions == 5 and environment.SunsetLoaderUrl:match("/[%da-f]+/alua$"),
+assert(executions == 3 and environment.SunsetLoaderUrl:match("/[%da-f]+/alua$"),
     "Rivals did not retain its dedicated source")

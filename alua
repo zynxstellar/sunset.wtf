@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-full-ui-startup-k326"
+local SUNSET_BUILD = "20261010-rift-compact-ui-k327"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -8553,7 +8553,7 @@ function BedWars.BuildUI(boardGame)
     local categoryOrder = (isRivals or isColdWar or isProjectDelta)
         and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
         or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
-    local boardWidth = 20 + #categoryOrder * 215
+    local boardWidth = 880
     local accent = Color3.fromRGB(139, 92, 246)
     local gold = Color3.fromRGB(77, 224, 208)
     local dark = Color3.fromRGB(16, 18, 29)
@@ -8562,11 +8562,13 @@ function BedWars.BuildUI(boardGame)
     local muted = Color3.fromRGB(154, 167, 195)
     local board = new("Frame", {
         Name = "Rift" .. boardGame .. "Board", Visible = false, Active = true,
-        Size = UDim2.fromOffset(boardWidth, 770),
-        Position = UDim2.new(0.5, 0, 0, 12),
-        AnchorPoint = Vector2.new(0.5, 0),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Size = UDim2.fromOffset(boardWidth, 640),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = dark, BorderSizePixel = 0,
     }, Gui)
+    new("UICorner", { CornerRadius = UDim.new(0, 14) }, board)
+    border(board, T.border)
     Settings.GameBoards[boardGame] = board
     if isRivals then RivalsUI = board elseif boardGame == "BedWars" then BedWarsUI = board end
     Persistence.HUDFrames[boardGame .. "Menu"] = board
@@ -8577,15 +8579,28 @@ function BedWars.BuildUI(boardGame)
         if not camera then return end
         boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
             (camera.ViewportSize.X - 32) / boardWidth,
-            (camera.ViewportSize.Y - 32) / 770))
+            (camera.ViewportSize.Y - 32) / 640))
     end
-    fitBoard()
-    track(RunService.Heartbeat:Connect(fitBoard))
+    local viewportConnection
+    local function bindViewport()
+        if viewportConnection then viewportConnection:Disconnect() end
+        local camera = workspace.CurrentCamera
+        if camera then
+            viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(fitBoard)
+        end
+        fitBoard()
+    end
+    bindViewport()
+    track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindViewport))
+    track({ Disconnect = function()
+        if viewportConnection then viewportConnection:Disconnect() end
+    end })
     track(openingScale:GetPropertyChangedSignal("Value"):Connect(fitBoard))
 
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
     }, board)
+    makeDraggable(board, header)
     Settings.StartupStage("Drawing " .. boardGame .. " menu header...")
     local logoId = riftAsset("rift-logo-transparent.png")
     if logoId then
@@ -8610,7 +8625,7 @@ function BedWars.BuildUI(boardGame)
     subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(math.floor((boardWidth - 340) / 2 + 0.5), 17),
+        Position = UDim2.fromOffset(boardWidth - 400, 17),
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
@@ -8687,12 +8702,24 @@ function BedWars.BuildUI(boardGame)
     closeButton.MouseButton1Click:Connect(function() board.Visible = false end)
     Settings.StartupStage("Creating " .. boardGame .. " menu columns...")
     local columns = {}
+    local navigation = new("Frame", {
+        Position = UDim2.fromOffset(16, 84), Size = UDim2.fromOffset(166, 540),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, board)
+    new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, navigation)
     for index, name in ipairs(categoryOrder) do
-        local x = 20 + (index - 1) * 215
-        local y = 74
+        local nav = new("TextButton", {
+            Name = name .. "Tab", Text = name == "Sunset" and BRAND or name,
+            Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = muted,
+            TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
+            Size = UDim2.new(1, 0, 0, 42), LayoutOrder = index,
+            BackgroundColor3 = dark, BorderSizePixel = 0,
+        }, navigation)
+        new("UICorner", { CornerRadius = UDim.new(0, 8) }, nav)
+        new("UIPadding", { PaddingLeft = UDim.new(0, 12) }, nav)
         local col = new("Frame", {
-            Name = name, Position = UDim2.fromOffset(x, y),
-            Size = UDim2.fromOffset(200, 250), Active = true,
+            Name = name, Position = UDim2.fromOffset(198, 84), Visible = index == 1,
+            Size = UDim2.fromOffset(666, 540), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
         }, board)
         new("UICorner", { CornerRadius = UDim.new(0, 10) }, col)
@@ -8731,23 +8758,12 @@ function BedWars.BuildUI(boardGame)
         new("UIListLayout", { Padding = UDim.new(0, 7),
             SortOrder = Enum.SortOrder.LayoutOrder }, list)
         new("UIPadding", { PaddingBottom = UDim.new(0, 4) }, list)
-        local dragHandle = new("Frame", {
-            Position = UDim2.fromOffset(0, 0),
-            Size = UDim2.fromOffset(148, 43),
-            BackgroundTransparency = 1, Active = true,
-        }, col)
-        makeDraggable(col, dragHandle)
         columns[name] = { Frame = col, List = list, Count = count,
-            Collapsed = false, VisibleCount = 0, OpenHolder = nil }
+            Nav = nav, Collapsed = false, VisibleCount = 0, OpenHolder = nil }
+        nav.MouseButton1Click:Connect(function() columns.Select(name) end)
         local function reflow()
             local column = columns[name]
-            local extra = column.OpenHolder and column.OpenHolder.Visible
-                and column.OpenHolder.AbsoluteSize.Y + 7 or 0
-            column.Frame.Size = UDim2.fromOffset(200,
-                column.Collapsed and 44
-                    or name == "KIT" and math.min(540,
-                        math.max(176, 140 + column.VisibleCount * 42 + extra))
-                    or math.min(540, 65 + column.VisibleCount * 42 + extra))
+            column.Frame.Size = UDim2.fromOffset(666, column.Collapsed and 44 or 540)
         end
         columns[name].Reflow = reflow
         count.MouseButton1Click:Connect(function()
@@ -8903,6 +8919,20 @@ function BedWars.BuildUI(boardGame)
         activeHolder, activeColumn = nil, nil
         if previousColumn then previousColumn.Reflow() end
     end
+    local selectedCategory
+    function columns.Select(name)
+        if not columns[name] then return end
+        closeSettings()
+        selectedCategory = name
+        for _, category in ipairs(categoryOrder) do
+            local column = columns[category]
+            local selected = category == name
+            column.Frame.Visible = selected
+            column.Nav.BackgroundColor3 = selected and columnColor or dark
+            column.Nav.TextColor3 = selected and T.text or muted
+        end
+    end
+    columns.Select(categoryOrder[1])
     local function openSettings(box, holder, column)
         if not box or not holder then return end
         if activeHolder == holder then closeSettings() return end
@@ -9019,46 +9049,16 @@ function BedWars.BuildUI(boardGame)
         end)
     end
     local openingTween
-    local panelTweens = {}
-    local panelDestinations = {}
     track(board:GetPropertyChangedSignal("Visible"):Connect(function()
         if openingTween then openingTween:Cancel() end
-        for _, tween in pairs(panelTweens) do tween:Cancel() end
-        table.clear(panelTweens)
         if board.Visible then
-            openingScale.Value = 0.88
+            openingScale.Value = 0.98
             openingTween = TweenService:Create(openingScale,
-                TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                 { Value = 1 })
             openingTween:Play()
-            for index, name in ipairs(categoryOrder) do
-                local panel = columns[name].Frame
-                local destination = panel.Position
-                panelDestinations[name] = destination
-                panel.Position = destination + UDim2.fromOffset(0, -16)
-                local tween = TweenService:Create(panel,
-                    TweenInfo.new(0.28, Enum.EasingStyle.Quad,
-                        Enum.EasingDirection.Out, 0, false, (index - 1) * 0.035),
-                    { Position = destination })
-                panelTweens[name] = tween
-                local completedConnection
-                completedConnection = tween.Completed:Connect(function(state)
-                    if state == Enum.PlaybackState.Completed
-                        and panelTweens[name] == tween then
-                        panelTweens[name] = nil
-                        panelDestinations[name] = nil
-                    end
-                    completedConnection:Disconnect()
-                    tween:Destroy()
-                end)
-                tween:Play()
-            end
         else
             openingScale.Value = 1
-            for name, destination in pairs(panelDestinations) do
-                columns[name].Frame.Position = destination
-            end
-            table.clear(panelDestinations)
             closeSettings()
         end
         onMenuVisibility()
@@ -9504,7 +9504,8 @@ function BedWars.BuildUI(boardGame)
             entry.Card.Visible = show
             if show then counts[entry.Category] = (counts[entry.Category] or 0) + 1 end
         end
-        for name, column in pairs(columns) do
+        for _, name in ipairs(categoryOrder) do
+            local column = columns[name]
             column.Count.Text = tostring(counts[name] or 0)
             column.VisibleCount = counts[name] or 0
             if name == "KIT" then
@@ -9516,6 +9517,11 @@ function BedWars.BuildUI(boardGame)
                     or "No kit modules for " .. tostring(kitSelected) .. " yet"
             end
             column.Reflow()
+        end
+        if query ~= "" and (counts[selectedCategory] or 0) == 0 then
+            for _, name in ipairs(categoryOrder) do
+                if (counts[name] or 0) > 0 then columns.Select(name) break end
+            end
         end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)

@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+UNIVERSAL = ROOT / 'archive' / 'universal-retired.lua'
 
 
 def between(source, start, end):
@@ -83,7 +84,7 @@ def main():
         loader_spec = loader_spec.replace('-- INSERT_CURRENT_RELEASE',
             'local releaseSource = [====[' + build_line + ']====]')
         universal_build_line = re.search(r'local SUNSET_BUILD = "[^"]+"',
-            (ROOT / 'universal.lua').read_text(encoding='utf-8')).group(0)
+            UNIVERSAL.read_text(encoding='utf-8')).group(0)
         loader_spec = loader_spec.replace('-- INSERT_UNIVERSAL_RELEASE',
             'local universalReleaseSource = [====[' + universal_build_line + ']====]')
         loader_spec = loader_spec.replace('-- INSERT_LOADER_PRODUCTION', loader_source)
@@ -92,7 +93,7 @@ def main():
         subprocess.run([str(compiler), '--null', str(ROOT / 'loader.lua')], check=True)
         subprocess.run([str(runtime), str(loader_path)], check=True)
         print('PASS pinned loader: current release, stale/missing version rejection, download/compile failures, recovery')
-        universal_source = (ROOT / 'universal.lua').read_text(encoding='utf-8')
+        universal_source = UNIVERSAL.read_text(encoding='utf-8')
         universal_inner = between(universal_source, 'local source = [========[', ']========]')
         universal_inner = universal_inner[len('local source = [========['):]
         universal_ui = between(universal_inner, 'function RivalsAim.BuildUI()',
@@ -100,7 +101,7 @@ def main():
         assert 'Elements.Label(' not in universal_ui, 'Universal module settings still have explanatory text'
         universal_inner_path = temp / 'universal-inner.luau'
         universal_inner_path.write_text(universal_inner, encoding='utf-8')
-        for path in [ROOT / 'universal.lua', universal_inner_path]:
+        for path in [UNIVERSAL, universal_inner_path]:
             subprocess.run([str(compiler), '--null', '-O0', '-g2', str(path)], check=True)
         print('PASS Universal source: wrapper and embedded game code compile')
         for client_name, client_inner in [('dedicated', inner), ('universal', universal_inner)]:
