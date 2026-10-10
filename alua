@@ -2247,8 +2247,10 @@ local atmosphereTint = Color3.fromRGB(220, 230, 255)
 local atmosphereTintStrength = 0.35
 local activeSky, savedSky, atmosphereCorrection
 local skyProperties = { "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "StarCount", "CelestialBodiesShown" }
-local skyTints = { Purple = Color3.fromRGB(215, 165, 255), Blue = Color3.fromRGB(165, 205, 255),
-    Rose = Color3.fromRGB(255, 180, 210), Amber = Color3.fromRGB(255, 220, 165) }
+local purpleSkyFaces = { SkyboxBk = 159454299, SkyboxDn = 159454296, SkyboxFt = 159454293,
+    SkyboxLf = 159454286, SkyboxRt = 159454300, SkyboxUp = 159454288 }
+local skyTints = { Purple = Color3.fromRGB(200, 65, 255), Blue = Color3.fromRGB(65, 145, 255),
+    Rose = Color3.fromRGB(255, 65, 155), Amber = Color3.fromRGB(255, 165, 45) }
 local savedLighting, savedAtmosphere, activeAtmosphere
 local atmospherePresets = {
     Clear = {
@@ -2400,14 +2402,15 @@ local function applyAtmosphere()
             else activeSky = new("Sky", { Name = "RiftLocalSky" }, Lighting) end
         end
         for property, face in pairs({ SkyboxBk = "bk", SkyboxDn = "dn", SkyboxFt = "ft", SkyboxLf = "lf", SkyboxRt = "rt", SkyboxUp = "up" }) do
-            activeSky[property] = "rbxasset://textures/sky/sky512_" .. face .. ".tex"
+            activeSky[property] = atmosphereSky == "Purple" and ("rbxassetid://" .. purpleSkyFaces[property])
+                or ("rbxasset://textures/sky/sky512_" .. face .. ".tex")
         end
         activeSky.StarCount = 3000
         activeSky.CelestialBodiesShown = false
         if activeAtmosphere and skyTints[atmosphereSky] then
             activeAtmosphere.Color = skyTints[atmosphereSky]
             activeAtmosphere.Decay = skyTints[atmosphereSky]
-            activeAtmosphere.Density = atmosphereNoFog and 0 or 0.25
+            activeAtmosphere.Density = atmosphereNoFog and 0 or 0.4
         end
     elseif activeSky then
         if savedSky then
@@ -2420,7 +2423,9 @@ local function applyAtmosphere()
     end
     local color = atmosphereTintOn and atmosphereTint or skyTints[atmosphereSky]
     atmosphereCorrection.Enabled = color ~= nil
-    atmosphereCorrection.TintColor = Color3.new(1, 1, 1):Lerp(color or Color3.new(1, 1, 1), atmosphereTintOn and atmosphereTintStrength or 0.3)
+    atmosphereCorrection.TintColor = Color3.new(1, 1, 1):Lerp(color or Color3.new(1, 1, 1), atmosphereTintOn and atmosphereTintStrength or 0.7)
+    atmosphereCorrection.Saturation = skyTints[atmosphereSky] and 0.45 or 0
+    atmosphereCorrection.Brightness = skyTints[atmosphereSky] and 0.1 or 0
 end
 local function setAtmosphereEnabled(on)
     if on == atmosphereEnabled then return end
