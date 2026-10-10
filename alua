@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-drawn-menu-icons-k314"
+local SUNSET_BUILD = "20261009-rift-stable-void-water-k315"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -3570,7 +3570,8 @@ end
 BedWars.VoidWater = {}
 do
 local voidWaterSnapshot, voidWaterCorner, voidWaterCenter
-local voidWaterTop, voidWaterMode, voidWaterWidth
+local voidWaterTop, voidWaterMode, voidWaterWidth, voidWaterDepth
+local lastWaterPlacement = -math.huge
 local voidWaterTerrain = workspace.Terrain
 function BedWars.VoidWater.Clear()
     if voidWaterSnapshot and voidWaterCorner then
@@ -3580,6 +3581,8 @@ function BedWars.VoidWater.Clear()
         voidWaterSnapshot:Destroy()
     end
     voidWaterSnapshot, voidWaterCorner, voidWaterCenter, voidWaterTop, voidWaterMode, voidWaterWidth = nil, nil, nil, nil, nil, nil
+    voidWaterDepth = nil
+    BedWars.NextWaterCheck = nil
 end
 function BedWars.VoidWater.Mode()
     return voidWaterMode
@@ -3592,11 +3595,16 @@ function BedWars.VoidWater.Place(position, surfaceY, mode)
     local depth = mode == "Fight" and 32
         or math.floor(BedWars.VoidWaterDepth / 4) * 4
     if voidWaterCenter and voidWaterTop == surfaceY and voidWaterMode == mode
-        and voidWaterWidth == width
+        and voidWaterWidth == width and voidWaterDepth == depth
         and (Vector2.new(position.X, position.Z) - voidWaterCenter).Magnitude
-            < (mode == "Fight" and 4 or math.min(24, width / 4)) then
+            < (mode == "Fight" and 4 or math.max(4, width / 2 - 12)) then
         return true
     end
+    -- Terrain edits rebuild collision/render data; coalesce moving requests.
+    -- First placement and mode/size changes still take effect immediately.
+    if voidWaterSnapshot and voidWaterMode == mode
+        and voidWaterWidth == width and voidWaterDepth == depth
+        and os.clock() - lastWaterPlacement < 0.2 then return true end
     BedWars.VoidWater.Clear()
     local x = math.floor((position.X - width / 2) / 4) * 4
     local y = math.floor((surfaceY - depth) / 4) * 4
@@ -3635,6 +3643,8 @@ function BedWars.VoidWater.Place(position, surfaceY, mode)
     voidWaterCenter = Vector2.new(x + width / 2, z + width / 2)
     voidWaterTop, voidWaterMode = surfaceY, mode
     voidWaterWidth = width
+    voidWaterDepth = depth
+    lastWaterPlacement = os.clock()
     return true
 end
 end
@@ -7472,44 +7482,49 @@ track(RunService.Heartbeat:Connect(function()
         BedWars.LastSafeCFrame = root.CFrame
         BedWars.WaterGroundY = root.Position.Y
     end
-    local fightTarget = false
-    if BedWars.WaterFightOn then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if BedWars.Enemy(player) then
-                local other = player.Character
-                local otherRoot = other and other:FindFirstChild("HumanoidRootPart")
-                local otherHumanoid = other and other:FindFirstChildOfClass("Humanoid")
-                if otherRoot and otherHumanoid and otherHumanoid.Health > 0
-                    and (otherRoot.Position - root.Position).Magnitude <= BedWars.WaterFightRange then
-                    fightTarget = true
-                    break
+    if os.clock() >= (BedWars.NextWaterCheck or 0) then
+        BedWars.NextWaterCheck = os.clock() + 0.1
+        local fightTarget = false
+        if BedWars.WaterFightOn then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if BedWars.Enemy(player) then
+                    local other = player.Character
+                    local otherRoot = other and other:FindFirstChild("HumanoidRootPart")
+                    local otherHumanoid = other and other:FindFirstChildOfClass("Humanoid")
+                    if otherRoot and otherHumanoid and otherHumanoid.Health > 0
+                        and (otherRoot.Position - root.Position).Magnitude <= BedWars.WaterFightRange then
+                        fightTarget = true
+                        break
+                    end
                 end
             end
         end
-    end
-    if fightTarget then
-        BedWars.VoidWater.Place(root.Position,
-            math.ceil((root.Position.Y + 16) / 4) * 4, "Fight")
-    else
-        local voidBelow = false
-        if BedWars.VoidWaterOn and BedWars.WaterGroundY
-            and root.Position.Y < BedWars.WaterGroundY - 5 then
-            local ray = RaycastParams.new()
-            ray.FilterType = Enum.RaycastFilterType.Exclude
-            ray.FilterDescendantsInstances = { character }
-            ray.RespectCanCollide = true
-            ray.IgnoreWater = true
-            voidBelow = workspace:Raycast(root.Position,
-                Vector3.new(0, -256, 0), ray) == nil
-        end
-        if voidBelow then
+        if fightTarget then
             BedWars.VoidWater.Place(root.Position,
-                math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4,
-                "Void")
-        elseif BedWars.VoidWater.Mode() then
-            BedWars.VoidWater.Clear()
+                math.ceil((root.Position.Y + 16) / 4) * 4, "Fight")
+        else
+            local voidBelow = false
+            if BedWars.VoidWaterOn and BedWars.WaterGroundY
+                and (root.Position.Y < BedWars.WaterGroundY - 5
+                    or (BedWars.VoidWater.Mode() == "Void" and not grounded
+                        and root.Position.Y < BedWars.WaterGroundY + 4)) then
+                local ray = RaycastParams.new()
+                ray.FilterType = Enum.RaycastFilterType.Exclude
+                ray.FilterDescendantsInstances = { character }
+                ray.RespectCanCollide = true
+                ray.IgnoreWater = true
+                voidBelow = workspace:Raycast(root.Position,
+                    Vector3.new(0, -256, 0), ray) == nil
+            end
+            if voidBelow then
+                BedWars.VoidWater.Place(root.Position,
+                    math.floor((BedWars.WaterGroundY - BedWars.VoidWaterGap) / 4) * 4,
+                    "Void")
+            elseif BedWars.VoidWater.Mode() then
+                BedWars.VoidWater.Clear()
+            end
         end
-    end
+    end -- water updates; Anti Void rescue below still runs every heartbeat
 
     if BedWars.AntiVoidOn and not grounded and BedWars.LastSafeCFrame then
         local ray = RaycastParams.new()
@@ -7695,6 +7710,7 @@ do
     local waterSection = gameSection(gameName, MainTab.Right, "Void Water")
     Elements.Toggle(waterSection, "Void Water", false, function(on)
         BedWars.VoidWaterOn = on
+        BedWars.NextWaterCheck = nil
         BedWars.WaterGroundY = nil
         if not on and BedWars.VoidWater.Mode() == "Void" then
             BedWars.VoidWater.Clear()

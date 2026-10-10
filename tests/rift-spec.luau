@@ -251,6 +251,7 @@ assert(BedWars.VoidWater.Mode()=="Fight", "water fight did not place water")
 waterStep()
 assert(copies==previousCopies+1, "unchanged water region was recreated")
 nearbyRoot.Position=Vector3.new(100,30,0)
+advance(0.11)
 waterStep()
 assert(BedWars.VoidWater.Mode()==nil and restores>0, "fight water did not restore")
 BedWars.WaterFightOn=false
@@ -259,11 +260,27 @@ BedWars.VoidWaterGap=3
 BedWars.WaterGroundY=40
 waterStep()
 assert(BedWars.VoidWater.Mode()=="Void", "void water stopped working")
+local swimmingCopies, swimmingRestores = copies, restores
+humanoid.FloorMaterial = Enum.Material.Water
+for frame = 1, 600 do
+    root.Position = Vector3.new(0, 38 + math.sin(frame / 20) * 3, 0)
+    advance(1 / 60)
+    waterStep()
+end
+assert(BedWars.VoidWater.Mode() == "Void" and copies == swimmingCopies
+    and restores == swimmingRestores, "swimming repeatedly destroyed/rebuilt the pool")
 humanoid.Health=0
 waterStep()
 assert(BedWars.VoidWater.Mode()==nil, "death left water behind")
 BedWars.VoidWaterOn=false
-print("PASS water: fight trigger, region reuse, restoration, void trigger, death cleanup")
+local movingCopies = copies
+for frame = 1, 300 do
+    BedWars.VoidWater.Place(Vector3.new(frame * 10, 30, 0), 36, "Void")
+    advance(1 / 60)
+end
+assert(copies - movingCopies <= 26, "moving water rebuilt terrain every frame")
+BedWars.VoidWater.Clear()
+print("PASS water: stable swimming for 600 frames, bounded terrain edits, mode switching, restoration and immediate death cleanup")
 
 waterGround=nil
 character,root,humanoid=newCharacter(Vector3.new(0,3,0))
