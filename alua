@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-notification-context-k323"
+local SUNSET_BUILD = "20261009-rift-remove-seated-k324"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12038,266 +12038,6 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
-function Settings.SetupColdWarSeated()
-    local previous = ENV.SunsetColdWarSeated
-    if previous and type(previous.Restore) == "function" then previous.Restore() end
-    local seated = { Enabled = false, Available = false }
-    Settings.ColdWarSeated, ENV.SunsetColdWarSeated = seated, seated
-    local hooks = ENV.SunsetColdWarSeatHooks or {}
-    ENV.SunsetColdWarSeatHooks = hooks
-    local destroyed, nextRetry, lastApplied = false, 0, nil
-    local function nativeCall(fn, ...)
-        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
-        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
-        if identity then setId(2) end
-        local result = table.pack(pcall(fn, ...))
-        if identity then setId(identity) end
-        if not result[1] then error(result[2], 0) end
-        return table.unpack(result, 2, result.n)
-    end
-    local function humanoid()
-        local character = LocalPlayer.Character
-        return character and character:FindFirstChildOfClass("Humanoid")
-    end
-    local customSeat, nextSeatScan = nil, 0
-    local function customSeatMatches(seat)
-        local character = LocalPlayer.Character
-        if not seat or not seat.Parent or not character then return false end
-        local occupant = seat:FindFirstChild("Occupant")
-        local motor = seat:FindFirstChild("Motor6D")
-        local root = character:FindFirstChild("HumanoidRootPart")
-        return occupant and occupant:IsA("ObjectValue") and occupant.Value == character
-            and motor and motor:IsA("Motor6D") and root and motor.Part1 == root
-    end
-    local function occupiedSeat(hum)
-        if not hum or hum.Health <= 0 then return false end
-        if hum.Sit and hum.SeatPart ~= nil and not hum.PlatformStand then return true end
-        if customSeatMatches(customSeat) then return true end
-        customSeat = nil
-        if os.clock() < nextSeatScan then return false end
-        nextSeatScan = os.clock() + 0.25
-        for _, seat in ipairs(CollectionService:GetTagged("FactoryVehicleSeat")) do
-            if customSeatMatches(seat) then customSeat = seat return true end
-        end
-        return false
-    end
-    local function inSeat(hum)
-        if not hum or not occupiedSeat(hum) then return false end
-        local character = LocalPlayer.Character
-        if character and character:GetAttribute("Ragdolled") == true then return false end
-        -- Factory seats attach the root through a Motor6D and use vehicle physics.
-        -- Accept PlatformStand only when both ownership and that attachment match.
-        return not hum.PlatformStand or customSeatMatches(customSeat)
-    end
-    hooks.InSeat = inSeat
-    local function install()
-        local storage = game:GetService("ReplicatedStorage")
-        local client = storage:FindFirstChild("Client")
-        local character = client and client:FindFirstChild("Character")
-        local module = character and character:FindFirstChild("InventoryController")
-        if not module or not rivalsModuleLoaded(module) then return false end
-        local inventory = nativeCall(require, module)
-        if hooks.Inventory == inventory and hooks.Installed then
-            inventory.setSeated = hooks.SeatWrapper
-            return true
-        end
-        local read = debug and debug.getupvalues
-        if type(read) ~= "function" or type(hookfunction) ~= "function"
-            or type(inventory) ~= "table" or type(inventory.equip) ~= "function"
-            or type(inventory.new) ~= "function" or type(inventory.setSeated) ~= "function" then
-            error("Shoot While Seated needs the observed inventory interface and executor hooks")
-        end
-        local gate = read(inventory.equip)[3]
-        local onSeat = read(inventory.new)[28]
-        if type(gate) ~= "function" or type(onSeat) ~= "function" then
-            error("Cold War seat/equip layout changed")
-        end
-        local values, seatValues = read(gate), read(onSeat)
-        if values[10] ~= nil or values[9] ~= LocalPlayer or type(values[2]) ~= "number"
-            or type(values[7]) ~= "table" or type(values[7].isConscious) ~= "function"
-            or seatValues[1] ~= values[8] then error("Cold War seat guards changed") end
-        hooks.Inventory, hooks.NativeSeat = inventory, inventory.setSeated
-        hooks.SeatWrapper = function(on, ...)
-            return hooks.NativeSeat(on and not (hooks.Enabled and Settings.SelectedGame == "Cold War"), ...)
-        end
-        local originalGate
-        originalGate = hookfunction(gate, function(...)
-            if not hooks.Enabled or Settings.SelectedGame ~= "Cold War" then return originalGate(...) end
-            local current = read(originalGate)
-            local hum = current[8]
-            if not hooks.InSeat(hum) then return originalGate(...) end
-            -- Reproduce the observed switch guard, omitting only the seated checks.
-            return not current[1] and os.clock() - current[2] >= 0.3 and not current[3]
-                and not current[5] and not current[6] and current[7]:isConscious()
-                and LocalPlayer:GetAttribute("CarryingTarget") == nil
-                and LocalPlayer:GetAttribute("ShoulderCarryTarget") == nil
-                and LocalPlayer:GetAttribute("Reviving") == nil
-        end)
-        local originalSeat
-        originalSeat = hookfunction(onSeat, function(...)
-            if hooks.Enabled and Settings.SelectedGame == "Cold War" and hooks.InSeat(humanoid()) then return end
-            return originalSeat(...)
-        end)
-        if type(originalGate) ~= "function" or type(originalSeat) ~= "function" then
-            error("Could not install Cold War seat guards")
-        end
-        hooks.ReadGate = function() return read(originalGate) end
-        hooks.Installed = true
-        inventory.setSeated = hooks.SeatWrapper
-        return true
-    end
-    function seated.Update()
-        if destroyed or not seated.Enabled or Settings.SelectedGame ~= "Cold War" then return end
-        if not seated.Available then
-            if os.clock() < nextRetry then return end
-            nextRetry = os.clock() + 1
-            local ok, result = pcall(install)
-            seated.Available = ok and result == true
-            if not ok and seated.LastError ~= tostring(result) then
-                seated.LastError = tostring(result)
-                warn("[Rift] Shoot While Seated: " .. seated.LastError)
-                Settings.Notify("Shoot While Seated", seated.LastError, "error")
-            end
-        end
-        if seated.Available then
-            hooks.Enabled = true
-            local hum = humanoid()
-            if lastApplied ~= hum then
-                nativeCall(hooks.NativeSeat, false)
-                lastApplied = hum
-            end
-        end
-    end
-    local function restore()
-        seated.Enabled, hooks.Enabled = false, false
-        if hooks.Inventory and hooks.Inventory.setSeated == hooks.SeatWrapper then
-            hooks.Inventory.setSeated = hooks.NativeSeat
-            local hum = humanoid()
-            pcall(nativeCall, hooks.NativeSeat, occupiedSeat(hum))
-        end
-        seated.Available, lastApplied = false, nil
-    end
-    function seated.Check()
-        local hum = humanoid()
-        nextSeatScan = 0
-        local found = occupiedSeat(hum)
-        local messages = {
-            "enabled=" .. tostring(seated.Enabled), "hooks=" .. tostring(seated.Available),
-            "seat=" .. tostring(found), "sit=" .. tostring(hum and hum.Sit),
-            "platform=" .. tostring(hum and hum.PlatformStand),
-        }
-        local storage = game:GetService("ReplicatedStorage")
-        local inputs = storage:FindFirstChild("Inputs")
-        for _, name in ipairs({ "InventoryContext", "WeaponContext" }) do
-            local context = inputs and inputs:FindFirstChild(name)
-            if context then table.insert(messages, name .. "=" .. tostring(context.Enabled)) end
-        end
-        if seated.Available and type(hooks.ReadGate) == "function" then
-            local values = hooks.ReadGate()
-            for _, entry in ipairs({ { "switching", 1 }, { "equipBlocked", 3 },
-                { "seatedLock", 4 }, { "swimming", 5 }, { "preparation", 6 } }) do
-                table.insert(messages, entry[1] .. "=" .. tostring(values[entry[2]]))
-            end
-            table.insert(messages, "conscious=" .. tostring(values[7]:isConscious()))
-            table.insert(messages, "gateHumanoid=" .. tostring(values[8] == hum))
-        elseif seated.Available then
-            table.insert(messages, "restart Roblox to update existing seat hooks")
-        end
-        if seated.LastError then table.insert(messages, "error=" .. seated.LastError) end
-        if seated.Enabled and not seated.Available and not seated.LastError then
-            table.insert(messages, "waiting for initialized InventoryController")
-        end
-        local message = "[Rift] Seated status: " .. table.concat(messages, "; ")
-        print(message)
-        local summary = not seated.Enabled and "Disabled. Enable Shoot While Seated first."
-            or not seated.Available and (seated.LastError or "Waiting for initialized InventoryController.")
-            or not found and "No occupied seat detected. Enter a seat, then check again."
-            or hum.PlatformStand and not inSeat(hum) and "Equip blocked: PlatformStand is unrelated to a verified vehicle seat."
-            or LocalPlayer.Character:GetAttribute("Ragdolled") == true and "Equip blocked: character is ragdolled."
-            or "Seat detected. Hooks active. Try your weapon number key."
-        if seated.Available and hooks.ReadGate then
-            local values = hooks.ReadGate()
-            if values[1] then summary = "Equip blocked: another weapon switch is active."
-            elseif values[3] then summary = "Equip blocked: the game has locked equipment."
-            elseif values[5] then summary = "Equip blocked: swimming state is active."
-            elseif values[6] then summary = "Equip blocked: match preparation is active."
-            elseif not values[7]:isConscious() then summary = "Equip blocked: character is not conscious." end
-        end
-        seated.Status = summary
-        Settings.Notify("Shoot While Seated", summary, seated.LastError and "error" or nil)
-        return message
-    end
-    local equipRunning = false
-    function seated.EquipSlot(index)
-        if destroyed or not seated.Enabled or not seated.Available or equipRunning
-            or Settings.SelectedGame ~= "Cold War" or not hooks.InSeat(humanoid()) then return false end
-        local inventory = hooks.Inventory
-        if not inventory or type(inventory.getTools) ~= "function"
-            or type(inventory.getEquipped) ~= "function" then
-            Settings.Notify("Shoot While Seated", "Inventory equip interface is unavailable.", "error")
-            return false
-        end
-        local tools = nativeCall(inventory.getTools)
-        local tool = type(tools) == "table" and tools[index]
-        if not tool then
-            Settings.Notify("Shoot While Seated", "No tool found in slot " .. tostring(index) .. ".", "error")
-            return false
-        end
-        if nativeCall(inventory.getEquipped) == tool then return true end
-        if hooks.ReadGate and hooks.ReadGate()[1] then return false end
-        equipRunning = true
-        local ok, err = pcall(nativeCall, inventory.equip, tool)
-        equipRunning = false
-        if not ok then
-            seated.LastError = tostring(err)
-            Settings.Notify("Seated equip error", seated.LastError, "error")
-            warn("[Rift] Seated equip: " .. seated.LastError)
-            return false
-        end
-        if destroyed or not seated.Enabled then return false end
-        if nativeCall(inventory.getEquipped) == tool then
-            Settings.Notify("Shoot While Seated", "Equipped " .. tostring(tool.Name) .. ".")
-            return true
-        end
-        seated.Check()
-        Settings.Notify("Seated equip incomplete", "The native equip call returned without equipping the tool.", "error")
-        return false
-    end
-    function seated.Restore() destroyed = true restore() end
-    track(RunService.RenderStepped:Connect(seated.Update))
-    track({ Disconnect = seated.Restore })
-    local section = gameSection("Cold War", AimTab.Left, "Shoot While Seated")
-    Elements.Toggle(section, "Shoot While Seated", false, function(on)
-        seated.Enabled = on
-        if on then seated.Update() else restore() end
-        seated.Check()
-    end)
-    Elements.Button(section, "Check Seated", seated.Check)
-    if UIS and UIS.InputBegan then
-        local lastAttempt = -math.huge
-        local numberKeys = { One=1, Two=2, Three=3, Four=4, Five=5,
-            Six=6, Seven=7, Eight=8, Nine=9, Zero=10 }
-        track(UIS.InputBegan:Connect(function(input)
-            if not seated.Enabled or Settings.SelectedGame ~= "Cold War"
-                or not input.KeyCode or not numberKeys[input.KeyCode.Name]
-                or UIS:GetFocusedTextBox() or os.clock() - lastAttempt < 0.35 then return end
-            lastAttempt = os.clock()
-            local index, character = numberKeys[input.KeyCode.Name], LocalPlayer.Character
-            local inventory = hooks.Inventory
-            local wasEquipped = false
-            if inventory and inventory.getTools and inventory.getEquipped then
-                local tools = nativeCall(inventory.getTools)
-                wasEquipped = tools[index] ~= nil and nativeCall(inventory.getEquipped) == tools[index]
-            end
-            -- Give the normal input action the first attempt. Never toggle an already equipped tool.
-            task.delay(0.08, function()
-                if destroyed or not seated.Enabled or LocalPlayer.Character ~= character then return end
-                if not wasEquipped then seated.EquipSlot(index) end
-            end)
-        end))
-    end
-end
-
 function Settings.SetupColdWarSession()
     local session = { Seconds = 0, Kills = 0, Deaths = 0, Observed = {}, Enabled = false }
     Settings.ColdWarSession = session
@@ -12347,6 +12087,17 @@ function Settings.SetupColdWarSession()
 end
 
 function Settings.SetupColdWar()
+    -- Retire an earlier injection's seated override before returning to native equip behavior.
+    local retiredSeated = ENV.SunsetColdWarSeated
+    if retiredSeated and type(retiredSeated.Restore) == "function" then pcall(retiredSeated.Restore) end
+    local retiredHooks = ENV.SunsetColdWarSeatHooks
+    if retiredHooks then
+        retiredHooks.Enabled = false
+        if retiredHooks.Inventory and retiredHooks.Inventory.setSeated == retiredHooks.SeatWrapper then
+            retiredHooks.Inventory.setSeated = retiredHooks.NativeSeat
+        end
+    end
+    ENV.SunsetColdWarSeated = nil
     local retiredSpeed = ENV.SunsetColdWarBulletSpeed
     if retiredSpeed and type(retiredSpeed.Restore) == "function" then pcall(retiredSpeed.Restore) end
     ENV.SunsetColdWarBulletSpeed = nil
@@ -12356,7 +12107,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
-    Settings.SetupColdWarSeated()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

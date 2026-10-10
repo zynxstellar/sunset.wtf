@@ -176,12 +176,9 @@ def main():
         session_path = temp / 'session-spec.luau'
         session_path.write_text(session_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(session_path)], check=True)
-        seated_spec = (ROOT / 'tests' / 'seated-spec.luau').read_text(encoding='utf-8')
-        seated_spec = seated_spec.replace('-- INSERT_SEATED_PRODUCTION',
-            between(inner, 'function Settings.SetupColdWarSeated()', '\nfunction Settings.SetupColdWarSession()'))
-        seated_path = temp / 'seated-spec.luau'
-        seated_path.write_text(seated_spec, encoding='utf-8')
-        subprocess.run([str(runtime), str(seated_path)], check=True)
+        assert 'function Settings.SetupColdWarSeated()' not in inner
+        assert '"Shoot While Seated"' not in inner
+        assert '"Check Seated"' not in inner
         extras_spec = (ROOT / 'tests' / 'visual-extras-spec.luau').read_text(encoding='utf-8')
         extras_spec = extras_spec.replace('-- INSERT_VISUAL_EXTRAS',
             between(inner, 'function Settings.SetupColdWarVisualExtras()', '\nfunction Settings.SetupColdWarWeaponTuning('))
