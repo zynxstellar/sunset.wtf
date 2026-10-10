@@ -14,6 +14,7 @@ if game.PlaceId ~= 6872265039 and game.GameId ~= 2619619496
 end
 
 local ENV = (typeof(getgenv) == "function" and getgenv()) or _G
+if type(ENV.SunsetCheckpoint) == "function" then ENV.SunsetCheckpoint("Client code entered") end
 do
     local copy = type(ENV.setclipboard) == "function" and ENV.setclipboard
         or type(setclipboard) == "function" and setclipboard
@@ -62,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-startup-scope-fix-k312"
+local SUNSET_BUILD = "20261009-rift-recovery-startup-k313"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -120,6 +121,7 @@ local RefreshConfigList
 
 
 local Settings = {
+    RecoveryMode  = ENV.SunsetRecovery == true,
     IsColdWar     = game.PlaceId == 13687899540 or game.GameId == 4750561026,
     GameBoards     = {},
     MenuKey        = Enum.KeyCode.RightShift,
@@ -280,7 +282,7 @@ function Settings.SetMenuBlur(size)
         { Size = size })
     Settings.MenuBlurTween:Play()
 end
-Settings.SetMenuBlur(20)
+Settings.SetMenuBlur(Settings.RecoveryMode and 0 or 20)
 ENV.SunsetLoading = {}
 ENV.SunsetLoading.Gui = new("ScreenGui", {
     Name = "RiftLoading", DisplayOrder = 2147483647,
@@ -329,7 +331,7 @@ new("UICorner", { CornerRadius = UDim.new(1, 0) }, ENV.SunsetLoading.Fill)
 TweenService:Create(ENV.SunsetLoading.Fill, TweenInfo.new(1.2, Enum.EasingStyle.Quad,
     Enum.EasingDirection.Out), { Size = UDim2.fromScale(0.88, 1) }):Play()
 function Settings.StartupStage(message)
-    if not Settings.IsColdWar then return end
+    if type(ENV.SunsetCheckpoint) == "function" then ENV.SunsetCheckpoint(message) end
     print("[Rift startup " .. SUNSET_BUILD .. "] " .. message)
     local loading = ENV.SunsetLoading
     if loading and loading.Status and loading.Status.Parent then loading.Status.Text = message end
@@ -412,20 +414,12 @@ end))
 
 
 
--- Cold War visuals only need our own UI and player characters. Leave native
--- property writes alone; unlock the menu cursor through forceUnlock instead.
-local canHook = game.PlaceId ~= 13687899540 and game.GameId ~= 4750561026
-    and typeof(hookmetamethod) == "function" and typeof(newcclosure) == "function" and typeof(checkcaller) == "function"
-local useScriptable = not canHook
+-- Unlock the menu cursor without intercepting every game property write.
+local canHook = false
+local useScriptable = false
 
 local savedCamType, savedCamMode, camOffset = nil, nil, nil
 local savedMenuInput
-
-local function rememberGameInput(key, value)
-    if savedMenuInput and (key == "MouseBehavior" or key == "MouseIconEnabled") then
-        savedMenuInput[key] = value
-    end
-end
 
 local function restoreMenuInput()
     if not savedMenuInput then return end
@@ -440,8 +434,8 @@ end
 
 local function onMenuVisibility()
     local visible = anyMenuVisible()
-    Settings.SetMenuBlur(ENV.SunsetLoading and 20
-        or (visible and Settings.MenuBlurOn and 16 or 0))
+    Settings.SetMenuBlur(Settings.RecoveryMode and 0 or (ENV.SunsetLoading and 20
+        or (visible and Settings.MenuBlurOn and 16 or 0)))
     if Settings.ActiveSearchBox then
         if not visible then
             Settings.ActiveSearchBox.Text = ""
@@ -501,20 +495,6 @@ RunService:BindToRenderStep(UNLOCK_NAME, Enum.RenderPriority.Last.Value, forceUn
 track(RunService.Stepped:Connect(forceUnlock))
 track(RunService.Heartbeat:Connect(forceUnlock))
 
-
-if canHook then
-    local oldNewIndex
-    oldNewIndex = hookmetamethod(game, "__newindex", newcclosure(function(self, key, value)
-        if not checkcaller() and Window and Window.Parent and anyMenuVisible() then
-            if self == UIS then
-                rememberGameInput(key, value)
-                if key == "MouseBehavior" then value = Enum.MouseBehavior.Default end
-                if key == "MouseIconEnabled" then value = true end
-            end
-        end
-        return oldNewIndex(self, key, value)
-    end))
-end
 
 track({ Disconnect = function()
     pcall(RunService.UnbindFromRenderStep, RunService, UNLOCK_NAME)
@@ -690,6 +670,7 @@ do
             .. tostring(gameName):gsub("[^%w%-_]", "_") .. ".json"
     end
     function Persistence.Save()
+        if Settings.RecoveryMode then return false end
         local gameName = Settings.SelectedGame
         if not gameName then return false end
         local saved = {}
@@ -730,6 +711,7 @@ do
         return written
     end
     function Persistence.Restore(gameName, menuKeyControl)
+        if Settings.RecoveryMode then return false end
         local snapshots = ENV.SunsetSettingsSnapshots
         local data = ENV.SunsetSettingsSnapshot
         if (type(data) ~= "table" or data.Game ~= gameName) and type(snapshots) == "table" then
@@ -816,6 +798,7 @@ do
         return true
     end
     function Persistence.Start()
+        if Settings.RecoveryMode then return end
         task.spawn(function()
             while Gui.Parent do
                 Persistence.Save()
@@ -2819,7 +2802,7 @@ do
 end
 do
     local s = makeSection(SettingsTab.Left, "Arena Travel")
-    AutoReinject.Toggle = Elements.Toggle(s, "Auto Reinject", true, function(on)
+    AutoReinject.Toggle = Elements.Toggle(s, "Auto Reinject", not Settings.RecoveryMode, function(on)
         if not AutoReinject.ready then return end
         if AutoReinject.Toggle then
             AutoReinject.enabled = AutoReinject.Toggle.Get() == true
@@ -3006,8 +2989,9 @@ function Settings.NewSessionTracker(session, gameName, countKills)
     step()
     return step
 end
-Settings.StartupStage("Preparing Cold War...")
+Settings.StartupStage("Preparing game runtime...")
 function Settings.SetupBedWarsRuntime()
+Settings.StartupStage("Creating BedWars runtime...")
 do
     BedWars.NotifyGui = new("ScreenGui", {
         Name = "RiftNotifications", ResetOnSpawn = false,
@@ -8272,9 +8256,11 @@ do
                 writefile("SunsetConfigs/Webhook.txt", BedWars.WebhookUrl)
             end)
         end
-        task.delay(0.25, function()
-            if BedWars.Running then BedWars.WebhookSend("Client started") end
-        end)
+        if not Settings.RecoveryMode then
+            task.delay(0.25, function()
+                if BedWars.Running then BedWars.WebhookSend("Client started") end
+            end)
+        end
     end
     do
         local spotify = gameSection(gameName, VisualsTab.Right, "Music Overlay")
@@ -8321,6 +8307,7 @@ if Settings.IsColdWar then
 else
     Settings.SetupBedWarsRuntime()
 end
+Settings.StartupStage("Game runtime ready")
 
 local Fun = { Running = true, Enabled = false, Rate = 4, Range = 60,
     Color = Color3.fromRGB(255, 116, 82), Active = {},
@@ -12497,6 +12484,7 @@ function Settings.SetupProjectDelta()
     BedWars.BuildUI("Project Delta")
 end
 if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
+    Settings.StartupStage("Creating BedWars menu...")
     Settings.SetupPlayerESP("BedWars")
     BedWars.BuildUI()
 elseif game.PlaceId == 17625359962 or game.GameId == 6035872082 then
@@ -12712,7 +12700,7 @@ do
     end
 end
 if detectedGame then
-    Settings.StartupStage("Restoring Cold War settings...")
+    Settings.StartupStage(Settings.RecoveryMode and "Recovery: saved modules paused" or "Restoring settings...")
     Persistence.Restore(detectedGame, menuKeyControl)
     Persistence.Start()
     track(LocalPlayer.OnTeleport:Connect(function(state)
@@ -12726,18 +12714,32 @@ end
 ENV.SunsetLoading.Status.Text = detectedGame and ("Ready for " .. detectedGame) or "Rift ready"
 Settings.CompleteStartup(ENV.SunsetLoading, detectedGame)
 ENV.SunsetAbortStartup = nil
+Settings.StartupStage(Settings.RecoveryMode and "Recovery ready" or "Ready")
 
 ]========]
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
 environment.SunsetEmbeddedSource = source
+environment.SunsetCheckpoint = function(stage)
+    if typeof(writefile) == "function" then
+        pcall(function()
+            if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
+            writefile("SunsetConfigs/RiftStartup.txt", "Build: "
+                .. tostring(source:match('local SUNSET_BUILD = "([^"]+)"'))
+                .. "\nPlace: " .. tostring(game.PlaceId) .. "\nStage: " .. stage)
+        end)
+    end
+end
+environment.SunsetCheckpoint("Caching client source")
 if typeof(writefile) == "function" then
     pcall(function()
         if typeof(makefolder) == "function" then pcall(makefolder, "SunsetConfigs") end
         writefile("SunsetConfigs/SunsetCurrent.lua", source)
     end)
 end
+environment.SunsetCheckpoint("Compiling client")
 local chunk, err = loadstring(source)
 if not chunk then error("Rift source did not compile: " .. tostring(err)) end
+environment.SunsetCheckpoint("Compiled; entering client")
 local ok, startupError = xpcall(chunk, function(message)
     return debug.traceback(tostring(message), 2)
 end)

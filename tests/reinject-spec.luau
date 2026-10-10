@@ -34,6 +34,21 @@ end
 
 -- INSERT_PERSISTENCE_PRODUCTION
 do
+    Settings.RecoveryMode = true
+    local previous = enabled
+    assert(not Persistence.Restore("Rivals") and enabled == previous,
+        "recovery restored a saved module")
+    assert(not Persistence.Save() and #encodedData == 0 and next(files) == nil,
+        "recovery overwrote the saved profile")
+    local spawned, oldSpawn = 0, task.spawn
+    task.spawn = function() spawned += 1 end
+    Persistence.Start()
+    assert(spawned == 0, "recovery started background auto-save")
+    task.spawn = oldSpawn
+    Settings.RecoveryMode = nil
+end
+print("PASS recovery: saved modules stay paused and existing profiles are preserved")
+do
     local previousGame=Settings.SelectedGame
     Settings.SelectedGame="BedWars"
     BedWars.Session.Seconds,BedWars.Session.Kills=60,3

@@ -405,12 +405,12 @@ UIS.MouseBehavior="Default"
 UIS.MouseIconEnabled=true
 Window.Visible=true
 onMenuVisibility()
-rememberGameInput("MouseBehavior","LockCenter")
-rememberGameInput("MouseIconEnabled",false)
+UIS.MouseBehavior = "LockCenter"
+UIS.MouseIconEnabled = false
 Window.Visible=false
 onMenuVisibility()
-assert(UIS.MouseBehavior=="LockCenter" and UIS.MouseIconEnabled==false,
-    "menu ignored new mouse state requested by the game while open")
+assert(UIS.MouseBehavior=="Default" and UIS.MouseIconEnabled==true,
+    "menu did not restore captured input without a global hook")
 print("PASS Rivals input: first-person camera preserved, focus released, mouse restored on close/unload")
 
 requireFailure=true

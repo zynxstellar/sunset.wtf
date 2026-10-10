@@ -167,7 +167,7 @@ def main():
         assert 'gameSection("Cold War", AimTab.Left, "Bullet Speed")' not in inner
         session_spec = (ROOT / 'tests' / 'session-spec.luau').read_text(encoding='utf-8')
         session_spec = session_spec.replace('-- INSERT_SESSION_TRACKER',
-            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing Cold War...")'))
+            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing game runtime...")'))
         session_spec = session_spec.replace('-- INSERT_SESSION_HUD',
             between(inner, 'function Settings.SetupColdWarSession()', '\nfunction Settings.SetupColdWar()'))
         session_spec = session_spec.replace('-- INSERT_BEDWARS_SESSION_UPDATE',
@@ -210,7 +210,7 @@ def main():
         auto_path.write_text(auto_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(auto_path)], check=True)
         rivals_chunks = [
-            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing Cold War...")'),
+            between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing game runtime...")'),
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),
             between(inner, 'local function buildSpinbot(', '\nspinToggle = buildSpinbot('),

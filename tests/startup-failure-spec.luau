@@ -1,5 +1,6 @@
 local ENV = {}
 local environment = ENV
+ENV.SunsetCheckpoint = function() end
 local BedWars = {Running = true}
 local destroyed, disconnected = 0, 0
 local function destroyable()
