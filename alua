@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-underground-speed-k335"
+local SUNSET_BUILD = "20261010-rift-remove-underground-k336"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12203,94 +12203,6 @@ function Settings.SetupColdWarSpider()
     track({ Disconnect = function() spider.Enabled, spider.Destroyed = false, true reset() end })
 end
 
-function Settings.SetupColdWarUnderground()
-    local underground = { Enabled = false, Depth = 8, Destroyed = false }
-    Settings.ColdWarUnderground = underground
-    local root, character, surface, savedRotation, addedConnection
-    local collisions = {}
-    local function restore(returnToSurface)
-        if addedConnection then addedConnection:Disconnect() addedConnection = nil end
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if returnToSurface and root and root.Parent and surface and not root.Anchored
-            and humanoid and humanoid.Health > 0 and not humanoid.Sit and not humanoid.PlatformStand then
-            root.CFrame = CFrame.new(surface + Vector3.new(0, 3.5, 0)) * savedRotation
-            root.AssemblyLinearVelocity = Vector3.new()
-            root.AssemblyAngularVelocity = Vector3.new()
-        end
-        for part, original in pairs(collisions) do
-            if part.Parent then part.CanCollide = original end
-        end
-        collisions = {}
-        root, character, surface, savedRotation = nil, nil, nil, nil
-    end
-    local function noCollision(part)
-        if part:IsA("BasePart") and collisions[part] == nil then
-            collisions[part] = part.CanCollide
-            part.CanCollide = false
-        end
-    end
-    local function stop(message, returnToSurface)
-        underground.Enabled = false
-        restore(returnToSurface)
-        if underground.Toggle then underground.Toggle.Set(false) end
-        if message then Settings.Notify("Underground stopped", message, "error") end
-    end
-    function underground.Step(dt)
-        if underground.Destroyed or not underground.Enabled then return end
-        local current = LocalPlayer.Character
-        local currentRoot = current and current:FindFirstChild("HumanoidRootPart")
-        local humanoid = current and current:FindFirstChildOfClass("Humanoid")
-        if Settings.SelectedGame ~= "Cold War" or not currentRoot or not humanoid
-            or humanoid.Health <= 0 or currentRoot.Anchored or humanoid.Sit or humanoid.PlatformStand then
-            stop(nil, currentRoot == root and humanoid and humanoid.Health > 0)
-            return
-        end
-        if root and currentRoot ~= root then stop(nil, false) return end
-        if dt <= 0 or dt > 0.25 then return end
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { current }
-        params.RespectCanCollide = true
-        params.IgnoreWater = true
-        if not root then
-            local ground = workspace:Raycast(currentRoot.Position, Vector3.new(0, -16, 0), params)
-            if not ground or ground.Normal.Y < 0.5 then stop("Stand on solid ground before enabling.", false) return end
-            root, character, surface, savedRotation = currentRoot, current, ground.Position, currentRoot.CFrame.Rotation
-            for _, part in ipairs(character:GetDescendants()) do noCollision(part) end
-            addedConnection = character.DescendantAdded:Connect(noCollision)
-        end
-        local movement = humanoid.MoveDirection
-        local direction = Vector3.new(movement.X, 0, movement.Z)
-        if direction.Magnitude > 1 then direction = direction.Unit end
-        if anyMenuVisible() or UIS:GetFocusedTextBox() then direction = Vector3.new() end
-        local nextSurface = surface + direction * math.max(0, humanoid.WalkSpeed) * dt
-        local ground = workspace:Raycast(nextSurface + Vector3.new(0, 4, 0), Vector3.new(0, -8, 0), params)
-        if not ground or ground.Normal.Y < 0.5 then
-            stop("Ground ended. Returned to the last surface.", true)
-            return
-        end
-        surface = ground.Position
-        for part in pairs(collisions) do if part.Parent then part.CanCollide = false end end
-        root.CFrame = CFrame.new(surface - Vector3.new(0, underground.Depth, 0)) * savedRotation
-        root.AssemblyLinearVelocity = Vector3.new()
-        root.AssemblyAngularVelocity = Vector3.new()
-    end
-    local section = gameSection("Cold War", MainTab.Left, "Underground")
-    underground.Toggle = Elements.Toggle(section, "Underground", false, function(on)
-        underground.Enabled = on == true and not underground.Destroyed
-        if not underground.Enabled then restore(true) end
-    end)
-    Elements.Slider(section, "Depth", 6, 16, 8, "studs", function(value) underground.Depth = value end)
-    track(RunService.PreSimulation:Connect(function(dt)
-        local ok, err = pcall(underground.Step, dt)
-        if not ok then stop("Movement failed: " .. tostring(err), true) end
-    end))
-    track({ Disconnect = function()
-        underground.Enabled, underground.Destroyed = false, true
-        restore(true)
-    end })
-end
-
 function Settings.SetupColdWarSession()
     local session = { Seconds = 0, Kills = 0, Deaths = 0, Observed = {}, Enabled = false }
     Settings.ColdWarSession = session
@@ -12361,7 +12273,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSpider()
-    Settings.SetupColdWarUnderground()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")
