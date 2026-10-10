@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-catch-platform-k345"
+local SUNSET_BUILD = "20261010-rift-contact-car-fling-k346"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9106,7 +9106,7 @@ function BedWars.BuildUI(boardGame)
             { "Movement", "Car Fly", "Movement", "Cold War", "Car Fly", "Car Fly" },
             { "Movement", "Car Lift", "Movement", "Cold War", "Car Lift", "Car Lift" },
             { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
-            { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling" },
+            { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling", "Car Fling" },
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
             { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
@@ -9223,7 +9223,7 @@ function BedWars.BuildUI(boardGame)
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
         ["Spider"] = "Climbs walls while moving into them from any direction.",
-        ["Car Fling"] = "Opens launch power and the button that launches your driven car.",
+        ["Car Fling"] = "Spins your flying car for physical contact with other vehicles.",
         ["Void Water"] = "Places water when void is detected beneath you.",
         ["Noclip"] = "Lets your character pass through local collision surfaces.",
         ["Auto Bed"] = "Targets nearby enemy beds with supported tools.",
@@ -12276,6 +12276,7 @@ function Settings.SetupColdWarCarNoclip()
         if options.Destroyed or not options.Enabled or Settings.SelectedGame ~= "Cold War"
             or not humanoid or humanoid.Health <= 0 then restore() return end
         local fly = Settings.ColdWarCarFly
+        if fly and fly.ContactFlingEnabled then options.SetEnabled(false) return end
         local seat = fly and fly.DriverSeat(character, humanoid)
         local root = seat and seat.AssemblyRootPart
         if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then restore() return end
@@ -12308,17 +12309,30 @@ function Settings.SetupColdWarCarNoclip()
     end))
     track({ Disconnect = function() options.Destroyed = true options.Enabled = false restore() end })
     local section = gameSection("Cold War", MainTab.Left, "Car Noclip")
-    Elements.Toggle(section, "Car Noclip", false, function(on) options.Enabled = on if not on then restore() end end)
+    options.Toggle = Elements.Toggle(section, "Car Noclip", false, function(on) options.Enabled = on if not on then restore() end end)
+    function options.SetEnabled(on)
+        if options.Toggle then options.Toggle.Set(on) end
+        options.Enabled = on
+        if not on then restore() end
+    end
 end
 
 function Settings.SetupColdWarCarFly()
-    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, PlatformGap = 2, FollowFlight = true, FlingPower = 60, Destroyed = false }
+    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, PlatformGap = 2, FollowFlight = true, ContactFlingEnabled = false, SpinSpeed = 30, Destroyed = false }
     Settings.ColdWarCarFly = fly
-    local vehicleRoot, attachment, velocity, orientation
+    local vehicleRoot, attachment, velocity, orientation, angular
     local platform, platformTop, platformClearance
     local lastError = -math.huge
-    local flightToggle, liftToggle
+    local flightToggle, liftToggle, flingToggle
+    local function clearSpin()
+        if angular then
+            angular:Destroy()
+            angular = nil
+            if vehicleRoot and vehicleRoot.Parent then vehicleRoot.AssemblyAngularVelocity = Vector3.zero end
+        end
+    end
     local function clearFlight()
+        clearSpin()
         for _, object in pairs({ velocity, orientation, attachment }) do object:Destroy() end
         attachment, velocity, orientation = nil, nil, nil
     end
@@ -12412,32 +12426,20 @@ function Settings.SetupColdWarCarFly()
         end
         if movement.Magnitude > 1 then movement = movement.Unit end
         velocity.VectorVelocity = movement * fly.Speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
-        if fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
-    end
-    local nextFling = 0
-    function fly.Fling()
-        if fly.Destroyed or Settings.SelectedGame ~= "Cold War" or os.clock() < nextFling then return false end
-        local character = LocalPlayer.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local seat = humanoid and humanoid.Health > 0 and driverSeat(character, humanoid)
-        local root = seat and seat.AssemblyRootPart
-        if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then
-            Settings.Notify("Car Fling", "Sit in the driver's seat first.")
-            return false
-        end
-        local camera = workspace.CurrentCamera
-        local facing = camera and camera.CFrame.LookVector or root.CFrame.LookVector
-        local forward = Vector3.new(facing.X, 0, facing.Z)
-        if forward.Magnitude > 0.001 then forward = forward.Unit else forward = Vector3.zero end
-        local power = math.clamp(fly.FlingPower, 10, 150)
-        nextFling = os.clock() + 2
-        -- Release our lift/flight constraints before applying one impulse to this car.
-        fly.Enabled, fly.LiftEnabled = false, false
-        if flightToggle then flightToggle.Set(false) end
-        if liftToggle then liftToggle.Set(false) end
-        clear()
-        root:ApplyImpulse((forward * (power * 0.5) + Vector3.new(0, power, 0)) * root.AssemblyMass)
-        return true
+        local spinning = fly.ContactFlingEnabled and not anyMenuVisible() and not UIS:GetFocusedTextBox()
+        orientation.Enabled = not spinning
+        if spinning then
+            local noclip = Settings.ColdWarCarNoclip
+            if noclip and noclip.Enabled then noclip.SetEnabled(false) end
+            if not angular then
+                angular = new("AngularVelocity", { Name = "RiftCarContactSpin", Attachment0 = attachment,
+                    RelativeTo = Enum.ActuatorRelativeTo.World,
+                    MaxTorque = math.max(root.AssemblyMass * workspace.Gravity * 100, 10000),
+                    AngularVelocity = Vector3.zero }, root)
+            end
+            angular.AngularVelocity = Vector3.new(0, math.clamp(fly.SpinSpeed, 5, 60), 0)
+        else clearSpin() end
+        if fly.FaceCamera and not spinning then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
     end
     track(RunService.PreSimulation:Connect(function(dt)
         local ok, err = pcall(fly.Step, dt)
@@ -12445,15 +12447,23 @@ function Settings.SetupColdWarCarFly()
             clear()
             fly.Enabled = false
             fly.LiftEnabled = false
+            fly.ContactFlingEnabled = false
             if os.clock() - lastError >= 5 then
                 lastError = os.clock()
                 Settings.Notify("Car Fly paused", tostring(err), "error")
             end
         end
     end))
-    track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false fly.LiftEnabled = false clear() end })
+    track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false fly.LiftEnabled = false fly.ContactFlingEnabled = false clear() end })
     local section = gameSection("Cold War", MainTab.Left, "Car Fly")
-    flightToggle = Elements.Toggle(section, "Car Fly", false, function(on) fly.Enabled = on if not on then clearFlight() end end)
+    flightToggle = Elements.Toggle(section, "Car Fly", false, function(on)
+        fly.Enabled = on
+        if not on then
+            fly.ContactFlingEnabled = false
+            if flingToggle then flingToggle.Set(false) end
+            clearFlight()
+        end
+    end)
     Elements.Slider(section, "Speed", 5, 150, 45, "studs/s", function(value) fly.Speed = value end)
     Elements.Slider(section, "Vertical Speed", 5, 100, 25, "studs/s", function(value) fly.VerticalSpeed = value end)
     Elements.Toggle(section, "Face Camera", true, function(on) fly.FaceCamera = on end)
@@ -12463,8 +12473,17 @@ function Settings.SetupColdWarCarFly()
     Elements.Slider(liftSection, "Platform Gap", 0, 12, 2, "studs", function(value) fly.PlatformGap = value end)
     Elements.Toggle(liftSection, "Follow Flight Height", true, function(on) fly.FollowFlight = on end)
     local flingSection = gameSection("Cold War", MainTab.Left, "Car Fling")
-    Elements.Slider(flingSection, "Launch Power", 10, 150, 60, "", function(value) fly.FlingPower = value end)
-    Elements.Button(flingSection, "Fling Car", function() fly.Fling() end)
+    flingToggle = Elements.Toggle(flingSection, "Car Fling", false, function(on)
+        fly.ContactFlingEnabled = on
+        if on then
+            local noclip = Settings.ColdWarCarNoclip
+            if noclip and noclip.SetEnabled then noclip.SetEnabled(false) end
+            fly.Enabled = true
+            if flightToggle then flightToggle.Set(true) end
+        else clearSpin() end
+    end)
+    Elements.Slider(flingSection, "Spin Speed", 5, 60, 30, "rad/s", function(value) fly.SpinSpeed = value end)
+
 end
 
 function Settings.SetupColdWarSpider()

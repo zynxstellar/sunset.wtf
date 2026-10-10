@@ -100,19 +100,32 @@ joints={} fly.Step(1/60) assert(replacement.Destroyed,"seat exit left lift behin
 connections[#connections].Disconnect()
 Settings.SetupColdWarCarFly()
 fly=Settings.ColdWarCarFly
-local impulses={}
-function chassis:ApplyImpulse(value) impulses[#impulses+1]=value end
 joints={{Part0=seat,Part1=root}}
-controls["Launch Power"](100)
-assert(fly.Fling() and #impulses==1)
-assert(impulses[1].Y==100*chassis.AssemblyMass)
-assert(not fly.Fling() and #impulses==1,"launch cooldown missing")
-now+=2
-joints={} assert(not fly.Fling() and #impulses==1,"unseated car launched")
-joints={{Part0=seat,Part1=root}}
-controls["Car Lift"](true) fly.Step(1/60)
-local lastPlate=objects[#objects]
-assert(fly.Fling() and lastPlate.Destroyed and not fly.LiftEnabled and not fly.Enabled)
+local noclipStops=0
+Settings.ColdWarCarNoclip={Enabled=true,SetEnabled=function(on)
+    assert(not on) noclipStops+=1 Settings.ColdWarCarNoclip.Enabled=false
+end}
+controls["Car Fling"](true)
+assert(fly.Enabled and fly.ContactFlingEnabled and noclipStops==1)
+fly.Step(1/60)
+local spin=objects[#objects]
+assert(spin.ClassName=="AngularVelocity" and spin.AngularVelocity.Y==30)
+assert(not objects[#objects-1].Enabled,"stabilizer opposed contact spin")
+controls["Spin Speed"](60) fly.Step(1/60) assert(spin.AngularVelocity.Y==60)
+local spinCount=#objects
+for _=1,100 do fly.Step(1/60) end assert(#objects==spinCount)
+menu=true fly.Step(1/60) assert(spin.Destroyed)
+menu=false fly.Step(1/60)
+spin=objects[#objects]
+controls["Car Fling"](false)
+assert(spin.Destroyed and fly.Enabled and not fly.ContactFlingEnabled)
+assert(chassis.AssemblyAngularVelocity.Magnitude==0)
+controls["Car Fling"](true) fly.Step(1/60)
+spin=objects[#objects]
+controls["Car Fly"](false)
+assert(spin.Destroyed and not fly.ContactFlingEnabled)
+controls["Car Fling"](true) fly.Step(1/60)
+spin=objects[#objects]
+joints={} fly.Step(1/60) assert(spin.Destroyed)
 connections[#connections].Disconnect()
-now+=2 assert(not fly.Fling(),"unloaded launcher stayed active")
 print("PASS Car Fly: camera movement, normalized diagonals, custom/native driver seats, passenger/death/anchor filters, bounded constraints, menu/input pause, unload")
