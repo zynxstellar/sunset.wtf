@@ -67,7 +67,6 @@ def main():
         for name, marker, production in [
             ('menu-drag', '-- INSERT_MENU_DRAG', between(inner, 'function Settings.MakeMenuDraggable(', '\nlocal function makeTab(')),
             ('coldwar-spider', '-- INSERT_COLDWAR_SPIDER', between(inner, 'function Settings.SetupColdWarSpider()', '\nfunction Settings.SetupColdWarSession()')),
-            ('coldwar-gravity', '-- INSERT_COLDWAR_GRAVITY', between(inner, 'function Settings.SetupColdWarGravity()', '\nfunction Settings.SetupColdWarSpider()')),
             ('coldwar-jump', '-- INSERT_COLDWAR_JUMP', between(inner, 'function Settings.SetupColdWarJump()', '\nfunction Settings.SetupColdWarSession()')),
         ]:
             spec = (ROOT / 'tests' / (name + '-spec.luau')).read_text(encoding='utf-8')

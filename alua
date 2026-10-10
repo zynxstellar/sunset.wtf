@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-gravity-k330"
+local SUNSET_BUILD = "20261010-rift-remove-gravity-k331"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11990,48 +11990,6 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
-function Settings.SetupColdWarGravity()
-    local gravity = { Enabled = false, Strength = 90, Destroyed = false }
-    Settings.ColdWarGravity = gravity
-    local attachment, force, forceRoot
-    local function clear()
-        if force then force:Destroy() end
-        if attachment then attachment:Destroy() end
-        attachment, force, forceRoot = nil, nil, nil
-    end
-    function gravity.Step()
-        local character = LocalPlayer.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if gravity.Destroyed or not gravity.Enabled or Settings.SelectedGame ~= "Cold War"
-            or not root or not humanoid or humanoid.Health <= 0 or root.Anchored
-            or humanoid.Sit or humanoid.PlatformStand then
-            clear()
-            return
-        end
-        if forceRoot ~= root or not force or not force.Parent or not attachment or not attachment.Parent then
-            clear()
-            attachment = new("Attachment", { Name = "RiftGravityAttachment" }, root)
-            force = new("VectorForce", {
-                Name = "RiftGravityForce", Attachment0 = attachment,
-                RelativeTo = Enum.ActuatorRelativeTo.World, ApplyAtCenterOfMass = true,
-            }, root)
-            forceRoot = root
-        end
-        force.Force = Vector3.new(0, (workspace.Gravity - gravity.Strength) * root.AssemblyMass, 0)
-    end
-    local section = gameSection("Cold War", MainTab.Right, "Gravity")
-    Elements.Toggle(section, "Gravity", false, function(on)
-        gravity.Enabled = on == true and not gravity.Destroyed
-        if not gravity.Enabled then clear() end
-    end)
-    Elements.Slider(section, "Strength", 0, 300, 90, "studs/s2", function(value)
-        gravity.Strength = value
-    end)
-    track(RunService.PreSimulation:Connect(gravity.Step))
-    track({ Disconnect = function() gravity.Enabled, gravity.Destroyed = false, true clear() end })
-end
-
 function Settings.SetupColdWarSpider()
     local spider = { Enabled = false, Speed = 12, Mantle = true, LeaveOnCorrection = true, Destroyed = false }
     Settings.ColdWarSpider = spider
@@ -12211,7 +12169,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
-    Settings.SetupColdWarGravity()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarJump()
     Settings.SetupColdWarWeaponTuning()
