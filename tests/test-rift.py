@@ -6,6 +6,7 @@ These tests do not connect to a game or load the full client.
 """
 import argparse
 import re
+import runpy
 from pathlib import Path
 import subprocess
 import tempfile
@@ -54,6 +55,17 @@ def main():
     runtime = args.luau_dir / ('luau' + suffix)
     with tempfile.TemporaryDirectory(prefix='rift-tests-') as temp:
         temp = Path(temp)
+        menu_test_source = (ROOT / 'menu-test-loader.lua').read_text(encoding='utf-8')
+        assert menu_test_source == runpy.run_path(str(ROOT / 'tools' / 'build-menu-test.py'))['build']()
+        menu_test_inner = menu_test_source.split('local source = [========[', 1)[1].split(']========]', 1)[0]
+        assert 'IsColdWar     = false' in menu_test_inner
+        assert 'Settings.SetupColdWar()' not in menu_test_inner
+        assert 'Settings.SetupBedWarsRuntime()' not in menu_test_inner
+        menu_test_inner_path = temp / 'menu-test-inner.luau'
+        menu_test_inner_path.write_text(menu_test_inner, encoding='utf-8')
+        for menu_path in [ROOT / 'menu-test-loader.lua', menu_test_inner_path]:
+            subprocess.run([str(compiler), '--null', '-O0', '-g2', str(menu_path)], check=True)
+        print('PASS menu test: reproducible real UI toolkit, gameplay initialization excluded, wrapper and UI compile')
         diagnostic_source = (ROOT / 'diagnostic-loader.lua').read_text(encoding='utf-8')
         diagnostic_spec = (ROOT / 'tests' / 'diagnostic-spec.luau').read_text(encoding='utf-8')
         diagnostic_spec = diagnostic_spec.replace('-- INSERT_DIAGNOSTIC', diagnostic_source)
