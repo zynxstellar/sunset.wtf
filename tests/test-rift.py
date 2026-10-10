@@ -83,6 +83,18 @@ def main():
         for path in [ROOT / 'universal.lua', universal_inner_path]:
             subprocess.run([str(compiler), '--null', '-O0', '-g2', str(path)], check=True)
         print('PASS Universal source: wrapper and embedded game code compile')
+        failure_spec = (ROOT / 'tests' / 'startup-failure-spec.luau').read_text(encoding='utf-8')
+        failure_spec = failure_spec.replace('-- INSERT_STARTUP_ABORT',
+            between(inner, 'ENV.SunsetAbortStartup = function()', '\nlocal Window ='))
+        failure_spec = failure_spec.replace('-- INSERT_WRAPPER_HANDOFF',
+            source[source.rindex('local chunk, err = loadstring(source)'):])
+        failure_spec = failure_spec.replace('-- INSERT_KILL_GETTER',
+            between(inner, 'function BedWars.CurrentKills()', '\ndo\n    function BedWars.KillChatSend'))
+        failure_spec = failure_spec.replace('-- INSERT_KILL_TOGGLE',
+            between(inner, '        Elements.Toggle(chatSection, "Kill Chat"', '\n    end\n    do\n        local replySection'))
+        failure_path = temp / 'startup-failure-spec.luau'
+        failure_path.write_text(failure_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(failure_path)], check=True)
         hands_spec = (ROOT / 'tests' / 'universal-hands-spec.luau').read_text(encoding='utf-8')
         hands_spec = hands_spec.replace('-- INSERT_UNIVERSAL_VIEWMODEL',
             between(universal_inner, '    local function moveAimViewmodel(', '\n    local contexts ='))

@@ -129,7 +129,7 @@ local BedWars = { Session = { Seconds = 0, Kills = 0, Deaths = 0, Games = 0,
     SourceValues = {}, Observed = {} } }
 local sessionClock, sessionFields, kills = clock, {}, 8
 local function sessionMap() return "Test map" end
-local function currentBedWarsKills() return kills end
+function BedWars.CurrentKills() return kills end
 local function updateSessionDeaths() end
 local function sessionNumber() end
 -- INSERT_BEDWARS_SESSION_UPDATE

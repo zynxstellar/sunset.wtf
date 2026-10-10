@@ -62,7 +62,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-session-autoshoot-seated-k307"
+local SUNSET_BUILD = "20261009-rift-startup-scope-fix-k312"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -335,6 +335,22 @@ function Settings.StartupStage(message)
     if loading and loading.Status and loading.Status.Parent then loading.Status.Text = message end
 end
 Settings.StartupStage("Loading menu controls...")
+
+-- A failed startup must release its connections and loading UI even before
+-- the normal unload handler has been installed at the end of initialization.
+ENV.SunsetAbortStartup = function()
+    if BedWars then BedWars.Running = false end
+    for _, connection in ipairs(Connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    table.clear(Connections)
+    pcall(function() Settings.MenuBlurEffect:Destroy() end)
+    local loading = ENV.SunsetLoading
+    ENV.SunsetLoading = nil
+    if loading and loading.Gui then pcall(function() loading.Gui:Destroy() end) end
+    pcall(function() Gui:Destroy() end)
+    ENV.SunsetAbortStartup = nil
+end
 
 local Window = new("Frame", {
     Name = "Window", Visible = false,
@@ -7073,7 +7089,7 @@ local sessionFields = {
     Beds = { "BedsBroken", "BedBreaks", "Beds" },
     Wins = { "Wins", "wins", "WinCount" },
 }
-local function currentBedWarsKills()
+function BedWars.CurrentKills()
     if not sessionStore then
         local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
         local ts = scripts and scripts:FindFirstChild("TS")
@@ -7181,7 +7197,7 @@ local function updateSession()
         session.LastKillCount = nil
         session.Games = session.Games + 1
     end
-    local kills = currentBedWarsKills()
+    local kills = BedWars.CurrentKills()
     if kills ~= nil then
         if BedWars.KillChatOn and BedWars.KillChatLastCount ~= nil
             and kills > BedWars.KillChatLastCount then
@@ -7346,7 +7362,7 @@ do
     local lastQueueAt = -math.huge
     local lastMatchState = nil
     local function gameState()
-        if not sessionStore then currentBedWarsKills() end
+        if not sessionStore then BedWars.CurrentKills() end
         if not sessionStore then return nil end
         local ok, state = pcall(function() return sessionStore:getState() end)
         return ok and type(state) == "table" and state or nil
@@ -7896,7 +7912,7 @@ do
         local chatSection = gameSection(gameName, FunTab.Left, "Kill Chat")
         Elements.Toggle(chatSection, "Kill Chat", false, function(on)
             BedWars.KillChatOn = on
-            BedWars.KillChatLastCount = currentBedWarsKills()
+            BedWars.KillChatLastCount = BedWars.CurrentKills()
             if not on then table.clear(BedWars.KillChatQueue) end
         end)
     end
@@ -12709,6 +12725,7 @@ if detectedGame then
 end
 ENV.SunsetLoading.Status.Text = detectedGame and ("Ready for " .. detectedGame) or "Rift ready"
 Settings.CompleteStartup(ENV.SunsetLoading, detectedGame)
+ENV.SunsetAbortStartup = nil
 
 ]========]
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
@@ -12721,4 +12738,12 @@ if typeof(writefile) == "function" then
 end
 local chunk, err = loadstring(source)
 if not chunk then error("Rift source did not compile: " .. tostring(err)) end
-chunk()
+local ok, startupError = xpcall(chunk, function(message)
+    return debug.traceback(tostring(message), 2)
+end)
+if not ok then
+    if type(environment.SunsetAbortStartup) == "function" then
+        pcall(environment.SunsetAbortStartup)
+    end
+    error("Rift startup failed: " .. tostring(startupError), 0)
+end
