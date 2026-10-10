@@ -22,8 +22,14 @@ local UIS={GetFocusedTextBox=function() return typing end}
 local Settings={SelectedGame="Cold War",Notifications={}}
 function Settings.Notify(title,message) table.insert(Settings.Notifications,message) end
 local normal=Vector3.new(-1,0,0)
+local ledge,blocked=false,false
 local workspace={Raycast=function(_,position,direction,params)
     assert(params.RespectCanCollide and params.FilterDescendantsInstances[1]==character)
+    if ledge then
+        if direction.Y<0 then return {Normal=Vector3.new(0,1,0),Position=root.Position+Vector3.new(0,1,0)} end
+        if direction.Y>0 then return blocked and {Normal=Vector3.new(0,-1,0)} or nil end
+        return nil
+    end
     return normal and {Normal=normal} or nil
 end}
 local connections={}
@@ -46,6 +52,14 @@ spider.Toggle.Set(true)
 for i=1,20 do step() end
 assert(root.AssemblyLinearVelocity.Y==12 and root.AssemblyLinearVelocity.X==2 and root.AssemblyLinearVelocity.Z==3)
 assert(#LocalPlayer.Kicks==0,"normal climbing triggered correction exit")
+normal=Vector3.new(-0.7,0.7,0) step()
+assert(root.AssemblyLinearVelocity.Y==12,"roof slope stopped climbing")
+ledge=true step()
+assert(root.AssemblyLinearVelocity.X==6 and root.AssemblyLinearVelocity.Y==12,"clear ledge did not mantle")
+blocked=true step()
+assert(root.AssemblyLinearVelocity.Y==0,"mantle ignored blocked headroom")
+ledge,blocked=false,false
+normal=Vector3.new(-1,0,0) step()
 normal=Vector3.new(0,1,0) step()
 assert(root.AssemblyLinearVelocity.Y==0,"floor or ceiling was treated as a wall")
 normal=Vector3.new(-1,0,0)

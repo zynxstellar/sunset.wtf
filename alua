@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-menu-cleanup-k329"
+local SUNSET_BUILD = "20261010-rift-gravity-k330"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -8510,11 +8510,13 @@ function BedWars.BuildUI(boardGame)
     }, searchFrame)
     Settings.ActiveSearchBox = searchBox
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -44, 0, 19),
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(1, -44, 0, 35),
         Size = UDim2.fromOffset(28, 28),
         BackgroundColor3 = cardColor, BorderSizePixel = 0,
         Font = Enum.Font.GothamBold, TextSize = 13,
         Text = "X", TextColor3 = Color3.fromRGB(242, 244, 255),
+        TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center,
         AutoButtonColor = false,
     }, header)
     new("UICorner", { CornerRadius = UDim.new(0, 7) }, closeButton)
@@ -11988,8 +11990,50 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarGravity()
+    local gravity = { Enabled = false, Strength = 90, Destroyed = false }
+    Settings.ColdWarGravity = gravity
+    local attachment, force, forceRoot
+    local function clear()
+        if force then force:Destroy() end
+        if attachment then attachment:Destroy() end
+        attachment, force, forceRoot = nil, nil, nil
+    end
+    function gravity.Step()
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if gravity.Destroyed or not gravity.Enabled or Settings.SelectedGame ~= "Cold War"
+            or not root or not humanoid or humanoid.Health <= 0 or root.Anchored
+            or humanoid.Sit or humanoid.PlatformStand then
+            clear()
+            return
+        end
+        if forceRoot ~= root or not force or not force.Parent or not attachment or not attachment.Parent then
+            clear()
+            attachment = new("Attachment", { Name = "RiftGravityAttachment" }, root)
+            force = new("VectorForce", {
+                Name = "RiftGravityForce", Attachment0 = attachment,
+                RelativeTo = Enum.ActuatorRelativeTo.World, ApplyAtCenterOfMass = true,
+            }, root)
+            forceRoot = root
+        end
+        force.Force = Vector3.new(0, (workspace.Gravity - gravity.Strength) * root.AssemblyMass, 0)
+    end
+    local section = gameSection("Cold War", MainTab.Right, "Gravity")
+    Elements.Toggle(section, "Gravity", false, function(on)
+        gravity.Enabled = on == true and not gravity.Destroyed
+        if not gravity.Enabled then clear() end
+    end)
+    Elements.Slider(section, "Strength", 0, 300, 90, "studs/s2", function(value)
+        gravity.Strength = value
+    end)
+    track(RunService.PreSimulation:Connect(gravity.Step))
+    track({ Disconnect = function() gravity.Enabled, gravity.Destroyed = false, true clear() end })
+end
+
 function Settings.SetupColdWarSpider()
-    local spider = { Enabled = false, Speed = 12, LeaveOnCorrection = true, Destroyed = false }
+    local spider = { Enabled = false, Speed = 12, Mantle = true, LeaveOnCorrection = true, Destroyed = false }
     Settings.ColdWarSpider = spider
     local lastRoot, lastPosition, lastVelocity, climbingFrames
     local function reset()
@@ -12034,7 +12078,26 @@ function Settings.SetupColdWarSpider()
         params.FilterDescendantsInstances = { character }
         params.RespectCanCollide = true
         local hit = workspace:Raycast(root.Position, direction.Unit * 3, params)
-        if not hit or math.abs(hit.Normal.Y) > 0.35 then reset() return end
+        if not hit and spider.Mantle and lastRoot == root and (climbingFrames or 0) > 0 then
+            -- Step toward a ledge only when both headroom and the raised approach are clear.
+            local rise = Vector3.new(0, 4, 0)
+            local forward = direction.Unit * 2
+            local top = root.Position + rise
+            local landing = workspace:Raycast(top + forward, Vector3.new(0, -5, 0), params)
+            if landing and landing.Position and landing.Normal.Y > 0.65
+                and landing.Position.Y > root.Position.Y - 1
+                and not workspace:Raycast(root.Position, rise, params)
+                and not workspace:Raycast(top, forward, params) then
+                local velocity = root.AssemblyLinearVelocity
+                root.AssemblyLinearVelocity = Vector3.new(direction.Unit.X * spider.Speed * 0.5,
+                    spider.Speed, direction.Unit.Z * spider.Speed * 0.5)
+                lastPosition, lastVelocity = root.Position, root.AssemblyLinearVelocity
+                climbingFrames = (climbingFrames or 0) + 1
+                return
+            end
+        end
+        -- Climb steep roof slopes too; reject flat floors and roof undersides.
+        if not hit or hit.Normal.Y < -0.35 or hit.Normal.Y > 0.85 then reset() return end
         local velocity = root.AssemblyLinearVelocity
         root.AssemblyLinearVelocity = Vector3.new(velocity.X, spider.Speed, velocity.Z)
         climbingFrames = lastRoot == root and (climbingFrames or 0) + 1 or 1
@@ -12046,9 +12109,37 @@ function Settings.SetupColdWarSpider()
         if not spider.Enabled then reset() end
     end)
     Elements.Slider(section, "Climb Speed", 4, 24, 12, "studs/s", function(value) spider.Speed = value end)
+    Elements.Toggle(section, "Climb Over Ledges", true, function(on) spider.Mantle = on end)
     Elements.Toggle(section, "Leave on Correction", true, function(on) spider.LeaveOnCorrection = on end)
     track(RunService.PreSimulation:Connect(spider.Step))
     track({ Disconnect = function() spider.Enabled, spider.Destroyed = false, true reset() end })
+end
+
+function Settings.SetupColdWarJump()
+    local jump = { Enabled = false, Destroyed = false }
+    Settings.ColdWarJump = jump
+    function jump.Request()
+        if jump.Destroyed or not jump.Enabled or Settings.SelectedGame ~= "Cold War"
+            or anyMenuVisible() or UIS:GetFocusedTextBox() then return end
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not root or root.Anchored or not humanoid or humanoid.Health <= 0
+            or humanoid.Sit or humanoid.PlatformStand or humanoid.FloorMaterial == Enum.Material.Air
+            or humanoid:GetState() == Enum.HumanoidStateType.Swimming then return end
+        local speed = humanoid.UseJumpPower and humanoid.JumpPower
+            or math.sqrt(2 * workspace.Gravity * humanoid.JumpHeight)
+        if type(speed) ~= "number" or speed <= 0 or speed ~= speed or speed == math.huge then return end
+        local velocity = root.AssemblyLinearVelocity
+        root.AssemblyLinearVelocity = Vector3.new(velocity.X, math.max(velocity.Y, speed), velocity.Z)
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+    local section = gameSection("Cold War", MainTab.Left, "No Jump Delay")
+    Elements.Toggle(section, "No Jump Delay", false, function(on)
+        jump.Enabled = on == true and not jump.Destroyed
+    end)
+    track(UIS.JumpRequest:Connect(jump.Request))
+    track({ Disconnect = function() jump.Enabled, jump.Destroyed = false, true end })
 end
 
 function Settings.SetupColdWarSession()
@@ -12120,7 +12211,9 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
     Settings.SetupColdWarSession()
+    Settings.SetupColdWarGravity()
     Settings.SetupColdWarSpider()
+    Settings.SetupColdWarJump()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

@@ -193,6 +193,7 @@ local LocalPlayer={CameraMode="LockFirstPerson",CameraMinZoomDistance=0.5,Camera
 local Players={GetPlayers=function() return {LocalPlayer} end}
 local aimMouseHeld=false
 local UIS={MouseBehavior="LockCenter",MouseIconEnabled=false,TouchEnabled=false,
+    JumpRequest=signal(),
     InputBegan=signal(),InputChanged=signal(),GetFocusedTextBox=function() return nil end,
     IsMouseButtonPressed=function(_,button) return aimMouseHeld and button==Enum.UserInputType.MouseButton2 end,
     GetMouseLocation=function() return Vector2.new(100,100) end}
@@ -234,14 +235,14 @@ local ConfigControls,gameSections,Tabs={},{},{}
 local AimTab={Left=new("Frame",{},nil)}
 local VisualsTab={Left=new("Frame",{},nil)}
 local SettingsTab={Left=new("Frame",{},nil)}
-local MainTab={Left=new("Frame",{},nil)}
+local MainTab={Left=new("Frame",{},nil),Right=new("Frame",{},nil)}
 local MiscTab={Left=new("Frame",{},nil)}
 local FunTab={Left=new("Frame",{},nil)}
 local PlayerTab={Left=new("Frame",{},nil)}
 local flightStarts,flightStops=0,0
 local Fly={Start=function() flightStarts+=1 end,Stop=function() flightStops+=1 end}
 Tabs.Combat={Left=AimTab.Left,Right=new("Frame",{},nil)}
-Tabs.Movement={Left=MainTab.Left,Right=new("Frame",{},nil)}
+Tabs.Movement={Left=MainTab.Left,Right=MainTab.Right}
 Tabs.Misc={Left=MiscTab.Left,Right=new("Frame",{},nil)}
 Tabs.Fun={Left=FunTab.Left,Right=new("Frame",{},nil)}
 Tabs.Player={Left=PlayerTab.Left,Right=new("Frame",{},nil)}
@@ -253,7 +254,7 @@ local function gameSection(gameName,column,title)
     label(box,title)
     local content=new("Frame",{AutomaticSize=Enum.AutomaticSize.Y},box)
     content.game,content.section=gameName,title
-    for name,tab in pairs(Tabs) do if tab.Left==column then content.tab=name end end
+    for name,tab in pairs(Tabs) do if tab.Left==column or tab.Right==column then content.tab=name end end
     table.insert(gameSections,{Game=gameName,Box=box})
     return content
 end
