@@ -52,8 +52,9 @@ local function track(c) table.insert(connections, c) end
 local RunService = { RenderStepped = { Connect = function() return { Disconnect = function() end } end } }
 local AimTab = { Left = {} }
 local function gameSection(_, _, name) return name end
-local toggle
-local Elements = { Toggle = function(_, _, _, callback) toggle = callback end }
+local toggle, checkButton
+local Elements = { Toggle = function(_, _, _, callback) toggle = callback end,
+    Button = function(_, name, callback) assert(name == "Check Seated") checkButton = callback end }
 -- INSERT_SEATED_PRODUCTION
 Settings.SetupColdWarSeated()
 local feature = Settings.ColdWarSeated
@@ -61,6 +62,7 @@ feature.Update()
 assert(requires == 0 and inventory.setSeated == nativeSeat)
 toggle(true)
 assert(requires == 0, "uninitialized module was required")
+assert(string.find(checkButton(), "waiting for initialized InventoryController", 1, true))
 loaded, now = true, 12
 feature.Update()
 assert(feature.Available and hookCount == 2 and identity == 8 and not blocked)
@@ -111,6 +113,9 @@ hum.Sit, hum.SeatPart = false, nil
 tagged = { customSeat }
 now += 1
 assert(gate(), "custom occupied seat did not allow equip")
+local status = checkButton()
+assert(string.find(status, "seat=true", 1, true) and string.find(status, "hooks=true", 1, true))
+assert(string.find(status, "gateHumanoid=true", 1, true))
 local customResult = table.pack(inventory.setSeated(true))
 assert(not blocked and customResult.n == 3)
 local eventCount = seatEvents

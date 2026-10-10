@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-custom-seated-k317"
+local SUNSET_BUILD = "20261009-rift-seated-status-k318"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12050,6 +12050,7 @@ function Settings.SetupColdWarSeated()
         if type(originalGate) ~= "function" or type(originalSeat) ~= "function" then
             error("Could not install Cold War seat guards")
         end
+        hooks.ReadGate = function() return read(originalGate) end
         hooks.Installed = true
         inventory.setSeated = hooks.SeatWrapper
         return true
@@ -12084,6 +12085,40 @@ function Settings.SetupColdWarSeated()
         end
         seated.Available, lastApplied = false, nil
     end
+    function seated.Check()
+        local hum = humanoid()
+        nextSeatScan = 0
+        local found = occupiedSeat(hum)
+        local messages = {
+            "enabled=" .. tostring(seated.Enabled), "hooks=" .. tostring(seated.Available),
+            "seat=" .. tostring(found), "sit=" .. tostring(hum and hum.Sit),
+            "platform=" .. tostring(hum and hum.PlatformStand),
+        }
+        local storage = game:GetService("ReplicatedStorage")
+        local inputs = storage:FindFirstChild("Inputs")
+        for _, name in ipairs({ "InventoryContext", "WeaponContext" }) do
+            local context = inputs and inputs:FindFirstChild(name)
+            if context then table.insert(messages, name .. "=" .. tostring(context.Enabled)) end
+        end
+        if seated.Available and type(hooks.ReadGate) == "function" then
+            local values = hooks.ReadGate()
+            for _, entry in ipairs({ { "switching", 1 }, { "equipBlocked", 3 },
+                { "seatedLock", 4 }, { "swimming", 5 }, { "preparation", 6 } }) do
+                table.insert(messages, entry[1] .. "=" .. tostring(values[entry[2]]))
+            end
+            table.insert(messages, "conscious=" .. tostring(values[7]:isConscious()))
+            table.insert(messages, "gateHumanoid=" .. tostring(values[8] == hum))
+        elseif seated.Available then
+            table.insert(messages, "restart Roblox to update existing seat hooks")
+        end
+        if seated.LastError then table.insert(messages, "error=" .. seated.LastError) end
+        if seated.Enabled and not seated.Available and not seated.LastError then
+            table.insert(messages, "waiting for initialized InventoryController")
+        end
+        local message = "[Rift] Seated status: " .. table.concat(messages, "; ")
+        print(message)
+        return message
+    end
     function seated.Restore() destroyed = true restore() end
     track(RunService.RenderStepped:Connect(seated.Update))
     track({ Disconnect = seated.Restore })
@@ -12091,7 +12126,9 @@ function Settings.SetupColdWarSeated()
     Elements.Toggle(section, "Shoot While Seated", false, function(on)
         seated.Enabled = on
         if on then seated.Update() else restore() end
+        seated.Check()
     end)
+    Elements.Button(section, "Check Seated", seated.Check)
 end
 
 function Settings.SetupColdWarSession()
