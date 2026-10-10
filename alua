@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-underground-wallbang-k334"
+local SUNSET_BUILD = "20261010-rift-underground-speed-k335"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12204,7 +12204,7 @@ function Settings.SetupColdWarSpider()
 end
 
 function Settings.SetupColdWarUnderground()
-    local underground = { Enabled = false, Depth = 8, Speed = 6, Destroyed = false }
+    local underground = { Enabled = false, Depth = 8, Destroyed = false }
     Settings.ColdWarUnderground = underground
     local root, character, surface, savedRotation, addedConnection
     local collisions = {}
@@ -12263,7 +12263,7 @@ function Settings.SetupColdWarUnderground()
         local direction = Vector3.new(movement.X, 0, movement.Z)
         if direction.Magnitude > 1 then direction = direction.Unit end
         if anyMenuVisible() or UIS:GetFocusedTextBox() then direction = Vector3.new() end
-        local nextSurface = surface + direction * underground.Speed * dt
+        local nextSurface = surface + direction * math.max(0, humanoid.WalkSpeed) * dt
         local ground = workspace:Raycast(nextSurface + Vector3.new(0, 4, 0), Vector3.new(0, -8, 0), params)
         if not ground or ground.Normal.Y < 0.5 then
             stop("Ground ended. Returned to the last surface.", true)
@@ -12281,7 +12281,6 @@ function Settings.SetupColdWarUnderground()
         if not underground.Enabled then restore(true) end
     end)
     Elements.Slider(section, "Depth", 6, 16, 8, "studs", function(value) underground.Depth = value end)
-    Elements.Slider(section, "Crawl Speed", 2, 12, 6, "studs/s", function(value) underground.Speed = value end)
     track(RunService.PreSimulation:Connect(function(dt)
         local ok, err = pcall(underground.Step, dt)
         if not ok then stop("Movement failed: " .. tostring(err), true) end

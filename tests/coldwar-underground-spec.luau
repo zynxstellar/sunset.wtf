@@ -16,7 +16,7 @@ local function body(collides)
 end
 local root,accessory=body(true),body(false)
 local parts={root,accessory}
-local humanoid={Health=100,MoveDirection=Vector3.new(1,0,0)}
+local humanoid={Health=100,WalkSpeed=16,MoveDirection=Vector3.new(1,0,0)}
 local onAdded,addedDisconnected
 local character={FindFirstChild=function() return root end,FindFirstChildOfClass=function() return humanoid end,
     GetDescendants=function() return parts end,
@@ -45,7 +45,18 @@ Settings.SetupColdWarUnderground()
 local underground=Settings.ColdWarUnderground
 underground.Step(0.1) assert(root.Position.Y==3 and root.CanCollide)
 controls.Underground(true) underground.Step(0.1)
-assert(root.Position.Y==-8 and math.abs(root.Position.X-0.6)<0.001 and not root.CanCollide and not accessory.CanCollide)
+assert(root.Position.Y==-8 and math.abs(root.Position.X-1.6)<0.001 and not root.CanCollide and not accessory.CanCollide)
+assert(controls["Crawl Speed"]==nil,"retired speed slider remains")
+do
+    local x=root.Position.X
+    humanoid.WalkSpeed=24 underground.Step(0.1)
+    assert(math.abs(root.Position.X-x-2.4)<0.001,"normal speed changes were ignored")
+    x=root.Position.X humanoid.MoveDirection=Vector3.new(0.5,0,0) underground.Step(0.1)
+    assert(math.abs(root.Position.X-x-1.2)<0.001,"analog movement was amplified")
+    x=root.Position.X humanoid.WalkSpeed=0 underground.Step(0.1)
+    assert(root.Position.X==x,"zero walking speed still moved")
+    humanoid.WalkSpeed=16 humanoid.MoveDirection=Vector3.new(1,0,0)
+end
 local added=body(true) table.insert(parts,added) onAdded(added) assert(not added.CanCollide)
 menu=true local x=root.Position.X underground.Step(0.1) menu=false assert(root.Position.X==x)
 typing=true underground.Step(0.1) typing=false assert(root.Position.X==x)
