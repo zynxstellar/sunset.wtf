@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-fling-k343"
+local SUNSET_BUILD = "20261010-rift-car-action-menu-k344"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9103,6 +9103,10 @@ function BedWars.BuildUI(boardGame)
         }
     elseif isColdWar then
         specs = {
+            { "Movement", "Car Fly", "Movement", "Cold War", "Car Fly", "Car Fly" },
+            { "Movement", "Car Lift", "Movement", "Cold War", "Car Lift", "Car Lift" },
+            { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
+            { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling" },
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
             { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
@@ -9219,6 +9223,7 @@ function BedWars.BuildUI(boardGame)
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
         ["Spider"] = "Climbs walls while moving into them from any direction.",
+        ["Car Fling"] = "Opens launch power and the button that launches your driven car.",
         ["Void Water"] = "Places water when void is detected beneath you.",
         ["Noclip"] = "Lets your character pass through local collision surfaces.",
         ["Auto Bed"] = "Targets nearby enemy beds with supported tools.",

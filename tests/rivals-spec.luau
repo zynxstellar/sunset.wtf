@@ -1160,6 +1160,15 @@ end
     assert(board and board.Name=="RiftCold WarBoard" and BedWarsUI==oldBedwarsBoard,
         "Cold War did not register its own board")
     assert(Persistence.HUDFrames["Cold WarMenu"]==board,"Cold War menu position is not saved")
+    local carCards={}
+    for _,object in ipairs(board:GetDescendants()) do
+        if object:IsA("TextButton") and (object.Name=="Car Fling" or object.Name=="Car Fly"
+            or object.Name=="Car Lift" or object.Name=="Car Noclip") then carCards[object.Name]=object end
+    end
+    for _,name in ipairs({"Car Fling","Car Fly","Car Lift","Car Noclip"}) do
+        assert(carCards[name], "Cold War board is missing "..name)
+    end
+
     local checkButton
     for _,object in ipairs(board:GetDescendants()) do
         assert(object.Name~="Fun" and object.Name~="Dev Tools", "removed Cold War category is still rendered")
