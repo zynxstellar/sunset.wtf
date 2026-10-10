@@ -8,6 +8,8 @@ local attrs = {}
 local hum = { Health = 100, Sit = true, SeatPart = {}, PlatformStand = false }
 local LocalPlayer = { Character = { FindFirstChildOfClass = function() return hum end },
     GetAttribute = function(_, name) return attrs[name] end }
+local characterAttrs = {}
+LocalPlayer.Character.GetAttribute = function(_, name) return characterAttrs[name] end
 local root = {}
 LocalPlayer.Character.FindFirstChild = function(_, name) if name == "HumanoidRootPart" then return root end end
 local occupant = { Value = LocalPlayer.Character, IsA = function(_, class) return class == "ObjectValue" end }
@@ -139,7 +141,27 @@ local scanBaseline = scans
 for _ = 1, 600 do assert(gate()) end
 assert(scans == scanBaseline, "valid cached seat repeatedly scanned tags")
 hum.PlatformStand = true
-assert(not gate(), "custom seat bypassed platform guard")
+assert(gate(), "verified vehicle physics still blocked equip")
+local beforeSeatEvent = seatEvents
+seat()
+assert(seatEvents == beforeSeatEvent, "vehicle physics event holstered weapon")
+characterAttrs.Ragdolled = true
+assert(not gate(), "ragdolled vehicle occupant was allowed to equip")
+assert(seat() == "native event", "ragdoll unequip event was suppressed")
+characterAttrs.Ragdolled = nil
+assert(gate())
+conscious = false
+assert(not gate(), "unconscious vehicle occupant was allowed to equip")
+conscious = true
+occupant.Value = {}
+assert(not gate(), "unowned seat bypassed PlatformStand")
+occupant.Value = LocalPlayer.Character
+motor.Part1 = {}
+now += 1
+assert(not gate(), "unattached seat bypassed PlatformStand")
+motor.Part1 = root
+now += 1
+assert(gate())
 hum.PlatformStand = false
 occupant.Value = {}
 assert(gate() == nativeGate(), "another player's seat counted as occupied")

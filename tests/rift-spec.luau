@@ -51,7 +51,7 @@ local UDim = { new = function() return {} end }
 local Enum = {
     Material={Air="air",Water="water",Grass="grass"}, HumanoidStateType={Swimming="swim"},
     RaycastFilterType={Exclude=1}, UserInputType={MouseButton1=1}, KeyCode={Space=1},
-    SortOrder={LayoutOrder=1}, VerticalAlignment={Bottom=1}, Font={GothamBold=1},
+    SortOrder={LayoutOrder=1}, VerticalAlignment={Bottom=1}, Font={GothamBold=1,Gotham=2}, TextXAlignment={Center=1}, TextYAlignment={Top=1}, TextTruncate={AtEnd=1},
     EasingStyle={Quart=1,Quad=2,Linear=3}, EasingDirection={Out=1,In=2},
 }
 local OverlapParams = { new=function() return {} end }
@@ -171,10 +171,13 @@ local function new(class, properties, parent)
     properties.Parent=parent
     properties.ClassName=class
     function properties:Destroy() self.Parent=nil end
+    local attributes = {}
+    function properties:SetAttribute(key, value) attributes[key] = value end
+    function properties:GetAttribute(key) return attributes[key] end
     return properties
 end
 local function label() return {} end
-local function border() end
+local function border() return {} end
 local TweenInfo = {new=function() return {} end}
 local TweenService = {Create=function(_,object,info,properties)
     return {Play=function() for k,v in pairs(properties) do object[k]=v end end}

@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-universal-notifications-k274"
+local SUNSET_BUILD = "20261009-rift-universal-notification-style-k275"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -248,50 +248,76 @@ function Settings.SetupNotifications()
     Settings.NotificationGui = screen
     track({ Disconnect = function() screen:Destroy() end })
     local stack = new("Frame", { AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -18, 1, -20), Size = UDim2.fromOffset(310, 360),
+        Position = UDim2.new(1, -18, 1, -20), Size = UDim2.fromOffset(344, 430),
         BackgroundTransparency = 1, BorderSizePixel = 0 }, screen)
     Settings.NotificationStack = stack
     new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
         VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
-    local slots, order, lastKey, lastTime = {}, 0, nil, 0
+    local slots, activeByKey, order = {}, {}, 0
     function Settings.Notify(title, message, kind)
         if not screen.Parent then return end
         title, message = tostring(title), tostring(message)
         local key = title .. ":" .. message
-        if key == lastKey and os.clock() - lastTime < 2 then return end
-        lastKey, lastTime = key, os.clock()
+        if activeByKey[key] and activeByKey[key].Parent then return end
         order += 1
         local color = kind == "error" and T.red or T.accent
         local duration = kind == "error" and 6 or 4.2
-        local slot = new("Frame", { Size = UDim2.fromOffset(310, 78), LayoutOrder = order,
+        local slot = new("Frame", { Size = UDim2.fromOffset(344, 96), LayoutOrder = order,
             BackgroundTransparency = 1, BorderSizePixel = 0 }, stack)
+        slot:SetAttribute("NotificationKey", key)
+        activeByKey[key] = slot
         table.insert(slots, slot)
-        if #slots > 4 then local oldest = table.remove(slots, 1) oldest:Destroy() end
+        if #slots > 4 then
+            local oldest = table.remove(slots, 1)
+            activeByKey[oldest:GetAttribute("NotificationKey")] = nil
+            oldest:Destroy()
+        end
         Settings.NotificationActiveCount = #slots
-        local toast = new("Frame", { Position = UDim2.fromOffset(330, 0),
-            Size = UDim2.fromOffset(310, 78), BackgroundColor3 = T.inner,
-            BackgroundTransparency = 0.06, BorderSizePixel = 0, ClipsDescendants = true }, slot)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, toast)
-        border(toast, T.border)
-        new("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(0, 3, 1, 0),
-            BackgroundColor3 = color, BorderSizePixel = 0 }, toast)
-        local heading = label(toast, title:sub(1, 48), 13, color)
-        heading.Font = Enum.Font.GothamBold
-        heading.Position, heading.Size = UDim2.fromOffset(16, 10), UDim2.new(1, -30, 0, 18)
-        local body = label(toast, message:sub(1, 220), 12, T.text)
-        body.Position, body.Size = UDim2.fromOffset(16, 31), UDim2.new(1, -30, 0, 35)
+        local toast = new("Frame", { Position = UDim2.fromOffset(370, 0),
+            Size = UDim2.fromOffset(344, 96), BackgroundTransparency = 1, BorderSizePixel = 0 }, slot)
+        local shadow = new("Frame", { Position = UDim2.fromOffset(0, 5),
+            Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.bg,
+            BackgroundTransparency = 0.55, BorderSizePixel = 0, ZIndex = 1 }, toast)
+        new("UICorner", { CornerRadius = UDim.new(0, 12) }, shadow)
+        local card = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.inner,
+            BackgroundTransparency = 0.02, BorderSizePixel = 0, ZIndex = 2 }, toast)
+        new("UICorner", { CornerRadius = UDim.new(0, 12) }, card)
+        border(card, T.border).Transparency = 0.4
+        local category = label(card, kind == "error" and "RIFT  /  ERROR" or "RIFT  /  UPDATE", 9, color)
+        category.Font, category.ZIndex = Enum.Font.GothamBold, 3
+        category.Position, category.Size = UDim2.fromOffset(16, 9), UDim2.fromOffset(275, 13)
+        local heading = label(card, title:sub(1, 36), 14, T.text)
+        heading.Font, heading.ZIndex = Enum.Font.GothamBold, 3
+        heading.Position, heading.Size = UDim2.fromOffset(16, 25), UDim2.new(1, -65, 0, 21)
+        local badge = new("Frame", { Position = UDim2.new(1, -44, 0, 13),
+            Size = UDim2.fromOffset(28, 28), BackgroundColor3 = color,
+            BackgroundTransparency = 0.86, BorderSizePixel = 0, ZIndex = 3 }, card)
+        new("UICorner", { CornerRadius = UDim.new(0, 8) }, badge)
+        local glyph = label(badge, kind == "error" and "!" or "i", 17, color, Enum.TextXAlignment.Center)
+        glyph.Font, glyph.ZIndex, glyph.Size = Enum.Font.GothamBold, 4, UDim2.fromScale(1, 1)
+        local body = label(card, message:sub(1, 220), 12, T.text)
+        body.Font, body.ZIndex = Enum.Font.Gotham, 3
+        body.Position, body.Size = UDim2.fromOffset(16, 49), UDim2.new(1, -32, 0, 33)
         body.TextWrapped = true
-        local progress = new("Frame", { Position = UDim2.new(0, 0, 1, -2),
-            Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = color, BorderSizePixel = 0 }, toast)
+        body.TextYAlignment = Enum.TextYAlignment.Top
+        body.TextTruncate = Enum.TextTruncate.AtEnd
+        local rail = new("Frame", { Position = UDim2.new(0, 16, 1, -7),
+            Size = UDim2.new(1, -32, 0, 2), BackgroundColor3 = color,
+            BackgroundTransparency = 0.88, BorderSizePixel = 0, ZIndex = 3 }, card)
+        new("UICorner", { CornerRadius = UDim.new(0, 1) }, rail)
+        local progress = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color,
+            BorderSizePixel = 0, ZIndex = 4 }, rail)
+        new("UICorner", { CornerRadius = UDim.new(0, 1) }, progress)
         TweenService:Create(toast, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
             { Position = UDim2.fromOffset(0, 0) }):Play()
         TweenService:Create(progress, TweenInfo.new(duration, Enum.EasingStyle.Linear),
-            { Size = UDim2.new(0, 0, 0, 2) }):Play()
+            { Size = UDim2.fromScale(0, 1) }):Play()
         task.delay(duration, function()
             if not screen.Parent or not slot.Parent then return end
             TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                { Position = UDim2.fromOffset(330, 0) }):Play()
+                { Position = UDim2.fromOffset(370, 0) }):Play()
             task.wait(0.21)
+            activeByKey[key] = nil
             slot:Destroy()
             local index = table.find(slots, slot)
             if index then table.remove(slots, index) end
