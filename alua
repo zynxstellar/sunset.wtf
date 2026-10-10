@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-noclip-k342"
+local SUNSET_BUILD = "20261010-rift-car-fling-k343"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12307,11 +12307,12 @@ function Settings.SetupColdWarCarNoclip()
 end
 
 function Settings.SetupColdWarCarFly()
-    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, LiftSpeed = 3, Destroyed = false }
+    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, LiftSpeed = 3, FlingPower = 60, Destroyed = false }
     Settings.ColdWarCarFly = fly
     local vehicleRoot, attachment, velocity, orientation
     local platform, platformTop, platformClearance
     local lastError = -math.huge
+    local flightToggle, liftToggle
     local function clear()
         -- Remove only this module's constraints; native vehicle physics resumes.
         for _, object in pairs({ velocity, orientation, attachment, platform }) do object:Destroy() end
@@ -12404,6 +12405,31 @@ function Settings.SetupColdWarCarFly()
         velocity.VectorVelocity = movement * fly.Speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
         if fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
     end
+    local nextFling = 0
+    function fly.Fling()
+        if fly.Destroyed or Settings.SelectedGame ~= "Cold War" or os.clock() < nextFling then return false end
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local seat = humanoid and humanoid.Health > 0 and driverSeat(character, humanoid)
+        local root = seat and seat.AssemblyRootPart
+        if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then
+            Settings.Notify("Car Fling", "Sit in the driver's seat first.")
+            return false
+        end
+        local camera = workspace.CurrentCamera
+        local facing = camera and camera.CFrame.LookVector or root.CFrame.LookVector
+        local forward = Vector3.new(facing.X, 0, facing.Z)
+        if forward.Magnitude > 0.001 then forward = forward.Unit else forward = Vector3.zero end
+        local power = math.clamp(fly.FlingPower, 10, 150)
+        nextFling = os.clock() + 2
+        -- Release our lift/flight constraints before applying one impulse to this car.
+        fly.Enabled, fly.LiftEnabled = false, false
+        if flightToggle then flightToggle.Set(false) end
+        if liftToggle then liftToggle.Set(false) end
+        clear()
+        root:ApplyImpulse((forward * (power * 0.5) + Vector3.new(0, power, 0)) * root.AssemblyMass)
+        return true
+    end
     track(RunService.PreSimulation:Connect(function(dt)
         local ok, err = pcall(fly.Step, dt)
         if not ok then
@@ -12418,14 +12444,17 @@ function Settings.SetupColdWarCarFly()
     end))
     track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false fly.LiftEnabled = false clear() end })
     local section = gameSection("Cold War", MainTab.Left, "Car Fly")
-    Elements.Toggle(section, "Car Fly", false, function(on) fly.Enabled = on if not on then clear() end end)
+    flightToggle = Elements.Toggle(section, "Car Fly", false, function(on) fly.Enabled = on if not on then clear() end end)
     Elements.Slider(section, "Speed", 5, 150, 45, "studs/s", function(value) fly.Speed = value end)
     Elements.Slider(section, "Vertical Speed", 5, 100, 25, "studs/s", function(value) fly.VerticalSpeed = value end)
     Elements.Toggle(section, "Face Camera", true, function(on) fly.FaceCamera = on end)
     Elements.Label(section, "Driver seat: WASD, Space up, Left Ctrl down.")
     local liftSection = gameSection("Cold War", MainTab.Left, "Car Lift")
-    Elements.Toggle(liftSection, "Car Lift", false, function(on) fly.LiftEnabled = on clear() end)
+    liftToggle = Elements.Toggle(liftSection, "Car Lift", false, function(on) fly.LiftEnabled = on clear() end)
     Elements.Slider(liftSection, "Rise Speed", 1, 12, 3, "studs/s", function(value) fly.LiftSpeed = value end)
+    local flingSection = gameSection("Cold War", MainTab.Left, "Car Fling")
+    Elements.Slider(flingSection, "Launch Power", 10, 150, 60, "", function(value) fly.FlingPower = value end)
+    Elements.Button(flingSection, "Fling Car", function() fly.Fling() end)
 end
 
 function Settings.SetupColdWarSpider()

@@ -12,6 +12,8 @@ local Color3={fromRGB=function(...) return {...} end}
 local CFrame={new=function(x,y,z) return {Position=Vector3.new(x,y,z)} end,lookAt=function(_,v) return {LookVector=v} end}
 local Enum=setmetatable({}, {__index=function(t,k) local v=setmetatable({}, {__index=function(_,key) return key end}) rawset(t,k,v) return v end})
 local RunService={PreSimulation={Connect=function(_,fn) return {Disconnect=function() end} end}}
+local now=10
+local os={clock=function() return now end}
 local Settings={SelectedGame="Cold War",Notify=function() end}
 local MainTab={Left={}}
 local controls,objects,connections,keys={},{},{},{}
@@ -20,7 +22,7 @@ local function anyMenuVisible() return menu end
 local UIS={GetFocusedTextBox=function() return typing end,IsKeyDown=function(_,key) return keys[key] end}
 local function track(c) connections[#connections+1]=c end
 local function gameSection() return {} end
-local Elements={Label=function() end}
+local Elements={Label=function() end,Button=function(_,n,fn) controls[n]=fn end}
 function Elements.Toggle(_,n,_,fn) controls[n]=fn end
 function Elements.Slider(_,n,_,_,_,_,fn) controls[n]=fn end
 local function new(kind,props,parent)
@@ -86,4 +88,21 @@ controls["Car Lift"](true) fly.Step(1/60)
 local replacement=objects[#objects]
 joints={} fly.Step(1/60) assert(replacement.Destroyed,"seat exit left lift behind")
 connections[#connections].Disconnect()
+Settings.SetupColdWarCarFly()
+fly=Settings.ColdWarCarFly
+local impulses={}
+function chassis:ApplyImpulse(value) impulses[#impulses+1]=value end
+joints={{Part0=seat,Part1=root}}
+controls["Launch Power"](100)
+assert(fly.Fling() and #impulses==1)
+assert(impulses[1].Y==100*chassis.AssemblyMass)
+assert(not fly.Fling() and #impulses==1,"launch cooldown missing")
+now+=2
+joints={} assert(not fly.Fling() and #impulses==1,"unseated car launched")
+joints={{Part0=seat,Part1=root}}
+controls["Car Lift"](true) fly.Step(1/60)
+local lastPlate=objects[#objects]
+assert(fly.Fling() and lastPlate.Destroyed and not fly.LiftEnabled and not fly.Enabled)
+connections[#connections].Disconnect()
+now+=2 assert(not fly.Fling(),"unloaded launcher stayed active")
 print("PASS Car Fly: camera movement, normalized diagonals, custom/native driver seats, passenger/death/anchor filters, bounded constraints, menu/input pause, unload")
