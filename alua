@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-lift-k341"
+local SUNSET_BUILD = "20261010-rift-car-noclip-k342"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12237,6 +12237,75 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarCarNoclip()
+    local options = { Enabled = false, Destroyed = false }
+    Settings.ColdWarCarNoclip = options
+    local model, added, removing
+    local saved = {}
+    local function restorePart(part)
+        local original = saved[part]
+        if original ~= nil then
+            if part.Parent then part.CanCollide = original end
+            saved[part] = nil
+        end
+    end
+    local function restore()
+        if added then added:Disconnect() added = nil end
+        if removing then removing:Disconnect() removing = nil end
+        for part in pairs(saved) do restorePart(part) end
+        model = nil
+    end
+    local function include(part)
+        if not part:IsA("BasePart") or not model or not part:IsDescendantOf(model) then return end
+        local ancestor = part.Parent
+        while ancestor and ancestor ~= model do
+            if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return end
+            ancestor = ancestor.Parent
+        end
+        if saved[part] == nil then saved[part] = part.CanCollide end
+        part.CanCollide = false
+    end
+    function options.Step()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if options.Destroyed or not options.Enabled or Settings.SelectedGame ~= "Cold War"
+            or not humanoid or humanoid.Health <= 0 then restore() return end
+        local fly = Settings.ColdWarCarFly
+        local seat = fly and fly.DriverSeat(character, humanoid)
+        local root = seat and seat.AssemblyRootPart
+        if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then restore() return end
+        local vehicle = root:FindFirstAncestorOfClass("Model")
+        local ancestor = seat.Parent
+        for _ = 1, 8 do
+            if not ancestor or ancestor == workspace then break end
+            if ancestor:IsA("Model") and ancestor:GetAttribute("VehicleNetId") ~= nil then vehicle = ancestor break end
+            ancestor = ancestor.Parent
+        end
+        if not vehicle or vehicle == character then restore() return end
+        if vehicle ~= model then
+            restore()
+            model = vehicle
+            for _, part in ipairs(model:GetDescendants()) do include(part) end
+            added = model.DescendantAdded:Connect(include)
+            removing = model.DescendantRemoving:Connect(restorePart)
+        end
+        for part in pairs(saved) do
+            if part.Parent and part:IsDescendantOf(model) then part.CanCollide = false else restorePart(part) end
+        end
+    end
+    track(RunService.PreSimulation:Connect(function()
+        local ok, err = pcall(options.Step)
+        if not ok then
+            restore()
+            options.Enabled = false
+            Settings.Notify("Car Noclip paused", tostring(err), "error")
+        end
+    end))
+    track({ Disconnect = function() options.Destroyed = true options.Enabled = false restore() end })
+    local section = gameSection("Cold War", MainTab.Left, "Car Noclip")
+    Elements.Toggle(section, "Car Noclip", false, function(on) options.Enabled = on if not on then restore() end end)
+end
+
 function Settings.SetupColdWarCarFly()
     local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, LiftSpeed = 3, Destroyed = false }
     Settings.ColdWarCarFly = fly
@@ -12261,6 +12330,7 @@ function Settings.SetupColdWarCarFly()
                 and (other.Name == "DriverSeat" or other:IsA("VehicleSeat")) then return other end
         end
     end
+    fly.DriverSeat = driverSeat
     function fly.Step(dt)
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -12513,6 +12583,7 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarCarFly()
+    Settings.SetupColdWarCarNoclip()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")

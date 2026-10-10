@@ -278,6 +278,11 @@ def main():
         car_fly_path.write_text(car_fly_spec.replace('-- INSERT_CAR_FLY',
             between(inner, 'function Settings.SetupColdWarCarFly()', '\nfunction Settings.SetupColdWarSpider()')), encoding='utf-8')
         subprocess.run([str(runtime), str(car_fly_path)], check=True)
+        noclip_spec = (ROOT / 'tests' / 'car-noclip-spec.luau').read_text(encoding='utf-8-sig')
+        noclip_path = temp / 'car-noclip-spec.luau'
+        noclip_path.write_text(noclip_spec.replace('-- INSERT_CAR_NOCLIP',
+            between(inner, 'function Settings.SetupColdWarCarNoclip()', '\nfunction Settings.SetupColdWarCarFly()')), encoding='utf-8')
+        subprocess.run([str(runtime), str(noclip_path)], check=True)
         rivals_chunks = [
             'atmosphereColorControls = (function()\n' + between(inner, 'local atmosphereEnabled, atmospherePreset', '\ndo\n    local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")') + '\nreturn atmosphereColorControls end)()\n',
             between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing game runtime...")'),
