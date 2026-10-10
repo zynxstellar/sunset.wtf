@@ -562,6 +562,59 @@ local function makeDraggable(frame, handle)
 end
 
 local Tabs, currentTab = {}, nil
+function Settings.MakeMenuDraggable(frame)
+    local pointer, startPoint, startPosition, destroyed
+    local function inside(object, point)
+        local position, size = object.AbsolutePosition, object.AbsoluteSize
+        return point.X >= position.X and point.X <= position.X + size.X
+            and point.Y >= position.Y and point.Y <= position.Y + size.Y
+    end
+    local function visibleAt(object, point)
+        local current = object
+        while current and current ~= frame do
+            if current:IsA("GuiObject") then
+                if not current.Visible then return false end
+                if current.ClipsDescendants and not inside(current, point) then return false end
+            end
+            current = current.Parent
+        end
+        return current == frame
+    end
+    local function finish() pointer, startPoint, startPosition = nil, nil, nil end
+    track(UIS.InputBegan:Connect(function(input)
+        local kind = input.UserInputType
+        if destroyed or pointer or not frame.Visible or not frame.Parent
+            or (kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch)
+            or not inside(frame, input.Position) then return end
+        local point = input.Position
+        for _, object in ipairs(frame:GetDescendants()) do
+            if object:IsA("GuiObject") and visibleAt(object, point) and inside(object, point) then
+                if object:IsA("GuiButton") or object:IsA("TextBox") then return end
+                if object:IsA("ScrollingFrame") then
+                    if kind == Enum.UserInputType.Touch
+                        or point.X >= object.AbsolutePosition.X + object.AbsoluteSize.X - 8 then return end
+                end
+            end
+        end
+        pointer, startPoint, startPosition = input, point, frame.Position
+    end))
+    track(UIS.InputChanged:Connect(function(input)
+        if not pointer or destroyed then return end
+        if not frame.Visible or not frame.Parent then finish() return end
+        local touch = pointer.UserInputType == Enum.UserInputType.Touch
+        if (touch and input ~= pointer) or (not touch and input.UserInputType ~= Enum.UserInputType.MouseMovement) then return end
+        local delta = input.Position - startPoint
+        frame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end))
+    track(UIS.InputEnded:Connect(function(input)
+        if input == pointer or (pointer and pointer.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseButton1) then finish() end
+    end))
+    track(UIS.WindowFocusReleased:Connect(finish))
+    track(frame:GetPropertyChangedSignal("Visible"):Connect(function() if not frame.Visible then finish() end end))
+    track({ Disconnect = function() destroyed = true finish() end })
+end
 local function makeTab(name)
     local btn = new("TextButton", {
         Size = UDim2.new(1 / 8, -6, 0, 26),
@@ -766,6 +819,7 @@ do
         local pendingToggles = {}
         for _, item in ipairs(data.Controls) do
             local key = item.Key and item.Key:gsub("Visuals/Rivals/Enemy Outlines/", "Visuals/Rivals/Player Outlines/")
+            if key then key = key:gsub("^Misc/([^/]+)/Spinbot/", "Player/%1/Spinbot/") end
             if gameName == "BedWars" and key then
                 key = key:gsub("^Visuals/All/ESP Boxes/", "Visuals/BedWars/ESP Boxes/")
                 if key == "Visuals/BedWars/ESP Boxes/ESP" then key = "Visuals/BedWars/ESP Boxes/ESP Boxes" end
@@ -1384,13 +1438,13 @@ end
 
 
 local firstTab
-for _, name in ipairs({ "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Rift" }) do
+for _, name in ipairs({ "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Rift Settings" }) do
     local tab = makeTab(name)
     if not firstTab then firstTab = tab end
     local section = makeSection(tab.Left, "Menu stability test")
     Elements.Label(section, "Gameplay modules are paused.")
     Elements.Label(section, "Test tabs, dragging and RightShift.")
-    if name == "Rift" then
+    if name == "Rift Settings" then
         Elements.Keybind(section, "Menu Key")
         Elements.Button(section, "Leave game", function()
             LocalPlayer:Kick("Rift menu test: you chose to leave the game.")

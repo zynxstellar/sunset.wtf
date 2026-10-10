@@ -34,6 +34,8 @@ def main():
     board_ui = between(inner, 'function BedWars.BuildUI(boardGame)', '\nlocal function rivalsModuleLoaded(')
     assert 'rift-logo-transparent.png' not in board_ui and 'trash.png' not in board_ui
     assert 'riftTrashFallback(' not in board_ui, 'Removed trash icon is still rendered'
+    assert 'Dev Tools' not in inner and 'SunsetExplorer' not in inner and 'WaterSpeedOn' not in inner
+    assert 'searchRing' not in board_ui and 'search.png' not in board_ui
     startup_guard = inner.split('local ENV =', 1)[0]
     assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
         'Project Delta is supported but the startup guard returns before building its UI'
@@ -62,6 +64,14 @@ def main():
     runtime = args.luau_dir / ('luau' + suffix)
     with tempfile.TemporaryDirectory(prefix='rift-tests-') as temp:
         temp = Path(temp)
+        for name, marker, production in [
+            ('menu-drag', '-- INSERT_MENU_DRAG', between(inner, 'function Settings.MakeMenuDraggable(', '\nlocal function makeTab(')),
+            ('coldwar-spider', '-- INSERT_COLDWAR_SPIDER', between(inner, 'function Settings.SetupColdWarSpider()', '\nfunction Settings.SetupColdWarSession()')),
+        ]:
+            spec = (ROOT / 'tests' / (name + '-spec.luau')).read_text(encoding='utf-8')
+            spec_path = temp / (name + '-spec.luau')
+            spec_path.write_text(spec.replace(marker, production), encoding='utf-8')
+            subprocess.run([str(runtime), str(spec_path)], check=True)
         menu_test_source = (ROOT / 'menu-test-loader.lua').read_text(encoding='utf-8')
         assert menu_test_source == runpy.run_path(str(ROOT / 'tools' / 'build-menu-test.py'))['build']()
         menu_test_inner = menu_test_source.split('local source = [========[', 1)[1].split(']========]', 1)[0]
@@ -293,7 +303,7 @@ def main():
         unload = between(inner, 'ENV.SunsetUnload = function()', '\nprint(BRAND')
         assert 'AutoReinject.Cancel()' in unload
     # Notifications must not move or hide the module list on narrow screens.
-    listing = between(inner, '    local moduleList = new(', '\n    local dragHandle')
+    listing = between(inner, '    local moduleList = new(', '\nlocal function rivalsModuleLoaded(')
     assert 'notificationsVisible' not in listing and 'ModuleListShifted' not in listing
     assert 'moduleList.Position = UDim2.new(1, -14, 0, 38)' in listing
     print('PASS module list: fixed right anchor independent of notifications')

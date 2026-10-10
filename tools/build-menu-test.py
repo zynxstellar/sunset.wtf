@@ -22,13 +22,13 @@ def build():
     ui = ui.replace('{ "MenuUI", "EspGui" }', '{ "MenuUI", "RiftCrashDiagnostic" }', 1)
     tail = '''
 local firstTab
-for _, name in ipairs({ "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Rift" }) do
+for _, name in ipairs({ "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Rift Settings" }) do
     local tab = makeTab(name)
     if not firstTab then firstTab = tab end
     local section = makeSection(tab.Left, "Menu stability test")
     Elements.Label(section, "Gameplay modules are paused.")
     Elements.Label(section, "Test tabs, dragging and RightShift.")
-    if name == "Rift" then
+    if name == "Rift Settings" then
         Elements.Keybind(section, "Menu Key")
         Elements.Button(section, "Leave game", function()
             LocalPlayer:Kick("Rift menu test: you chose to leave the game.")

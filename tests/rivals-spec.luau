@@ -163,7 +163,8 @@ local PlayerGui=new("Folder",{},nil)
 local Window={Visible=false}
 local BedWarsUI,RivalsUI
 local Settings={SelectedGame="Rivals",MenuKey=Enum.KeyCode.RightShift,
-    MenuBlurOn=true,ModuleListOn=true,GameBoards={},SetMenuBlur=function() end}
+    MenuBlurOn=true,ModuleListOn=true,GameBoards={},SetMenuBlur=function() end,
+    MakeMenuDraggable=function() end}
 local Camera={CameraType="Custom",CFrame=CFrame.new(Vector3.new()),ViewportSize=Vector2.new(1920,1080)}
 Camera.signals = {}
 function Camera:GetPropertyChangedSignal(name)
@@ -725,9 +726,9 @@ workspace.CurrentCamera=Camera
 fovToggle.Set(true)
 connections[fovCleanupIndex].Disconnect()
 assert(Camera.FieldOfView==70 and not RunService.Bindings.RiftRivalsFOV,"FOV unload cleanup failed")
-local spin=findConfig("Misc/Rivals/Spinbot/Spinbot")
-local speed=findConfig("Misc/Rivals/Spinbot/Spin Speed")
-local reverse=findConfig("Misc/Rivals/Spinbot/Reverse Spin")
+local spin=findConfig("Player/Rivals/Spinbot/Spinbot")
+local speed=findConfig("Player/Rivals/Spinbot/Spin Speed")
+local reverse=findConfig("Player/Rivals/Spinbot/Reverse Spin")
 local character=new("Model",{},nil)
 character.Parent=workspace
 local hum=new("Humanoid",{Health=100,AutoRotate=true,WalkSpeed=16},character)
@@ -1160,7 +1161,18 @@ end
     assert(Persistence.HUDFrames["Cold WarMenu"]==board,"Cold War menu position is not saved")
     local checkButton
     for _,object in ipairs(board:GetDescendants()) do
+        assert(object.Name~="Fun" and object.Name~="Dev Tools", "removed Cold War category is still rendered")
         if object:IsA("TextButton") and object.Name=="Check Silent Aim" then checkButton=object end
+        if object.Name=="CategoryDivider" then
+            assert(object.AnchorPoint.X==0.5 and object.Position.X.Scale==0.5,"divider is not centered")
+        end
+        if object.Name=="SettingsButton" then
+            assert(object.AnchorPoint.Y==0.5 and object.Position.Y.Scale==0.5 and object.Text=="",
+                "settings icon still depends on a misaligned text glyph")
+            for _,dot in ipairs(object:GetChildren()) do
+                if dot.Name=="Dot" then assert(dot.Position.Y.Scale==0.5 and dot.AnchorPoint.Y==0.5) end
+            end
+        end
     end
     assert(checkButton==nil,"removed Cold War diagnostic card remains")
     local foundBoxes,foundOutlines,foundSpinbot,kitColumn=false,false,false,false
@@ -1172,7 +1184,7 @@ end
     end
     assert(foundBoxes and foundOutlines and foundSpinbot and not kitColumn,
         "Cold War visuals or Spinbot missing, or BedWars kit controls leaked")
-    assert(findConfig("Misc/Cold War/Spinbot/Spinbot"),"Cold War Spinbot settings were not created")
+    assert(findConfig("Player/Cold War/Spinbot/Spinbot"),"Cold War Spinbot settings were not created")
     local boxesControl=findConfig("Visuals/Cold War/ESP Boxes/ESP Boxes")
     local outlinesControl=findConfig("Visuals/Cold War/Player Outlines/Player Outlines")
     assert(not boxesControl.Get() and not outlinesControl.Get() and not boxesControl.GetBind(),

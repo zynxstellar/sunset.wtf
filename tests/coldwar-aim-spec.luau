@@ -33,6 +33,25 @@ function ENV.Drawing.new(kind)
     table.insert(circles,o) return o
 end
 local Color3={fromRGB=function(r,g,b) return {r,g,b} end}
+local UDim2 = {new=function(xs,xo,ys,yo) return {X={Scale=xs,Offset=xo},Y={Scale=ys,Offset=yo}} end}
+function UDim2.fromOffset(x,y) return UDim2.new(0,x,0,y) end
+function UDim2.fromScale(x,y) return UDim2.new(x,0,y,0) end
+local UDim={new=function(scale,offset) return {Scale=scale,Offset=offset} end}
+local T={panel={},border={},text={},dim={},element={},accent={}}
+local Gui=object("Gui","ScreenGui")
+local PlayerGui=Gui
+local Persistence={HUDFrames={}}
+local uiCount=0
+local function new(class,props,parent)
+    uiCount+=1
+    local o=object(props.Name or class..uiCount,class,parent)
+    for key,value in pairs(props) do o[key]=value end
+    function o:Destroy() self.Parent=nil self.Destroyed=true self.Visible=false end
+    return o
+end
+local function label(parent,text,size,color) return new("TextLabel",{Text=text,TextSize=size,TextColor3=color},parent) end
+local function border() end
+local function makeDraggable() end
 local menu=false
 local firingContext=false
 local function anyMenuVisible()
@@ -62,7 +81,7 @@ function Elements.Slider(s,n,min,max,d,units,f) return control(s,n,d,f) end
 function Elements.Button(s,n,f) controls[s.."/"..n]={Click=f} end
 local workspace={Children={},CurrentCamera={ViewportSize=Vector2.new(1920,1080),CFrame={Position=Vector3.new(0,0,-1)}}}
 function workspace:FindFirstChild(name) return self.Children[name] end
-local Enum={RaycastFilterType={Exclude="Exclude"}}
+local Enum={RaycastFilterType={Exclude="Exclude"},TextTruncate={AtEnd="AtEnd"}}
 local RaycastParams={new=function() return {} end}
 function workspace.CurrentCamera:WorldToViewportPoint(p) return Vector3.new(960+p.X,540-p.Y,p.Z),p.Z>0 end
 local wall,raycasts,rayFailure=nil,0,false
@@ -106,6 +125,8 @@ local Players={GetPlayers=function() return roster end}
 local function player(name,team,x,z)
     local p=object(name,"Player") p.Team={Name=team}
     p.Character=object(name,"Model",workspace)
+    local humanoid=object("Humanoid","Humanoid",p.Character)
+    humanoid.Health,humanoid.MaxHealth=100,100
     for _,spec in ipairs({{"Head",3},{"Torso",0},{"HumanoidRootPart",0}}) do
         local part=object(spec[1],"BasePart",p.Character)
         part.Position=Vector3.new(x,spec[2],z) part.AssemblyLinearVelocity=Vector3.new()
@@ -116,6 +137,9 @@ local enemy=player("Enemy","PACT",10,100)
 collisionTarget=enemy.Character
 local ally=player("Ally","NATO",0,50)
 local spectator=player("Spectator","Lobby",0,30)
+LocalPlayer.Character=object("Me","Model",workspace)
+local ownHumanoid=object("Humanoid","Humanoid",LocalPlayer.Character)
+ownHumanoid.Health,ownHumanoid.MaxHealth=100,100
 local function model(p) return p~=LocalPlayer and not p.Dead and p.Character or nil end
 -- Do not supply a ReplicatedStorage variable: Roblox only exposes this service
 -- through game:GetService. The old fixture masked a production nil reference.
@@ -331,6 +355,37 @@ assert(cm.Export.volley==native,"disabling both features left a firing wrapper")
 Settings.ColdWarBulletTrails=nil
 aim.FOVVisible=true frame()
 assert(circles[1].Visible and circles[1].Radius==150 and circles[1].Position.X==960)
+do
+    controls["Cold War/Target HUD/Target HUD"]:Set(true)
+    controls["Cold War/FOV Circle/Snapline"]:Set(true)
+    local panel=Persistence.HUDFrames.ColdWarTargetHUD
+    local snapRoot=Gui:FindFirstChild("RiftColdWarSnapline")
+    assert(snapRoot.IgnoreGuiInset,"snapline inherits an offset from the Roblox top bar")
+    local line=snapRoot:FindFirstChild("ColdWarFOVSnapline")
+    now+=0.11 frame()
+    assert(panel.Visible and line.Visible and line.Size.X.Offset>1, "HUD or FOV snapline failed to display")
+    enemy.Character.Children.Humanoid.Health=50
+    now+=0.11 frame()
+    local fill
+    for _,child in pairs(panel.Children) do
+        if child.Children then for _,grandchild in pairs(child.Children) do
+            if grandchild.Name=="TargetHealthFill" then fill=grandchild end
+        end end
+    end
+    assert(fill and fill.Size.X.Scale==0.5,"target health bar did not update")
+    directWall=true now+=0.11 frame()
+    assert(not panel.Visible and not line.Visible,"HUD retained a covered target")
+    directWall=false now+=0.11 frame()
+    assert(panel.Visible and line.Visible)
+    aim.FOVVisible=false frame()
+    assert(panel.Visible and not line.Visible,"snapline ignored FOV toggle")
+    aim.FOVVisible=true
+    ownHumanoid.Health=0 frame()
+    assert(not panel.Visible and not line.Visible,"target visuals remained after local death")
+    ownHumanoid.Health=100
+    controls["Cold War/Target HUD/Target HUD"]:Set(false)
+    controls["Cold War/FOV Circle/Snapline"]:Set(false)
+end
 menu=true frame() assert(not circles[1].Visible) menu=false
 aim.SetEnabled(false) assert(cm.Export.volley==native,"disable did not restore volley")
 requireFailure=true aim.SetEnabled(true) assert(identity==8 and cm.Export.volley==native)
