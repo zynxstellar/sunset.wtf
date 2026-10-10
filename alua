@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-no-hit-sounds-k316"
+local SUNSET_BUILD = "20261009-rift-custom-seated-k317"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -11974,8 +11974,30 @@ function Settings.SetupColdWarSeated()
         local character = LocalPlayer.Character
         return character and character:FindFirstChildOfClass("Humanoid")
     end
+    local customSeat, nextSeatScan = nil, 0
+    local function customSeatMatches(seat)
+        local character = LocalPlayer.Character
+        if not seat or not seat.Parent or not character then return false end
+        local occupant = seat:FindFirstChild("Occupant")
+        local motor = seat:FindFirstChild("Motor6D")
+        local root = character:FindFirstChild("HumanoidRootPart")
+        return occupant and occupant:IsA("ObjectValue") and occupant.Value == character
+            and motor and motor:IsA("Motor6D") and root and motor.Part1 == root
+    end
+    local function occupiedSeat(hum)
+        if not hum or hum.Health <= 0 then return false end
+        if hum.Sit and hum.SeatPart ~= nil then return true end
+        if customSeatMatches(customSeat) then return true end
+        customSeat = nil
+        if os.clock() < nextSeatScan then return false end
+        nextSeatScan = os.clock() + 0.25
+        for _, seat in ipairs(CollectionService:GetTagged("FactoryVehicleSeat")) do
+            if customSeatMatches(seat) then customSeat = seat return true end
+        end
+        return false
+    end
     local function inSeat(hum)
-        return hum and hum.Health > 0 and hum.Sit and hum.SeatPart ~= nil and not hum.PlatformStand
+        return hum and not hum.PlatformStand and occupiedSeat(hum)
     end
     local function install()
         local storage = game:GetService("ReplicatedStorage")
@@ -12058,7 +12080,7 @@ function Settings.SetupColdWarSeated()
         if hooks.Inventory and hooks.Inventory.setSeated == hooks.SeatWrapper then
             hooks.Inventory.setSeated = hooks.NativeSeat
             local hum = humanoid()
-            pcall(nativeCall, hooks.NativeSeat, hum and hum.Sit == true or false)
+            pcall(nativeCall, hooks.NativeSeat, occupiedSeat(hum))
         end
         seated.Available, lastApplied = false, nil
     end

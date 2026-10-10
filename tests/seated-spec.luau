@@ -6,6 +6,17 @@ local attrs = {}
 local hum = { Health = 100, Sit = true, SeatPart = {}, PlatformStand = false }
 local LocalPlayer = { Character = { FindFirstChildOfClass = function() return hum end },
     GetAttribute = function(_, name) return attrs[name] end }
+local root = {}
+LocalPlayer.Character.FindFirstChild = function(_, name) if name == "HumanoidRootPart" then return root end end
+local occupant = { Value = LocalPlayer.Character, IsA = function(_, class) return class == "ObjectValue" end }
+local motor = { Part1 = root, IsA = function(_, class) return class == "Motor6D" end }
+local customSeat = { Parent = {}, FindFirstChild = function(_, name)
+    if name == "Occupant" then return occupant elseif name == "Motor6D" then return motor end
+end }
+local tagged, scans = {}, 0
+local CollectionService = { GetTagged = function(_, tag)
+    assert(tag == "FactoryVehicleSeat") scans += 1 return tagged
+end }
 local conscious = true
 local wielder = { isConscious = function() return conscious end }
 local function nativeGate() return not hum.Sit and not hum.PlatformStand end
@@ -95,6 +106,32 @@ toggle(true)
 feature = Settings.ColdWarSeated
 feature.Update()
 assert(hookCount == 2 and feature.Available and gate(), "reinjection stacked hooks")
+-- Factory seats do not require Humanoid.Sit or SeatPart.
+hum.Sit, hum.SeatPart = false, nil
+tagged = { customSeat }
+now += 1
+assert(gate(), "custom occupied seat did not allow equip")
+local customResult = table.pack(inventory.setSeated(true))
+assert(not blocked and customResult.n == 3)
+local eventCount = seatEvents
+seat()
+assert(seatEvents == eventCount, "custom seat event unequipped weapon")
+local scanBaseline = scans
+for _ = 1, 600 do assert(gate()) end
+assert(scans == scanBaseline, "valid cached seat repeatedly scanned tags")
+hum.PlatformStand = true
+assert(not gate(), "custom seat bypassed platform guard")
+hum.PlatformStand = false
+occupant.Value = {}
+assert(gate() == nativeGate(), "another player's seat counted as occupied")
+now += 1
+occupant.Value = LocalPlayer.Character
+motor.Part1 = {}
+assert(gate() == nativeGate(), "seat without character attachment counted as occupied")
+now += 1
+motor.Part1 = root
+assert(gate())
 feature.Restore()
-assert(not gate() and inventory.setSeated == nativeSeat)
+assert(blocked, "disable did not restore custom seated inventory lock")
+assert(gate() == nativeGate() and inventory.setSeated == nativeSeat)
 print("PASS seated firing: loaded modules only, input/holster/equip seat gates, cooldown/consciousness/swim/carry/revive/platform checks, disable/game switch/reinjection/unload")
