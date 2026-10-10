@@ -54,6 +54,13 @@ def main():
     runtime = args.luau_dir / ('luau' + suffix)
     with tempfile.TemporaryDirectory(prefix='rift-tests-') as temp:
         temp = Path(temp)
+        diagnostic_source = (ROOT / 'diagnostic-loader.lua').read_text(encoding='utf-8')
+        diagnostic_spec = (ROOT / 'tests' / 'diagnostic-spec.luau').read_text(encoding='utf-8')
+        diagnostic_spec = diagnostic_spec.replace('-- INSERT_DIAGNOSTIC', diagnostic_source)
+        diagnostic_path = temp / 'diagnostic-spec.luau'
+        diagnostic_path.write_text(diagnostic_spec, encoding='utf-8')
+        subprocess.run([str(compiler), '--null', str(ROOT / 'diagnostic-loader.lua')], check=True)
+        subprocess.run([str(runtime), str(diagnostic_path)], check=True)
         inner_path = temp / 'inner.luau'
         inner_path.write_text(inner, encoding='utf-8')
         spec_path = temp / 'spec.luau'
