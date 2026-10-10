@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-recovery-startup-k313"
+local SUNSET_BUILD = "20261009-rift-drawn-menu-icons-k314"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -209,42 +209,10 @@ local function label(parent, text, size, color, align)
     }, parent)
 end
 
-local riftAssetCache = {}
-local function riftAsset(filename)
-    if riftAssetCache[filename] ~= nil then
-        return riftAssetCache[filename] or nil
-    end
-    local getter = typeof(getcustomasset) == "function" and getcustomasset
-        or typeof(getsynasset) == "function" and getsynasset
-        or typeof(ENV.getcustomasset) == "function" and ENV.getcustomasset
-        or typeof(ENV.getsynasset) == "function" and ENV.getsynasset
-        or nil
-    if not getter then riftAssetCache[filename] = false return nil end
-    local path = "RiftAssets/" .. SUNSET_BUILD .. "_" .. filename
-    local exists = false
-    if typeof(isfile) == "function" then
-        local ok, result = pcall(isfile, path)
-        exists = ok and result == true
-    end
-    -- Cold War can use the drawn icons immediately. Its startup must not wait
-    -- for optional artwork downloads or ask the executor to open missing files.
-    if Settings.IsColdWar and not exists then
-        riftAssetCache[filename] = false
-        return nil
-    end
-    if not exists and typeof(writefile) == "function" then
-        local ok, bytes = pcall(function()
-            return game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/main/assets/"
-                .. filename .. "?v=" .. SUNSET_BUILD)
-        end)
-        if ok and type(bytes) == "string" and #bytes > 100 then
-            if typeof(makefolder) == "function" then pcall(makefolder, "RiftAssets") end
-            pcall(writefile, path, bytes)
-        end
-    end
-    local ok, imageId = pcall(getter, path)
-    riftAssetCache[filename] = ok and imageId or false
-    return riftAssetCache[filename] or nil
+local function riftAsset(_filename)
+    -- Use drawn UI icons. Optional image registration goes through executor
+    -- native code and cannot be made crash-safe with a Lua pcall.
+    return nil
 end
 
 local function riftTrashFallback(parent, color)
@@ -3165,65 +3133,8 @@ do
                 math.max(duration, 0))
             timeText.Text = clockTime(position) .. " / " .. clockTime(duration)
             progressFill.Size = UDim2.fromScale(duration > 0 and position / duration or 0, 1)
-            if type(data.artwork_key) == "string" and data.artwork_key ~= ""
-                and data.artwork_key ~= BedWars.MusicArtworkKey then
-                clearCover()
-                local asset = type(ENV.getcustomasset) == "function" and ENV.getcustomasset
-                    or type(getcustomasset) == "function" and getcustomasset
-                    or type(ENV.getsynasset) == "function" and ENV.getsynasset
-                    or type(getsynasset) == "function" and getsynasset or nil
-                local save = type(ENV.writefile) == "function" and ENV.writefile
-                    or type(writefile) == "function" and writefile or nil
-                if save and asset then
-                    local imageOk, imageResponse
-                    local imageRequest = {
-                        Url = "http://127.0.0.1:47821/cover?key="
-                            .. HttpService:UrlEncode(data.artwork_key), Method = "GET" }
-                    if requestFn then
-                        imageOk, imageResponse = pcall(requestFn, imageRequest)
-                    else
-                        imageOk, imageResponse = pcall(function()
-                            return HttpService:RequestAsync(imageRequest)
-                        end)
-                    end
-                    if imageOk and type(imageResponse) == "table"
-                        and (tonumber(imageResponse.StatusCode or imageResponse.status_code
-                            or imageResponse.Status) == 200
-                            or (not imageResponse.StatusCode and not imageResponse.status_code
-                                and not imageResponse.Status and imageResponse.Success == true))
-                        and type(imageResponse.Body or imageResponse.body) == "string" then
-                        local folder = type(ENV.makefolder) == "function" and ENV.makefolder
-                            or type(makefolder) == "function" and makefolder or nil
-                        if folder then pcall(folder, "SunsetConfigs") end
-                        local headers = imageResponse.Headers or imageResponse.headers
-                        if type(headers) ~= "table" then headers = {} end
-                        local contentType = headers["Content-Type"] or headers["content-type"]
-                        local extension = type(contentType) == "string"
-                            and contentType:find("jpeg", 1, true) and ".jpg" or ".png"
-                        local path = "SunsetConfigs/MusicCover_"
-                            .. HttpService:GenerateGUID(false) .. extension
-                        local wrote = pcall(save, path,
-                            imageResponse.Body or imageResponse.body)
-                        if wrote then
-                            if not Gui.Parent or not cover.Parent then
-                                local delete = type(ENV.delfile) == "function" and ENV.delfile
-                                    or type(delfile) == "function" and delfile or nil
-                                if delete then pcall(delete, path) end
-                                return
-                            end
-                            table.insert(BedWars.MusicCoverFiles, path)
-                            local loaded, imageId = pcall(asset, path)
-                            if loaded and type(imageId) == "string" and imageId ~= "" then
-                                cover.Image = imageId
-                                icon.Visible = false
-                                BedWars.MusicArtworkKey = data.artwork_key
-                            end
-                        end
-                    end
-                end
-            elseif not data.artwork_key or data.artwork_key == "" then
-                clearCover()
-            end
+            clearCover()
+
         else
             BedWars.SpotifyTitle.Text = "Nothing playing"
             timeText.Text = "0:00 / 0:00"
@@ -8590,6 +8501,7 @@ function BedWars.BuildUI(boardGame)
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
     }, board)
+    Settings.StartupStage("Drawing " .. boardGame .. " menu header...")
     local logoId = riftAsset("rift-logo-transparent.png")
     if logoId then
         new("ImageLabel", {
@@ -8688,6 +8600,7 @@ function BedWars.BuildUI(boardGame)
     new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
     border(closeButton, accent)
     closeButton.MouseButton1Click:Connect(function() board.Visible = false end)
+    Settings.StartupStage("Creating " .. boardGame .. " menu columns...")
     local columns = {}
     for index, name in ipairs(categoryOrder) do
         local x = 20 + (index - 1) * 215
@@ -9523,6 +9436,7 @@ function BedWars.BuildUI(boardGame)
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
     if columns.KIT then columns.KIT.KitSelect(refreshSearch) end
     refreshSearch()
+    Settings.StartupStage("Finishing " .. boardGame .. " menu...")
     local moduleList = new("Frame", {
         Name = boardGame .. "ModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
@@ -12486,7 +12400,9 @@ end
 if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
     Settings.StartupStage("Creating BedWars menu...")
     Settings.SetupPlayerESP("BedWars")
+    Settings.StartupStage("BedWars ESP controls ready; creating menu board...")
     BedWars.BuildUI()
+    Settings.StartupStage("BedWars menu ready")
 elseif game.PlaceId == 17625359962 or game.GameId == 6035872082 then
     RivalsView.Setup()
     RivalsSpeed.Setup()

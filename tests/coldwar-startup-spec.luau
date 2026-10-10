@@ -48,9 +48,10 @@ assert(riftAsset("missing.png") == nil)
 assert(riftAsset("missing.png") == nil)
 assert(downloads == 0 and assets == 0 and writes == 0, "Cold War blocked on optional artwork")
 exists = true
-assert(riftAsset("cached.png") == "cached-image" and assets == 1 and downloads == 0)
+assert(riftAsset("cached.png") == nil)
 Settings.IsColdWar = false
 exists = false
-assert(riftAsset("other-game.png") == "cached-image")
-assert(downloads == 1 and writes == 1 and assets == 2, "other games lost artwork loading")
-print("PASS Cold War startup: production BedWars setup skipped, cleanup does not touch native state, no world scan, cached/drawn icons without network wait, other-game paths retained")
+assert(riftAsset("other-game.png") == nil)
+assert(downloads == 0 and writes == 0 and assets == 0,
+    "menu attempted optional artwork download or native image registration")
+print("PASS startup: native-state isolation and drawn menu icons without any image registration")

@@ -139,7 +139,7 @@ def main():
         coldwar_spec = coldwar_spec.replace('-- INSERT_TARGET_DISPATCH',
             between(inner, 'if not Settings.IsColdWar then\n    track(workspace.DescendantAdded', '\nlocal function modelPart'))
         coldwar_spec = coldwar_spec.replace('-- INSERT_ASSET_PRODUCTION',
-            between(inner, 'local riftAssetCache =', '\nlocal function riftTrashFallback'))
+            between(inner, 'local function riftAsset(', '\nlocal function riftTrashFallback'))
         coldwar_path = temp / 'coldwar-startup-spec.luau'
         coldwar_path.write_text(coldwar_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(coldwar_path)], check=True)
