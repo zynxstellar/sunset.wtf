@@ -260,7 +260,21 @@ def main():
         auto_path = temp / 'auto-weapons-spec.luau'
         auto_path.write_text(auto_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(auto_path)], check=True)
+        atmosphere_spec = (ROOT / 'tests' / 'atmosphere-spec.luau').read_text(encoding='utf-8-sig')
+        atmosphere_spec = atmosphere_spec.replace('-- INSERT_ATMOSPHERE',
+            between(inner, 'local atmosphereEnabled, atmospherePreset', '\ndo\n    local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")'))
+        atmosphere_path = temp / 'atmosphere-spec.luau'
+        atmosphere_path.write_text(atmosphere_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(atmosphere_path)], check=True)
+        assert '"Custom Time"' not in inner and '"Time of Day"' not in inner
+        local_effects_spec = (ROOT / 'tests' / 'local-effects-spec.luau').read_text(encoding='utf-8-sig')
+        local_effects_source = between(inner, 'function Settings.SetupColdWarLocalEffects()', '\nfunction Settings.SetupColdWarWeaponTuning(')
+        assert 'FireServer' not in local_effects_source and 'hookfunction' not in local_effects_source
+        local_effects_path = temp / 'local-effects-spec.luau'
+        local_effects_path.write_text(local_effects_spec.replace('-- INSERT_LOCAL_EFFECTS', local_effects_source), encoding='utf-8')
+        subprocess.run([str(runtime), str(local_effects_path)], check=True)
         rivals_chunks = [
+            'atmosphereColorControls = (function()\n' + between(inner, 'local atmosphereEnabled, atmospherePreset', '\ndo\n    local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")') + '\nreturn atmosphereColorControls end)()\n',
             between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing game runtime...")'),
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
             between(inner, '    function BedWars.MusicOverlayVisible()', '\n    Persistence.HUDFrames.MusicOverlay'),

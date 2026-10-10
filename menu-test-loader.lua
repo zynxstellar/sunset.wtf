@@ -1167,17 +1167,17 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     local value = sliderNumber(default or min, min, max, min, step)
     local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
     local title = label(top, text .. ((suffix and suffix ~= "") and (" (" .. suffix:match("^%s*(.-)%s*$") .. ")") or ""), 12)
-    title.Size = UDim2.new(1, -98, 1, 0)
+    title.Size = UDim2.new(1, -126, 1, 0)
     title.TextTruncate = Enum.TextTruncate.AtEnd
     local number = new("TextBox", {
-        Size = UDim2.fromOffset(66, 20), Position = UDim2.new(1, -96, 0, 0),
+        Size = UDim2.fromOffset(76, 22), Position = UDim2.new(1, -124, 0, 0),
         BackgroundColor3 = T.element, BorderSizePixel = 0, Font = T.font,
         TextSize = 13, TextColor3 = T.text, ClearTextOnFocus = false,
         Text = tostring(value), PlaceholderText = tostring(min) .. "-" .. tostring(max),
     }, top)
     border(number, T.border)
-    local plus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -26, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
-    local minus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -12, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local plus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -46, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local minus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -22, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
     local hitArea = new("TextButton", {
         Name = "SliderDragArea", Size = UDim2.new(1, 0, 0, 30),
         Position = UDim2.fromOffset(0, 22), BackgroundTransparency = 1,
@@ -1205,12 +1205,14 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
         local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         fill.Size = UDim2.fromScale(fraction, 1)
         knob.Position = UDim2.fromScale(fraction, 0.5)
-        if callback and (changed or initial) then task.spawn(Settings.RunCallback, callback, value) end
+        if callback and (changed or initial) then Settings.RunCallback(callback, value) end
     end
     number.FocusLost:Connect(function() set(number.Text) end)
     local dragInput, grabOffset, scrollParents = nil, 0, {}
-    local function stopDrag()
+    local stopDrag
+    stopDrag = function()
         dragInput = nil
+        if Settings.SliderDragStop == stopDrag then Settings.SliderDragStop = nil end
         for scroll, enabled in pairs(scrollParents) do scroll.ScrollingEnabled = enabled end
         table.clear(scrollParents)
     end
@@ -1223,6 +1225,8 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
         if dragInput or (input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch) then return end
         if bar.AbsoluteSize.X <= 0 then return end
+        if Settings.SliderDragStop then Settings.SliderDragStop() end
+        Settings.SliderDragStop = stopDrag
         dragInput = input
         local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         local offset = input.Position.X - (bar.AbsolutePosition.X + fraction * bar.AbsoluteSize.X)
@@ -1246,9 +1250,13 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     end))
     track(UIS.InputEnded:Connect(function(input)
         if dragInput and (input == dragInput or (dragInput.UserInputType == Enum.UserInputType.MouseButton1
-            and input.UserInputType == Enum.UserInputType.MouseButton1)) then stopDrag() end
+            and input.UserInputType == Enum.UserInputType.MouseButton1)) then
+            fromPointer(input.Position.X)
+            stopDrag()
+        end
     end))
     track(UIS.WindowFocusReleased:Connect(stopDrag))
+    track({ Disconnect = stopDrag })
     plus.MouseButton1Click:Connect(function() set(value + (step or 1)) end)
     minus.MouseButton1Click:Connect(function() set(value - (step or 1)) end)
     set(value, true)

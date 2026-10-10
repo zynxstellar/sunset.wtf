@@ -130,6 +130,9 @@ controls["Ammo Saver"](false)
 local function step() now+=0.1 auto.Update() assert(identity==8,"native action leaked identity") end
 step() assert(requireCount==0,"disabled modules were initialized")
 controls["Auto Shoot"](true) step() assert(requireCount==0)
+controls["Max Distance"](25)
+assert(auto.MaxDistance==25,"auto shoot range setting missing")
+controls["Max Distance"](1000)
 loadedModules=true now+=2 step()
 assert(starts==1,"existing equipped weapon was not recovered")
 for _=1,5 do step() end
@@ -179,6 +182,10 @@ do
     local resolve=Settings.ColdWarAim.Resolve
     controls.Wallbang(true)
     step() assert(starts==beforeAim,"Wallbang fired without penetration validation")
+    Settings.ColdWarAim.Resolve=function() return vector,nil,enemyModel,{Position=vector},true end
+    local far=setmetatable({}, {__sub=function() return {Magnitude=2000} end})
+    Settings.ColdWarAim.Resolve=function() return vector,nil,enemyModel,{Position=far},true end
+    step() assert(starts==beforeAim,"out-of-range wallbang fired")
     Settings.ColdWarAim.Resolve=function() return vector,nil,enemyModel,{Position=vector},true end
     step() assert(starts==beforeAim+1,"validated wallbang failed to shoot")
     controls.Wallbang(false)

@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-remove-underground-k336"
+local SUNSET_BUILD = "20261010-rift-atmosphere-local-fx-k337"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -1238,17 +1238,17 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     local value = sliderNumber(default or min, min, max, min, step)
     local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
     local title = label(top, text .. ((suffix and suffix ~= "") and (" (" .. suffix:match("^%s*(.-)%s*$") .. ")") or ""), 12)
-    title.Size = UDim2.new(1, -98, 1, 0)
+    title.Size = UDim2.new(1, -126, 1, 0)
     title.TextTruncate = Enum.TextTruncate.AtEnd
     local number = new("TextBox", {
-        Size = UDim2.fromOffset(66, 20), Position = UDim2.new(1, -96, 0, 0),
+        Size = UDim2.fromOffset(76, 22), Position = UDim2.new(1, -124, 0, 0),
         BackgroundColor3 = T.element, BorderSizePixel = 0, Font = T.font,
         TextSize = 13, TextColor3 = T.text, ClearTextOnFocus = false,
         Text = tostring(value), PlaceholderText = tostring(min) .. "-" .. tostring(max),
     }, top)
     border(number, T.border)
-    local plus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -26, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
-    local minus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -12, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local plus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -46, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local minus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -22, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
     local hitArea = new("TextButton", {
         Name = "SliderDragArea", Size = UDim2.new(1, 0, 0, 30),
         Position = UDim2.fromOffset(0, 22), BackgroundTransparency = 1,
@@ -1276,12 +1276,14 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
         local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         fill.Size = UDim2.fromScale(fraction, 1)
         knob.Position = UDim2.fromScale(fraction, 0.5)
-        if callback and (changed or initial) then task.spawn(Settings.RunCallback, callback, value) end
+        if callback and (changed or initial) then Settings.RunCallback(callback, value) end
     end
     number.FocusLost:Connect(function() set(number.Text) end)
     local dragInput, grabOffset, scrollParents = nil, 0, {}
-    local function stopDrag()
+    local stopDrag
+    stopDrag = function()
         dragInput = nil
+        if Settings.SliderDragStop == stopDrag then Settings.SliderDragStop = nil end
         for scroll, enabled in pairs(scrollParents) do scroll.ScrollingEnabled = enabled end
         table.clear(scrollParents)
     end
@@ -1294,6 +1296,8 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
         if dragInput or (input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch) then return end
         if bar.AbsoluteSize.X <= 0 then return end
+        if Settings.SliderDragStop then Settings.SliderDragStop() end
+        Settings.SliderDragStop = stopDrag
         dragInput = input
         local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         local offset = input.Position.X - (bar.AbsolutePosition.X + fraction * bar.AbsoluteSize.X)
@@ -1317,9 +1321,13 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
     end))
     track(UIS.InputEnded:Connect(function(input)
         if dragInput and (input == dragInput or (dragInput.UserInputType == Enum.UserInputType.MouseButton1
-            and input.UserInputType == Enum.UserInputType.MouseButton1)) then stopDrag() end
+            and input.UserInputType == Enum.UserInputType.MouseButton1)) then
+            fromPointer(input.Position.X)
+            stopDrag()
+        end
     end))
     track(UIS.WindowFocusReleased:Connect(stopDrag))
+    track({ Disconnect = stopDrag })
     plus.MouseButton1Click:Connect(function() set(value + (step or 1)) end)
     minus.MouseButton1Click:Connect(function() set(value - (step or 1)) end)
     set(value, true)
@@ -2231,7 +2239,16 @@ end
 
 local atmosphereEnabled, atmospherePreset = false, "Sunset"
 local atmosphereNoFog, atmosphereFullBright = false, false
-local atmosphereCustomTime, atmosphereTime = false, 18
+local atmosphereSky = "Original"
+local atmosphereAmbientOn, atmosphereTintOn = false, false
+local atmosphereAmbient = Color3.fromRGB(150, 160, 190)
+local atmosphereOutdoor = Color3.fromRGB(175, 190, 220)
+local atmosphereTint = Color3.fromRGB(220, 230, 255)
+local atmosphereTintStrength = 0.35
+local activeSky, savedSky, atmosphereCorrection
+local skyProperties = { "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "StarCount", "CelestialBodiesShown" }
+local skyTints = { Purple = Color3.fromRGB(215, 165, 255), Blue = Color3.fromRGB(165, 205, 255),
+    Rose = Color3.fromRGB(255, 180, 210), Amber = Color3.fromRGB(255, 220, 165) }
 local savedLighting, savedAtmosphere, activeAtmosphere
 local atmospherePresets = {
     Clear = {
@@ -2340,6 +2357,13 @@ local function restoreAtmosphere()
         end
     end
     savedAtmosphere, activeAtmosphere = nil, nil
+    if activeSky then
+        if savedSky then
+            for property, value in pairs(savedSky) do activeSky[property] = value end
+        else activeSky:Destroy() end
+    end
+    if atmosphereCorrection then atmosphereCorrection:Destroy() end
+    activeSky, savedSky, atmosphereCorrection = nil, nil, nil
 end
 local function applyAtmosphere()
     if not atmosphereEnabled then return end
@@ -2364,7 +2388,39 @@ local function applyAtmosphere()
         Lighting.Ambient = Color3.fromRGB(235, 235, 235)
         Lighting.OutdoorAmbient = Color3.fromRGB(235, 235, 235)
     end
-    if atmosphereCustomTime then Lighting.ClockTime = atmosphereTime end
+    if atmosphereAmbientOn then
+        Lighting.Ambient, Lighting.OutdoorAmbient = atmosphereAmbient, atmosphereOutdoor
+    end
+    if atmosphereSky ~= "Original" then
+        if not activeSky then
+            activeSky = Lighting:FindFirstChildOfClass("Sky")
+            if activeSky then
+                savedSky = {}
+                for _, property in ipairs(skyProperties) do savedSky[property] = activeSky[property] end
+            else activeSky = new("Sky", { Name = "RiftLocalSky" }, Lighting) end
+        end
+        for property, face in pairs({ SkyboxBk = "bk", SkyboxDn = "dn", SkyboxFt = "ft", SkyboxLf = "lf", SkyboxRt = "rt", SkyboxUp = "up" }) do
+            activeSky[property] = "rbxasset://textures/sky/sky512_" .. face .. ".tex"
+        end
+        activeSky.StarCount = 3000
+        activeSky.CelestialBodiesShown = false
+        if activeAtmosphere and skyTints[atmosphereSky] then
+            activeAtmosphere.Color = skyTints[atmosphereSky]
+            activeAtmosphere.Decay = skyTints[atmosphereSky]
+            activeAtmosphere.Density = atmosphereNoFog and 0 or 0.25
+        end
+    elseif activeSky then
+        if savedSky then
+            for property, value in pairs(savedSky) do activeSky[property] = value end
+        else activeSky:Destroy() end
+        activeSky, savedSky = nil, nil
+    end
+    if not atmosphereCorrection then
+        atmosphereCorrection = new("ColorCorrectionEffect", { Name = "RiftAtmosphereTint" }, Lighting)
+    end
+    local color = atmosphereTintOn and atmosphereTint or skyTints[atmosphereSky]
+    atmosphereCorrection.Enabled = color ~= nil
+    atmosphereCorrection.TintColor = Color3.new(1, 1, 1):Lerp(color or Color3.new(1, 1, 1), atmosphereTintOn and atmosphereTintStrength or 0.3)
 end
 local function setAtmosphereEnabled(on)
     if on == atmosphereEnabled then return end
@@ -2385,6 +2441,18 @@ local function setAtmosphereEnabled(on)
 end
 
 
+local function atmosphereColorControls(section)
+    Elements.Dropdown(section, "Sky", { "Original", "Blue", "Purple", "Rose", "Amber" }, "Original", function(value)
+        atmosphereSky = value applyAtmosphere()
+    end)
+    Elements.Toggle(section, "Custom Ambient", false, function(on) atmosphereAmbientOn = on applyAtmosphere() end)
+    Elements.ColorPicker(section, "Ambient Color", atmosphereAmbient, function(color) atmosphereAmbient = color applyAtmosphere() end)
+    Elements.ColorPicker(section, "Outdoor Ambient", atmosphereOutdoor, function(color) atmosphereOutdoor = color applyAtmosphere() end)
+    Elements.Toggle(section, "Screen Tint", false, function(on) atmosphereTintOn = on applyAtmosphere() end)
+    Elements.ColorPicker(section, "Tint Color", atmosphereTint, function(color) atmosphereTint = color applyAtmosphere() end)
+    Elements.Slider(section, "Tint Strength", 0, 100, 35, "%", function(value) atmosphereTintStrength = value / 100 applyAtmosphere() end)
+end
+
 do
     local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")
     atmosphere.Parent.LayoutOrder = 2
@@ -2402,14 +2470,7 @@ do
         atmosphereFullBright = on
         applyAtmosphere()
     end)
-    Elements.Toggle(atmosphere, "Custom Time", false, function(on)
-        atmosphereCustomTime = on
-        applyAtmosphere()
-    end)
-    Elements.Slider(atmosphere, "Time of Day", 0, 24, 18, "", function(value)
-        atmosphereTime = value
-        applyAtmosphere()
-    end, 0.5)
+    atmosphereColorControls(atmosphere)
 end
 
 
@@ -9171,7 +9232,7 @@ function BedWars.BuildUI(boardGame)
         ["Crosshair"] = "Shows a custom centered crosshair.",
         ["FOV"] = "Changes your camera field of view.",
         ["Session Info"] = "Shows time played, kills, wins, and match stats.",
-        ["Atmosphere"] = "Changes local lighting, fog, time, and ambient mood.",
+        ["Atmosphere"] = "Changes local skies, lighting, fog, ambient colors, and screen tint.",
         ["Orbiting Stars"] = "Adds orbiting cosmetic stars around your character.",
         ["Water Fight"] = "Places water around you when an enemy gets close.",
         ["Auto Play Again"] = "Queues another match after the current one ends.",
@@ -10622,6 +10683,7 @@ function Settings.SetupColdWarAim(playerModel)
         if localTeam ~= "NATO" and localTeam ~= "PACT" then return nil, "Your team is not NATO or PACT" end
         local auto = Settings.ColdWarAutoWeapons
         local wallbang = strict and auto and auto.ShootEnabled and auto.WallbangEnabled
+        local targetRange = strict and auto and math.min(aim.MaxDistance, auto.MaxDistance or aim.MaxDistance) or aim.MaxDistance
         local penetrationChecks = 0
         local function checkedWallbang(selected, time, model, part, velocity)
             if not wallbang or penetrationChecks >= 3 then return false end
@@ -10642,7 +10704,7 @@ function Settings.SetupColdWarAim(playerModel)
                         local bestPart, bestDistance
                         for _, name in ipairs(names) do
                             local part = model:FindFirstChild(name)
-                            if part and part:IsA("BasePart") and (part.Position - origin).Magnitude <= aim.MaxDistance then
+                            if part and part:IsA("BasePart") and (part.Position - origin).Magnitude <= targetRange then
                                 local eligible, distance = withinFOV(camera, part)
                                 if eligible
                                     and (not bestDistance or distance < bestDistance) then
@@ -11540,6 +11602,45 @@ function Settings.SetupColdWarVisualExtras()
     Elements.Slider(cameraSection, "Field of View", 30, 120, 90, "deg", function(value) fov.Value = value end)
 end
 
+function Settings.SetupColdWarLocalEffects()
+    local enabled, color, intensity = false, Color3.fromRGB(110, 180, 255), 4
+    local part, emitter, elapsed
+    elapsed = 0
+    local function clear()
+        if part then part:Destroy() end
+        part, emitter = nil, nil
+    end
+    track(RunService.Heartbeat:Connect(function(dt)
+        if not enabled or Settings.SelectedGame ~= "Cold War" then clear() return end
+        elapsed += dt
+        if elapsed < 0.3 then return end
+        elapsed = 0
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if not root or not humanoid or humanoid.Health <= 0 then clear() return end
+        if not part then
+            part = new("Part", { Name = "RiftLocalEffects", Anchored = true, CanCollide = false,
+                CanQuery = false, CanTouch = false, Transparency = 1, Size = Vector3.new(5, 3, 5) }, workspace.CurrentCamera)
+            emitter = new("ParticleEmitter", { Rate = 0, Texture = "rbxasset://textures/particles/sparkles_main.dds",
+                Lifetime = NumberRange.new(0.15, 0.3), Speed = NumberRange.new(2, 6),
+                SpreadAngle = Vector2.new(180, 180), LightEmission = 1,
+                Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.18), NumberSequenceKeypoint.new(1, 0) }),
+                Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) }, part)
+        end
+        if not part.Parent then clear() return end
+        part.CFrame = root.CFrame
+        emitter.Color = ColorSequence.new(color)
+        emitter:Emit(intensity)
+    end))
+    track({ Disconnect = function() enabled = false clear() end })
+    local section = gameSection("Cold War", VisualsTab.Left, "Local Shooting Effects")
+    Elements.Label(section, "Cosmetic bursts around you. Only you see them.")
+    Elements.Toggle(section, "Local Shooting Effects", false, function(on) enabled = on if not on then clear() end end)
+    Elements.ColorPicker(section, "Effect Color", color, function(value) color = value end)
+    Elements.Slider(section, "Burst Particles", 1, 12, 4, "", function(value) intensity = math.floor(value) end)
+end
+
 function Settings.SetupColdWarWeaponTuning()
     local previous = ENV.SunsetColdWarWeaponTuning
     if previous and type(previous.Restore) == "function" then previous.Restore() end
@@ -11665,7 +11766,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
     if previous and type(previous.Restore) == "function" then previous.Restore() end
     local auto = { ShootEnabled = false, WallbangEnabled = false, ReloadEnabled = false, TimerEnabled = false,
         InstantEquipEnabled = false,
-        AmmoSaverEnabled = true, BurstRounds = 2, BurstPause = 0.25, Current = nil }
+        MaxDistance = 1000, AmmoSaverEnabled = true, BurstRounds = 2, BurstPause = 0.25, Current = nil }
     Settings.ColdWarAutoWeapons, ENV.SunsetColdWarAutoWeapons = auto, auto
     local api, wielder, viewmodel
     local originals, wrappers = {}, {}
@@ -11866,6 +11967,7 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
             local direction, _, targetModel, targetPart, wallbangValidated = aim.Resolve(object.tool,
                 object.currentMuzzleIndex, bullet, origin, camera.CFrame.LookVector, true)
             if not direction or not targetModel or not targetPart then return false end
+            if (targetPart.Position - origin).Magnitude > auto.MaxDistance then return false end
             if auto.WallbangEnabled and wallbangValidated then return true end
             -- Auto Shoot conserves ammo: both the camera and the actual muzzle
             -- must have an unobstructed direct line to the selected player.
@@ -11982,6 +12084,10 @@ function Settings.SetupColdWarAutoWeapons(playerModel)
         if aim then aim.SetEnabled(aim.Enabled) end
         if not on then release() end
         if not on and not auto.ReloadEnabled and not auto.TimerEnabled then detach() end
+    end)
+    Elements.Slider(shoot, "Max Distance", 25, 5000, 1000, "studs", function(value)
+        auto.MaxDistance = value
+        release()
     end)
     Elements.Toggle(shoot, "Wallbang", false, function(on)
         auto.WallbangEnabled = on
@@ -12271,6 +12377,7 @@ function Settings.SetupColdWar()
     Elements.Toggle(list, "Module List", true, function(on) Settings.ModuleListOn = on end)
     Settings.SetupColdWarAim(playerModel)
     Settings.SetupColdWarVisualExtras()
+    Settings.SetupColdWarLocalEffects()
     Settings.SetupColdWarSession()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarWeaponTuning()
@@ -12282,14 +12389,7 @@ function Settings.SetupColdWar()
         atmospherePreset = value
         applyAtmosphere()
     end)
-    Elements.Toggle(atmosphere, "Custom Time", false, function(on)
-        atmosphereCustomTime = on
-        applyAtmosphere()
-    end)
-    Elements.Slider(atmosphere, "Time of Day", 0, 24, 18, "", function(value)
-        atmosphereTime = value
-        applyAtmosphere()
-    end, 0.5)
+    atmosphereColorControls(atmosphere)
     Settings.SetupColdWarAutoWeapons(playerModel)
     buildSpinbot(gameSection("Cold War", PlayerTab.Left, "Spinbot"))
     Settings.StartupStage("Building Cold War menu...")
