@@ -9,11 +9,11 @@ local dedicated = game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 13687899540 or game.GameId == 4750561026
     or game.PlaceId == 7336302630 or game.GameId == 2862098693
 local expectedBuild = dedicated
-    and "20261009-rift-compact-notifications-k322"
-    or "20261009-rift-universal-compact-notifications-k276"
+    and "20261009-rift-notification-context-k323"
+    or "20261009-rift-universal-notification-context-k277"
 local sourceUrl = dedicated
-    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/46a6e94d200ed2253896ec6b4df0bcfd2b4837cb/alua"
-    or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/46a6e94d200ed2253896ec6b4df0bcfd2b4837cb/universal.lua"
+    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/d52bcd95da033a9325ac49770c26805e4c32a3af/alua"
+    or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/d52bcd95da033a9325ac49770c26805e4c32a3af/universal.lua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
 assert(ok and type(source) == "string", "RIFT: current build download failed: " .. tostring(source))
