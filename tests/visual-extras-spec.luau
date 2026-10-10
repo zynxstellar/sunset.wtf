@@ -80,9 +80,31 @@ connections[#connections].Disconnect()
 assert(secondCamera.FieldOfView==80 and #trails.Paths==0,"unload leaked FOV or trails")
 fire() trails.Update() assert(#trails.Queue==0,"unloaded observer recorded shots")
 print("PASS Cold War visuals: bounded trails, first collision, fade/expiry, disable/unload cleanup, FOV camera replacement and game switching")
-local currentAtmosphere={Parent=true,Density=0.4,Haze=2}
-local Lighting={FogEnd=500,Brightness=1,Ambient="dim",OutdoorAmbient="dark",GlobalShadows=true,
-    FindFirstChildOfClass=function() return currentAtmosphere end}
+local function signal()
+    local handlers = {}
+    return { Connect = function(_, fn)
+        local token = {Active=true}
+        handlers[token] = fn
+        return {Disconnect=function() token.Active=false end}
+    end, Fire = function()
+        for token, fn in pairs(handlers) do if token.Active then fn() end end
+    end }
+end
+local function reactive(properties)
+    local signals = {}
+    properties.GetPropertyChangedSignal = function(_, property)
+        if not signals[property] then signals[property]=signal() end
+        return signals[property]
+    end
+    return setmetatable({}, {__index=properties, __newindex=function(_, key, value)
+        if properties[key] == value then return end
+        properties[key] = value
+        if signals[key] then signals[key].Fire() end
+    end})
+end
+local currentAtmosphere=reactive({Parent=true,Density=0.4,Haze=2})
+local Lighting=reactive({FogEnd=500,Brightness=1,Ambient="dim",OutdoorAmbient="dark",GlobalShadows=true,
+    FindFirstChildOfClass=function() return currentAtmosphere end})
 -- INSERT_VISIBILITY
 Settings.SetupColdWarVisibility()
 local visibility=Settings.ColdWarVisibility
@@ -90,7 +112,15 @@ controls["Visibility/No Fog"].Set(true)
 assert(Lighting.FogEnd==1000000 and currentAtmosphere.Density==0.01 and currentAtmosphere.Haze==0)
 controls["Visibility/Full Bright"].Set(true)
 assert(Lighting.Brightness==4 and not Lighting.GlobalShadows)
-local replacement={Parent=true,Density=0.6,Haze=3}
+-- Simulate weather/death effects changing these properties repeatedly without advancing a frame.
+for _ = 1, 50 do
+    Lighting.Brightness=0.2 Lighting.FogEnd=100 Lighting.GlobalShadows=true
+    currentAtmosphere.Density=0.7 currentAtmosphere.Haze=4
+    assert(Lighting.Brightness==4 and Lighting.FogEnd==1000000 and not Lighting.GlobalShadows,
+        "weather/death lighting remained visible until the polling interval")
+    assert(currentAtmosphere.Density==0.01 and currentAtmosphere.Haze==0)
+end
+local replacement=reactive({Parent=true,Density=0.6,Haze=3})
 currentAtmosphere=replacement visibility.Update()
 assert(replacement.Density==0.01 and replacement.Haze==0,"replacement atmosphere retained fog")
 controls["Visibility/No Fog"].Set(false)

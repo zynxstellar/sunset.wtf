@@ -52,7 +52,7 @@ local Enum = {
     Material={Air="air",Water="water",Grass="grass"}, HumanoidStateType={Swimming="swim"},
     RaycastFilterType={Exclude=1}, UserInputType={MouseButton1=1}, KeyCode={Space=1},
     SortOrder={LayoutOrder=1}, VerticalAlignment={Bottom=1}, Font={GothamBold=1},
-    EasingStyle={Quart=1,Quad=2}, EasingDirection={Out=1,In=2},
+    EasingStyle={Quart=1,Quad=2,Linear=3}, EasingDirection={Out=1,In=2},
 }
 local OverlapParams = { new=function() return {} end }
 local RaycastParams = { new=function() return {} end }
@@ -60,6 +60,8 @@ local Region3 = { new=function(a,b) return {Min=a,Max=b} end }
 local Region3int16 = Region3
 local Vector3int16 = Vector3
 local Settings = { SelectedGame="BedWars" }
+local function track() end
+local function warn() end
 local BedWars = {Running=true,ScaffoldOn=true,ScaffoldTowerOn=true,
     ScaffoldVoidRescue=true,ScaffoldTowerSpeed=38,AuraOn=true,AuraCPS=10,MusicCoverFiles={},
     VoidWaterWidth=96,VoidWaterDepth=96,WaterFightRange=14}
@@ -402,11 +404,30 @@ Persistence.HUDFrames={ModuleList=listFrame,TargetHUD=hudFrame}
 Persistence.RestoreHUDPositions({ModuleList={1,-310,0,38},TargetHUD={0,50,0,60}},false)
 assert(listFrame.Position.X.Offset==-14 and hudFrame.Position.X.Offset==50, "saved shifted module position was restored")
 BedWars.Notify("Feature enabled","Scaffold",true)
-assert(BedWars.NotifyStack.AnchorPoint.X==1 and BedWars.NotifyStack.Position.X.Scale==1
-    and BedWars.NotifyStack.Position.Y.Scale==1, "notifications are not bottom-right")
+assert(Settings.NotificationStack.AnchorPoint.X==1 and Settings.NotificationStack.Position.X.Scale==1
+    and Settings.NotificationStack.Position.Y.Scale==1, "notifications are not bottom-right")
 assert(Persistence.SavedHUDPositions().ModuleList[2]==-14, "saved list position drifted")
 advance(5)
-assert(BedWars.NotifyActiveCount==0, "expired toast was not removed")
+assert(Settings.NotificationActiveCount==0, "expired toast was not removed")
+for _, gameName in ipairs({"Cold War", "Rivals", "BedWars", "Project Delta", "Universal"}) do
+    Settings.SelectedGame = gameName
+    assert(Settings.Notify("Ready", gameName), "notifications unavailable in " .. gameName)
+end
+assert(Settings.NotificationActiveCount==4, "notification stack grew past its limit")
+local before = Settings.NotificationActiveCount
+assert(Settings.Notify("Ready", "Universal") == nil and Settings.NotificationActiveCount==before,
+    "duplicate notification was not suppressed")
+advance(5)
+assert(Settings.NotificationActiveCount==0)
+Settings.RunCallback(function() error("intentional callback failure") end)
+assert(Settings.NotificationActiveCount==1, "callback error did not produce a notification")
+advance(5)
+assert(Settings.NotificationActiveCount==1, "error notification expired too soon")
+advance(2)
+assert(Settings.NotificationActiveCount==0)
+assert(Settings.RunCallback(function() return 1,nil,3 end)==1)
+Settings.SelectedGame="BedWars"
+
 print("PASS UI: bottom-right toast, expiry, shifted-config repair, other HUD positions preserved")
 
 BedWars.ShopCatalog=nil

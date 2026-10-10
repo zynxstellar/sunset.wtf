@@ -31,7 +31,8 @@ def main():
         'Project Delta is supported but the startup guard returns before building its UI'
     chunks = [
         between(inner, 'function Persistence.SavedHUDPositions()', '\ndo\n    local lastSavedJSON'),
-        between(inner, 'do\n    BedWars.NotifyGui', '\ndo\n    BedWars.SpotifyPanel'),
+        between(inner, 'function Settings.SetupNotifications()', '\nSettings.SetupNotifications()') + '\nSettings.SetupNotifications()\n',
+        between(inner, 'do\n    function BedWars.Notify', '\ndo\n    BedWars.SpotifyPanel'),
         between(inner, 'BedWars.VoidWater = {}', '\nlocal sprintController'),
         between(inner, 'function BedWars.AttackRange()', '\nfunction BedWars.MeleeItem'),
         between(inner, 'function BedWars.HostileNpc(', '\nfunction BedWars.Visible('),

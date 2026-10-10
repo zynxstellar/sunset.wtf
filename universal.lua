@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261008-rift-universal-esp-scale-k273"
+local SUNSET_BUILD = "20261009-rift-universal-notifications-k274"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -242,6 +242,75 @@ for _, name in ipairs({ "MenuUI", "EspGui" }) do
 end
 
 local Gui = new("ScreenGui", { Name = "MenuUI", DisplayOrder = 2147483647, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, PlayerGui)
+function Settings.SetupNotifications()
+    local screen = new("ScreenGui", { Name = "RiftNotifications", ResetOnSpawn = false,
+        IgnoreGuiInset = true, DisplayOrder = 2147483646 }, PlayerGui)
+    Settings.NotificationGui = screen
+    track({ Disconnect = function() screen:Destroy() end })
+    local stack = new("Frame", { AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, -18, 1, -20), Size = UDim2.fromOffset(310, 360),
+        BackgroundTransparency = 1, BorderSizePixel = 0 }, screen)
+    Settings.NotificationStack = stack
+    new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
+        VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
+    local slots, order, lastKey, lastTime = {}, 0, nil, 0
+    function Settings.Notify(title, message, kind)
+        if not screen.Parent then return end
+        title, message = tostring(title), tostring(message)
+        local key = title .. ":" .. message
+        if key == lastKey and os.clock() - lastTime < 2 then return end
+        lastKey, lastTime = key, os.clock()
+        order += 1
+        local color = kind == "error" and T.red or T.accent
+        local duration = kind == "error" and 6 or 4.2
+        local slot = new("Frame", { Size = UDim2.fromOffset(310, 78), LayoutOrder = order,
+            BackgroundTransparency = 1, BorderSizePixel = 0 }, stack)
+        table.insert(slots, slot)
+        if #slots > 4 then local oldest = table.remove(slots, 1) oldest:Destroy() end
+        Settings.NotificationActiveCount = #slots
+        local toast = new("Frame", { Position = UDim2.fromOffset(330, 0),
+            Size = UDim2.fromOffset(310, 78), BackgroundColor3 = T.inner,
+            BackgroundTransparency = 0.06, BorderSizePixel = 0, ClipsDescendants = true }, slot)
+        new("UICorner", { CornerRadius = UDim.new(0, 10) }, toast)
+        border(toast, T.border)
+        new("Frame", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(0, 3, 1, 0),
+            BackgroundColor3 = color, BorderSizePixel = 0 }, toast)
+        local heading = label(toast, title:sub(1, 48), 13, color)
+        heading.Font = Enum.Font.GothamBold
+        heading.Position, heading.Size = UDim2.fromOffset(16, 10), UDim2.new(1, -30, 0, 18)
+        local body = label(toast, message:sub(1, 220), 12, T.text)
+        body.Position, body.Size = UDim2.fromOffset(16, 31), UDim2.new(1, -30, 0, 35)
+        body.TextWrapped = true
+        local progress = new("Frame", { Position = UDim2.new(0, 0, 1, -2),
+            Size = UDim2.new(1, 0, 0, 2), BackgroundColor3 = color, BorderSizePixel = 0 }, toast)
+        TweenService:Create(toast, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            { Position = UDim2.fromOffset(0, 0) }):Play()
+        TweenService:Create(progress, TweenInfo.new(duration, Enum.EasingStyle.Linear),
+            { Size = UDim2.new(0, 0, 0, 2) }):Play()
+        task.delay(duration, function()
+            if not screen.Parent or not slot.Parent then return end
+            TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                { Position = UDim2.fromOffset(330, 0) }):Play()
+            task.wait(0.21)
+            slot:Destroy()
+            local index = table.find(slots, slot)
+            if index then table.remove(slots, index) end
+            Settings.NotificationActiveCount = #slots
+        end)
+        return slot
+    end
+    function Settings.RunCallback(callback, ...)
+        local result = table.pack(pcall(callback, ...))
+        if not result[1] then
+            warn("[Rift] Control error: " .. tostring(result[2]))
+            Settings.Notify("Control error", result[2], "error")
+            return
+        end
+        return table.unpack(result, 2, result.n)
+    end
+end
+Settings.SetupNotifications()
+
 Settings.MenuBlurEffect = new("BlurEffect", { Name = "SunsetMenuBlur", Size = 0 }, Lighting)
 Settings.MenuBlurTween = nil
 function Settings.SetMenuBlur(size)
@@ -829,7 +898,7 @@ function Elements.Button(parent, text, callback)
     border(b, T.border)
     b.MouseEnter:Connect(function() b.BackgroundColor3 = T.elementHi end)
     b.MouseLeave:Connect(function() b.BackgroundColor3 = T.element end)
-    b.MouseButton1Click:Connect(function() if callback then task.spawn(callback) end end)
+    b.MouseButton1Click:Connect(function() if callback then task.spawn(Settings.RunCallback, callback) end end)
     return b
 end
 
@@ -877,10 +946,9 @@ function Elements.Toggle(parent, text, default, callback, defaultKey)
         if state == v then return end
         state = v
         render()
-        if callback then task.spawn(callback, state) end
-        if state and BedWars and BedWars.NotifyOn and BedWars.Notify
-            and parent.Parent:GetAttribute("SunsetGame") == "BedWars" then
-            BedWars.Notify("Feature enabled", text)
+        if callback then task.spawn(Settings.RunCallback, callback, state) end
+        if Settings.Notify then
+            Settings.Notify(state and "Feature enabled" or "Feature disabled", text)
         end
     end
     function obj.Get() return state end
@@ -908,7 +976,7 @@ function Elements.Toggle(parent, text, default, callback, defaultKey)
 
     render()
     obj.SetBind(defaultKey)
-    if callback and state then task.spawn(callback, state) end
+    if callback and state then task.spawn(Settings.RunCallback, callback, state) end
     table.insert(ConfigControls, { Kind = "toggle", Key = configKey(parent, text),
         Get = obj.Get, Set = obj.Set,
         GetBind = obj.GetBind, SetBind = obj.SetBind,
@@ -1000,7 +1068,7 @@ function Elements.ColorPicker(parent, text, default, callback)
             76 + math.sin(angle) * saturation * 72)
         brightnessGradient.Color = ColorSequence.new(Color3.fromHSV(hue, saturation, 1), Color3.new(0, 0, 0))
         brightnessMarker.Position = UDim2.new(1 - value, 0, 0.5, 0)
-        if notify ~= false and callback then task.spawn(callback, color) end
+        if notify ~= false and callback then task.spawn(Settings.RunCallback, callback, color) end
     end
     for row = 0, 18 do
         for column = 0, 18 do
@@ -1111,7 +1179,7 @@ function Elements.Slider(parent, text, min, max, default, suffix, callback, step
         local fraction = max > min and math.clamp((value - min) / (max - min), 0, 1) or 0
         fill.Size = UDim2.fromScale(fraction, 1)
         knob.Position = UDim2.fromScale(fraction, 0.5)
-        if callback and (changed or initial) then task.spawn(callback, value) end
+        if callback and (changed or initial) then task.spawn(Settings.RunCallback, callback, value) end
     end
     number.FocusLost:Connect(function() set(number.Text) end)
     local dragInput, grabOffset, scrollParents = nil, 0, {}
@@ -1192,7 +1260,7 @@ function Elements.Dropdown(parent, text, options, default, callback, noConfig)
         btn.Text = "  " .. value
         list.Visible = false
         holder.Size = UDim2.new(1, 0, 0, 36)
-        if callback then task.spawn(callback, value) end
+        if callback then task.spawn(Settings.RunCallback, callback, value) end
     end
 
     function obj.SetOptions(newOptions)
@@ -1215,7 +1283,7 @@ function Elements.Dropdown(parent, text, options, default, callback, noConfig)
                 btn.Text = "  " .. opt
                 list.Visible = false
                 holder.Size = UDim2.new(1, 0, 0, 36)
-                if callback then task.spawn(callback, opt) end
+                if callback then task.spawn(Settings.RunCallback, callback, opt) end
             end)
         end
 
@@ -1294,14 +1362,14 @@ function Elements.TextBox(parent, text, placeholder, callback, default, saveValu
     }, holder)
     border(box, T.border)
     new("UIPadding", { PaddingLeft = UDim.new(0, 4) }, box)
-    box.FocusLost:Connect(function() if callback then task.spawn(callback, box.Text) end end)
+    box.FocusLost:Connect(function() if callback then task.spawn(Settings.RunCallback, callback, box.Text) end end)
     if saveValue then
         table.insert(ConfigControls, { Kind = "text", Key = configKey(parent, text),
             Get = function() return box.Text end,
             Set = function(value)
                 if type(value) ~= "string" then return end
                 box.Text = value
-                if callback then task.spawn(callback, value) end
+                if callback then task.spawn(Settings.RunCallback, callback, value) end
             end, Box = parent.Parent })
     end
     return holder
@@ -2941,75 +3009,12 @@ BedWars = {
         LastJobId = "", LastKillCount = 0, SourceValues = {}, Observed = {} },
 }
 do
-    BedWars.NotifyGui = new("ScreenGui", {
-        Name = "RiftNotifications", ResetOnSpawn = false,
-        IgnoreGuiInset = true, DisplayOrder = 2147483646,
-    }, PlayerGui)
-    local stack = new("Frame", {
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -14, 1, -18),
-        Size = UDim2.fromOffset(260, 275),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, BedWars.NotifyGui)
-    BedWars.NotifyStack = stack
-    new("UIListLayout", { Padding = UDim.new(0, 4),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
-    local slots = {}
-    local order = 0
     function BedWars.Notify(title, message, force)
         if not BedWars.Running or (not BedWars.NotifyOn and not force) then return end
-        order += 1
-        local slot = new("Frame", {
-            Size = UDim2.fromOffset(260, 50), LayoutOrder = order,
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-        }, stack)
-        table.insert(slots, slot)
-        if #slots > 5 then
-            local oldest = table.remove(slots, 1)
-            if oldest.Parent then oldest:Destroy() end
-        end
-        BedWars.NotifyActiveCount = #slots
-        local toast = new("Frame", {
-            Position = UDim2.fromOffset(276, 0),
-            Size = UDim2.fromOffset(260, 50),
-            BackgroundColor3 = T.inner,
-            BackgroundTransparency = 0.25, BorderSizePixel = 0,
-        }, slot)
-        new("UICorner", { CornerRadius = UDim.new(0, 7) }, toast)
-        border(toast, T.accent)
-        local strip = new("Frame", {
-            Size = UDim2.fromOffset(3, 32), Position = UDim2.fromOffset(8, 9),
-            BackgroundColor3 = T.gold, BorderSizePixel = 0,
-        }, toast)
-        new("UICorner", { CornerRadius = UDim.new(0, 2) }, strip)
-        local heading = label(toast, tostring(title):sub(1, 45), 11,
-            T.gold)
-        heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(20, 5)
-        heading.Size = UDim2.new(1, -30, 0, 17)
-        local body = label(toast, tostring(message):sub(1, 130), 10,
-            T.text)
-        body.Position = UDim2.fromOffset(20, 22)
-        body.Size = UDim2.new(1, -30, 0, 22)
-        body.TextWrapped = true
-        TweenService:Create(toast, TweenInfo.new(0.3,
-            Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            { Position = UDim2.fromOffset(0, 0) }):Play()
-        task.delay(4.2, function()
-            if not slot.Parent then return end
-            TweenService:Create(toast, TweenInfo.new(0.24,
-                Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                { Position = UDim2.fromOffset(276, 0),
-                    BackgroundTransparency = 0.8 }):Play()
-            task.wait(0.25)
-            if slot.Parent then slot:Destroy() end
-            local index = table.find(slots, slot)
-            if index then table.remove(slots, index) end
-            BedWars.NotifyActiveCount = #slots
-        end)
+        return Settings.Notify(title, message)
     end
 end
+
 do
     BedWars.SpotifyPanel = new("Frame", {
         Name = "SunsetMusicOverlay", AnchorPoint = Vector2.new(1, 1),

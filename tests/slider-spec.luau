@@ -22,6 +22,7 @@ function UDim2.fromScale(x, y) return UDim2.new(x, 0, y, 0) end
 local Vector2 = { new = function(x, y) return { X = x, Y = y } end }
 local T = {}
 local Elements, ConfigControls = {}, {}
+local Settings = { RunCallback = function(callback, ...) return callback(...) end }
 local task = { spawn = function(fn, ...) fn(...) end }
 local UIS = { InputChanged = signal(), InputEnded = signal(), WindowFocusReleased = signal() }
 local Gui = { children = {} }

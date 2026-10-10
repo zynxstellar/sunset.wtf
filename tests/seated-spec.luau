@@ -1,4 +1,6 @@
 local Settings = { SelectedGame = "Cold War" }
+local notices = {}
+Settings.Notify = function(title, message, kind) table.insert(notices, {title, message, kind}) end
 local ENV = {}
 local now = 10
 local os = { clock = function() return now end }
@@ -52,6 +54,11 @@ local function track(c) table.insert(connections, c) end
 local RunService = { RenderStepped = { Connect = function() return { Disconnect = function() end } end } }
 local AimTab = { Left = {} }
 local function gameSection(_, _, name) return name end
+local inputHandler
+local UIS = { InputBegan = {Connect=function(_, fn)
+    inputHandler = fn return {Disconnect=function() end}
+end}, GetFocusedTextBox=function() return nil end }
+local task = { defer=function(fn) fn() end }
 local toggle, checkButton
 local Elements = { Toggle = function(_, _, _, callback) toggle = callback end,
     Button = function(_, name, callback) assert(name == "Check Seated") checkButton = callback end }
@@ -116,6 +123,13 @@ assert(gate(), "custom occupied seat did not allow equip")
 local status = checkButton()
 assert(string.find(status, "seat=true", 1, true) and string.find(status, "hooks=true", 1, true))
 assert(string.find(status, "gateHumanoid=true", 1, true))
+assert(#notices > 0 and notices[#notices][1] == "Shoot While Seated")
+local noticeBaseline = #notices
+inputHandler({KeyCode={Name="One"}})
+assert(#notices==noticeBaseline+1, "weapon key did not show seated status")
+inputHandler({KeyCode={Name="One"}})
+assert(#notices==noticeBaseline+1, "weapon key spam flooded notifications")
+
 local customResult = table.pack(inventory.setSeated(true))
 assert(not blocked and customResult.n == 3)
 local eventCount = seatEvents

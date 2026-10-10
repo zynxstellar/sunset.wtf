@@ -382,6 +382,9 @@ function Camera:WorldToViewportPoint(position)
 end
 
 local game = { JobId = "mock-session" }
+Settings.RunCallback = function(callback, ...) return callback(...) end
+Settings.Notify = function() end
+local Lighting = {}
 -- INSERT_RIVALS_PRODUCTION
 
 local search={Text="test",ReleaseFocus=function(self) self.released=true end,
