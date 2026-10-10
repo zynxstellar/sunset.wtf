@@ -8,7 +8,8 @@ function vectors.__index(a,k)
     if k=="Magnitude" then return math.sqrt(a.X*a.X+a.Y*a.Y+a.Z*a.Z) end
     if k=="Unit" then return a*(1/a.Magnitude) end
 end
-local CFrame={lookAt=function(_,v) return {LookVector=v} end}
+local Color3={fromRGB=function(...) return {...} end}
+local CFrame={new=function(x,y,z) return {Position=Vector3.new(x,y,z)} end,lookAt=function(_,v) return {LookVector=v} end}
 local Enum=setmetatable({}, {__index=function(t,k) local v=setmetatable({}, {__index=function(_,key) return key end}) rawset(t,k,v) return v end})
 local RunService={PreSimulation={Connect=function(_,fn) return {Disconnect=function() end} end}}
 local Settings={SelectedGame="Cold War",Notify=function() end}
@@ -28,7 +29,7 @@ local function new(kind,props,parent)
     function obj:Destroy() self.Destroyed=true self.Parent=nil end
     objects[#objects+1]=obj return obj
 end
-local chassis={Parent=true,Anchored=false,AssemblyMass=100,CFrame={Rotation="upright",LookVector=Vector3.new(0,0,-1)},IsDescendantOf=function() return false end}
+local chassis={Position=Vector3.new(0,10,0),Size=Vector3.new(6,4,10),FindFirstAncestorOfClass=function() return nil end,Parent=true,Anchored=false,AssemblyMass=100,CFrame={Position=Vector3.new(0,10,0),Rotation="upright",LookVector=Vector3.new(0,0,-1)},IsDescendantOf=function() return false end}
 local seat={Name="DriverSeat",AssemblyRootPart=chassis,IsA=function(_,kind) return kind=="BasePart" or kind=="VehicleSeat" end,IsDescendantOf=function() return false end}
 local joints={}
 local root={GetJoints=function() return joints end}
@@ -63,4 +64,26 @@ Settings.SelectedGame="Rivals" fly.Step(1/60) assert(objects[10].Destroyed)
 Settings.SelectedGame="Cold War" fly.Step(1/60)
 connections[#connections].Disconnect() assert(objects[13].Destroyed)
 fly.Step(1/60) assert(#objects==15)
+Settings.SetupColdWarCarFly()
+fly=Settings.ColdWarCarFly
+controls["Car Lift"](true)
+fly.Step(1/60)
+local plate=objects[#objects]
+assert(plate.ClassName=="Part" and plate.Anchored and plate.CanCollide)
+assert(plate.CFrame.Position.Y+0.5<8,"plate started above underside")
+local firstY=plate.CFrame.Position.Y
+fly.Step(1/60) assert(plate.CFrame.Position.Y>firstY,"plate did not rise")
+for _=1,200 do fly.Step(1/60) end
+assert(plate.CFrame.Position.Y<=8.0,"blocked car accumulated unsafe overlap")
+chassis.Position=Vector3.new(10,12,20)
+fly.Step(1/60)
+assert(plate.CFrame.Position.X==10 and plate.CFrame.Position.Z==20,"plate did not follow car")
+menu=true local paused=plate.CFrame.Position.Y
+fly.Step(1/60) assert(plate.CFrame.Position.Y==paused)
+menu=false
+controls["Car Lift"](false) assert(plate.Destroyed)
+controls["Car Lift"](true) fly.Step(1/60)
+local replacement=objects[#objects]
+joints={} fly.Step(1/60) assert(replacement.Destroyed,"seat exit left lift behind")
+connections[#connections].Disconnect()
 print("PASS Car Fly: camera movement, normalized diagonals, custom/native driver seats, passenger/death/anchor filters, bounded constraints, menu/input pause, unload")

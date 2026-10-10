@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-coldwar-car-fly-k340"
+local SUNSET_BUILD = "20261010-rift-car-lift-k341"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12238,14 +12238,16 @@ function Settings.SetupColdWarVisibility(gameName)
 end
 
 function Settings.SetupColdWarCarFly()
-    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, Destroyed = false }
+    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, LiftSpeed = 3, Destroyed = false }
     Settings.ColdWarCarFly = fly
     local vehicleRoot, attachment, velocity, orientation
+    local platform, platformTop, platformClearance
     local lastError = -math.huge
     local function clear()
         -- Remove only this module's constraints; native vehicle physics resumes.
-        for _, object in pairs({ velocity, orientation, attachment }) do object:Destroy() end
+        for _, object in pairs({ velocity, orientation, attachment, platform }) do object:Destroy() end
         vehicleRoot, attachment, velocity, orientation = nil, nil, nil, nil
+        platform, platformTop, platformClearance = nil, nil, nil
     end
     local function driverSeat(character, humanoid)
         local seat = humanoid.SeatPart
@@ -12262,14 +12264,44 @@ function Settings.SetupColdWarCarFly()
     function fly.Step(dt)
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if fly.Destroyed or not fly.Enabled or Settings.SelectedGame ~= "Cold War"
+        if fly.Destroyed or (not fly.Enabled and not fly.LiftEnabled) or Settings.SelectedGame ~= "Cold War"
             or not humanoid or humanoid.Health <= 0 then clear() return end
         local seat = driverSeat(character, humanoid)
         local root = seat and seat.AssemblyRootPart
         if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then clear() return end
+        if fly.LiftEnabled then
+            if root ~= vehicleRoot or not platform or not platform.Parent then
+                clear()
+                vehicleRoot = root
+                local model = root:FindFirstAncestorOfClass("Model")
+                local ancestor = seat.Parent
+                for _ = 1, 8 do
+                    if not ancestor or ancestor == workspace then break end
+                    if ancestor:IsA("Model") and ancestor:GetAttribute("VehicleNetId") ~= nil then model = ancestor break end
+                    ancestor = ancestor.Parent
+                end
+                local bounds, size = root.CFrame, root.Size
+                if model then bounds, size = model:GetBoundingBox() end
+                -- Start below the vehicle bounds, without moving or welding the vehicle.
+                platformTop = bounds.Position.Y - size.Y / 2 - 0.15
+                platformClearance = root.Position.Y - platformTop
+                platform = new("Part", { Name = "RiftCarLift", Anchored = true, CanCollide = true,
+                    CanTouch = false, CanQuery = false, Transparency = 0.35,
+                    Color = Color3.fromRGB(65, 145, 255), Material = Enum.Material.SmoothPlastic,
+                    Size = Vector3.new(math.clamp(size.X + 4, 8, 40), 1, math.clamp(size.Z + 4, 8, 50)),
+                    CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z) }, workspace)
+            end
+            if dt > 0 and dt <= 0.1 and not anyMenuVisible() and not UIS:GetFocusedTextBox() then
+                -- Do not let a blocked or server-corrected car accumulate a large overlap.
+                platformTop = math.min(platformTop + fly.LiftSpeed * dt,
+                    root.Position.Y - platformClearance + 0.3)
+            end
+            platform.CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z)
+            return
+        end
         local camera = workspace.CurrentCamera
         if not camera then clear() return end
-        if root ~= vehicleRoot then
+        if root ~= vehicleRoot or not velocity then
             clear()
             vehicleRoot = root
             attachment = new("Attachment", { Name = "RiftCarFlyAttachment" }, root)
@@ -12307,19 +12339,23 @@ function Settings.SetupColdWarCarFly()
         if not ok then
             clear()
             fly.Enabled = false
+            fly.LiftEnabled = false
             if os.clock() - lastError >= 5 then
                 lastError = os.clock()
                 Settings.Notify("Car Fly paused", tostring(err), "error")
             end
         end
     end))
-    track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false clear() end })
+    track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false fly.LiftEnabled = false clear() end })
     local section = gameSection("Cold War", MainTab.Left, "Car Fly")
     Elements.Toggle(section, "Car Fly", false, function(on) fly.Enabled = on if not on then clear() end end)
     Elements.Slider(section, "Speed", 5, 150, 45, "studs/s", function(value) fly.Speed = value end)
     Elements.Slider(section, "Vertical Speed", 5, 100, 25, "studs/s", function(value) fly.VerticalSpeed = value end)
     Elements.Toggle(section, "Face Camera", true, function(on) fly.FaceCamera = on end)
     Elements.Label(section, "Driver seat: WASD, Space up, Left Ctrl down.")
+    local liftSection = gameSection("Cold War", MainTab.Left, "Car Lift")
+    Elements.Toggle(liftSection, "Car Lift", false, function(on) fly.LiftEnabled = on clear() end)
+    Elements.Slider(liftSection, "Rise Speed", 1, 12, 3, "studs/s", function(value) fly.LiftSpeed = value end)
 end
 
 function Settings.SetupColdWarSpider()
