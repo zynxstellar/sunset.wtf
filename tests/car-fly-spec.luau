@@ -74,12 +74,22 @@ local plate=objects[#objects]
 assert(plate.ClassName=="Part" and plate.Anchored and plate.CanCollide)
 assert(plate.CFrame.Position.Y+0.5<8,"plate started above underside")
 local firstY=plate.CFrame.Position.Y
-fly.Step(1/60) assert(plate.CFrame.Position.Y>firstY,"plate did not rise")
-for _=1,200 do fly.Step(1/60) end
-assert(plate.CFrame.Position.Y<=8.0,"blocked car accumulated unsafe overlap")
-chassis.Position=Vector3.new(10,12,20)
+fly.Step(1/60) assert(plate.CFrame.Position.Y==firstY,"idle platform rose")
+controls["Car Fly"](true)
 fly.Step(1/60)
-assert(plate.CFrame.Position.X==10 and plate.CFrame.Position.Z==20,"plate did not follow car")
+assert(not plate.Destroyed,"flight destroyed catch platform")
+chassis.Position=Vector3.new(10,20,20)
+fly.Step(1/60)
+assert(plate.CFrame.Position.Y>firstY,"platform did not follow flight height")
+local flightHeight=plate.CFrame.Position.Y
+controls["Car Fly"](false)
+assert(not plate.Destroyed,"flight disable destroyed catch platform")
+chassis.Position=Vector3.new(20,18,30)
+fly.Step(1/60)
+assert(plate.CFrame.Position.Y==flightHeight,"platform followed falling car downward")
+assert(plate.CFrame.Position.X==20 and plate.CFrame.Position.Z==30,"platform did not follow driving horizontally")
+for _=1,200 do fly.Step(1/60) end
+assert(plate.CFrame.Position.Y==flightHeight,"platform height drifted after landing")
 menu=true local paused=plate.CFrame.Position.Y
 fly.Step(1/60) assert(plate.CFrame.Position.Y==paused)
 menu=false
