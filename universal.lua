@@ -67,7 +67,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261009-rift-universal-notification-style-k275"
+local SUNSET_BUILD = "20261009-rift-universal-compact-notifications-k276"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetUniversalCurrent.lua"
@@ -248,10 +248,10 @@ function Settings.SetupNotifications()
     Settings.NotificationGui = screen
     track({ Disconnect = function() screen:Destroy() end })
     local stack = new("Frame", { AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -18, 1, -20), Size = UDim2.fromOffset(344, 430),
+        Position = UDim2.new(1, -18, 1, -20), Size = UDim2.fromOffset(280, 300),
         BackgroundTransparency = 1, BorderSizePixel = 0 }, screen)
     Settings.NotificationStack = stack
-    new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder,
+    new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder,
         VerticalAlignment = Enum.VerticalAlignment.Bottom }, stack)
     local slots, activeByKey, order = {}, {}, 0
     function Settings.Notify(title, message, kind)
@@ -262,7 +262,7 @@ function Settings.SetupNotifications()
         order += 1
         local color = kind == "error" and T.red or T.accent
         local duration = kind == "error" and 6 or 4.2
-        local slot = new("Frame", { Size = UDim2.fromOffset(344, 96), LayoutOrder = order,
+        local slot = new("Frame", { Size = UDim2.fromOffset(280, 66), LayoutOrder = order,
             BackgroundTransparency = 1, BorderSizePixel = 0 }, stack)
         slot:SetAttribute("NotificationKey", key)
         activeByKey[key] = slot
@@ -273,36 +273,33 @@ function Settings.SetupNotifications()
             oldest:Destroy()
         end
         Settings.NotificationActiveCount = #slots
-        local toast = new("Frame", { Position = UDim2.fromOffset(370, 0),
-            Size = UDim2.fromOffset(344, 96), BackgroundTransparency = 1, BorderSizePixel = 0 }, slot)
-        local shadow = new("Frame", { Position = UDim2.fromOffset(0, 5),
+        local toast = new("Frame", { Position = UDim2.fromOffset(300, 0),
+            Size = UDim2.fromOffset(280, 66), BackgroundTransparency = 1, BorderSizePixel = 0 }, slot)
+        local shadow = new("Frame", { Position = UDim2.fromOffset(0, 3),
             Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.bg,
             BackgroundTransparency = 0.55, BorderSizePixel = 0, ZIndex = 1 }, toast)
-        new("UICorner", { CornerRadius = UDim.new(0, 12) }, shadow)
+        new("UICorner", { CornerRadius = UDim.new(0, 8) }, shadow)
         local card = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = T.inner,
             BackgroundTransparency = 0.02, BorderSizePixel = 0, ZIndex = 2 }, toast)
-        new("UICorner", { CornerRadius = UDim.new(0, 12) }, card)
+        new("UICorner", { CornerRadius = UDim.new(0, 8) }, card)
         border(card, T.border).Transparency = 0.4
-        local category = label(card, kind == "error" and "RIFT  /  ERROR" or "RIFT  /  UPDATE", 9, color)
-        category.Font, category.ZIndex = Enum.Font.GothamBold, 3
-        category.Position, category.Size = UDim2.fromOffset(16, 9), UDim2.fromOffset(275, 13)
-        local heading = label(card, title:sub(1, 36), 14, T.text)
+        local heading = label(card, title:sub(1, 36), 12, T.text)
         heading.Font, heading.ZIndex = Enum.Font.GothamBold, 3
-        heading.Position, heading.Size = UDim2.fromOffset(16, 25), UDim2.new(1, -65, 0, 21)
-        local badge = new("Frame", { Position = UDim2.new(1, -44, 0, 13),
-            Size = UDim2.fromOffset(28, 28), BackgroundColor3 = color,
+        heading.Position, heading.Size = UDim2.fromOffset(12, 8), UDim2.new(1, -48, 0, 18)
+        local badge = new("Frame", { Position = UDim2.new(1, -30, 0, 8),
+            Size = UDim2.fromOffset(20, 20), BackgroundColor3 = color,
             BackgroundTransparency = 0.86, BorderSizePixel = 0, ZIndex = 3 }, card)
         new("UICorner", { CornerRadius = UDim.new(0, 8) }, badge)
-        local glyph = label(badge, kind == "error" and "!" or "i", 17, color, Enum.TextXAlignment.Center)
+        local glyph = label(badge, kind == "error" and "!" or "i", 13, color, Enum.TextXAlignment.Center)
         glyph.Font, glyph.ZIndex, glyph.Size = Enum.Font.GothamBold, 4, UDim2.fromScale(1, 1)
-        local body = label(card, message:sub(1, 220), 12, T.text)
+        local body = label(card, message:sub(1, 220), 11, T.text)
         body.Font, body.ZIndex = Enum.Font.Gotham, 3
-        body.Position, body.Size = UDim2.fromOffset(16, 49), UDim2.new(1, -32, 0, 33)
+        body.Position, body.Size = UDim2.fromOffset(12, 29), UDim2.new(1, -24, 0, 27)
         body.TextWrapped = true
         body.TextYAlignment = Enum.TextYAlignment.Top
         body.TextTruncate = Enum.TextTruncate.AtEnd
-        local rail = new("Frame", { Position = UDim2.new(0, 16, 1, -7),
-            Size = UDim2.new(1, -32, 0, 2), BackgroundColor3 = color,
+        local rail = new("Frame", { Position = UDim2.new(0, 12, 1, -5),
+            Size = UDim2.new(1, -24, 0, 2), BackgroundColor3 = color,
             BackgroundTransparency = 0.88, BorderSizePixel = 0, ZIndex = 3 }, card)
         new("UICorner", { CornerRadius = UDim.new(0, 1) }, rail)
         local progress = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = color,
@@ -315,7 +312,7 @@ function Settings.SetupNotifications()
         task.delay(duration, function()
             if not screen.Parent or not slot.Parent then return end
             TweenService:Create(toast, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                { Position = UDim2.fromOffset(370, 0) }):Play()
+                { Position = UDim2.fromOffset(300, 0) }):Play()
             task.wait(0.21)
             activeByKey[key] = nil
             slot:Destroy()
