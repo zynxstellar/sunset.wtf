@@ -3,17 +3,17 @@
 -- Contact z.y.n.x. on Discord for help, assistance, or suggestions.
 -- You can also join the Discord at: https://discord.gg/4pj9cedscb
 
--- Update both release values together when publishing a new client build.
+-- Only explicitly supported games are loaded. There is no universal fallback.
 local dedicated = game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 17625359962 or game.GameId == 6035872082
     or game.PlaceId == 13687899540 or game.GameId == 4750561026
     or game.PlaceId == 7336302630 or game.GameId == 2862098693
-local expectedBuild = dedicated
-    and "20261010-rift-full-ui-startup-k326"
-    or "20261010-rift-universal-full-ui-startup-k279"
-local sourceUrl = dedicated
-    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/80f405c5f454954e969876dbba8c57cd0b0794a8/alua"
-    or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/80f405c5f454954e969876dbba8c57cd0b0794a8/universal.lua"
+if not dedicated then
+    warn("[RIFT] This game is unsupported. No client was downloaded or started.")
+    return
+end
+local expectedBuild = "20261010-rift-compact-ui-k327"
+local sourceUrl = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/fa71bed33922133812b2bb596a28ead6eb66627d/alua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
 assert(ok and type(source) == "string", "RIFT: current build download failed: " .. tostring(source))
@@ -23,6 +23,8 @@ assert(actualBuild == expectedBuild, "RIFT: wrong build received (expected " .. 
 local chunk, err = loadstring(source, "=RIFT " .. expectedBuild)
 assert(chunk, "RIFT: current build did not compile: " .. tostring(err))
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
+-- Start with saved gameplay modules paused unless explicitly overridden.
+if environment.SunsetRecovery == nil then environment.SunsetRecovery = true end
 environment.SunsetLoaderUrl = sourceUrl
 print("[RIFT] Verified build " .. actualBuild)
 chunk()
