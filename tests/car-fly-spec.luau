@@ -17,6 +17,7 @@ local os={clock=function() return now end}
 local Settings={SelectedGame="Cold War",Notify=function() end}
 local MainTab={Left={}}
 local controls,objects,connections,keys={},{},{},{}
+local platforms={}
 local menu,typing=false,false
 local function anyMenuVisible() return menu end
 local UIS={GetFocusedTextBox=function() return typing end,IsKeyDown=function(_,key) return keys[key] end}
@@ -29,7 +30,8 @@ local function new(kind,props,parent)
     local obj={Parent=parent,ClassName=kind}
     for k,v in pairs(props) do obj[k]=v end
     function obj:Destroy() self.Destroyed=true self.Parent=nil end
-    objects[#objects+1]=obj return obj
+    if kind=="Part" then platforms[#platforms+1]=obj else objects[#objects+1]=obj end
+    return obj
 end
 local chassis={Position=Vector3.new(0,10,0),Size=Vector3.new(6,4,10),FindFirstAncestorOfClass=function() return nil end,Parent=true,Anchored=false,AssemblyMass=100,CFrame={Position=Vector3.new(0,10,0),Rotation="upright",LookVector=Vector3.new(0,0,-1)},IsDescendantOf=function() return false end}
 local seat={Name="DriverSeat",AssemblyRootPart=chassis,IsA=function(_,kind) return kind=="BasePart" or kind=="VehicleSeat" end,IsDescendantOf=function() return false end}
@@ -55,6 +57,10 @@ controls["Car Fly"](true)
 keys.W=true keys.D=true keys.Space=true
 fly.Step(1/60)
 assert(#objects==3 and math.abs(objects[2].VectorVelocity.Magnitude-math.sqrt(45*45+25*25))<0.001)
+local flightPlate=platforms[#platforms]
+assert(flightPlate and flightPlate.CanCollide,"Car Fly alone did not create support")
+controls["Car Lift"](false)
+assert(not flightPlate.Destroyed,"turning lift off removed support during flight")
 assert(objects[2].VectorVelocity.Y==25)
 for _=1,100 do fly.Step(1/60) end assert(#objects==3,"constraints recreated each frame")
 workspace.FallenPartsDestroyHeight=-500
@@ -68,7 +74,7 @@ keys.LeftControl=false
 menu=true fly.Step(1/60) assert(objects[2].VectorVelocity.Magnitude==0)
 menu=false typing=true fly.Step(1/60) assert(objects[2].VectorVelocity.Magnitude==0)
 typing=false
-humanoid.SeatPart=nil fly.Step(1/60) assert(objects[1].Destroyed and objects[3].Destroyed)
+humanoid.SeatPart=nil fly.Step(1/60) assert(objects[1].Destroyed and objects[3].Destroyed and flightPlate.Destroyed)
 joints={{Part0=seat,Part1=root}}
 fly.Step(1/60) assert(#objects==6,"custom Motor6D driver seat unsupported")
 seat.Name="PassengerSeat" seat.IsA=function(_,kind) return kind=="BasePart" end
@@ -85,7 +91,7 @@ Settings.SetupColdWarCarFly()
 fly=Settings.ColdWarCarFly
 controls["Car Lift"](true)
 fly.Step(1/60)
-local plate=objects[#objects]
+local plate=platforms[#platforms]
 assert(plate.ClassName=="Part" and plate.Anchored and plate.CanCollide)
 assert(plate.CFrame.Position.Y+0.5==8,"plate started above underside")
 local firstY=plate.CFrame.Position.Y
@@ -110,7 +116,7 @@ fly.Step(1/60) assert(plate.CFrame.Position.Y==paused)
 menu=false
 controls["Car Lift"](false) assert(plate.Destroyed)
 controls["Car Lift"](true) fly.Step(1/60)
-local replacement=objects[#objects]
+local replacement=platforms[#platforms]
 joints={} fly.Step(1/60) assert(replacement.Destroyed,"seat exit left lift behind")
 connections[#connections].Disconnect()
 Settings.SetupColdWarCarFly()
@@ -132,7 +138,7 @@ model.GetDescendants=function() return {wheel} end
 chassis.FindFirstAncestorOfClass=function() return model end
 seat.Parent=model
 controls["Car Lift"](true) fly.Step(1/60)
-local wheelPlate=objects[#objects]
+local wheelPlate=platforms[#platforms]
 assert(wheelPlate.CFrame.Position.Y+0.5==16,"rotated wheel bounds were ignored")
 wheel.Position=Vector3.new(20,19,30) fly.Step(1/60)
 assert(wheelPlate.CFrame.Position.Y+0.5==18,"suspension movement did not move support")
@@ -179,6 +185,7 @@ assert(not fly.ContactCollisionActive and fly.Enabled)
 controls["Car Fling"](true) fly.Step(1/60)
 controls["Car Fly"](false)
 assert(not fly.ContactCollisionActive and not fly.ContactFlingEnabled)
+assert(platforms[#platforms].Destroyed,"flight-only platform survived disable")
 controls["Car Fling"](true) fly.Step(1/60)
 joints={} fly.Step(1/60) assert(not fly.ContactCollisionActive)
 connections[#connections].Disconnect()

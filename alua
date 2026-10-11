@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-compact-ui-k367"
+local SUNSET_BUILD = "20261011-rift-car-flight-platform-k373"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12929,7 +12929,7 @@ function Settings.SetupColdWarCarFly()
         if root ~= vehicleRoot then clear() vehicleRoot = root end
         local autoVelocity, autoForward
         if fly.AutoRamControl then autoVelocity, autoForward = fly.AutoRamControl(root) end
-        if fly.LiftEnabled then
+        if fly.Enabled or fly.LiftEnabled then
             if not platform or not platform.Parent then
                 clearPlatform()
                 local model = root:FindFirstAncestorOfClass("Model")
@@ -13026,6 +13026,7 @@ function Settings.SetupColdWarCarFly()
             fly.ContactFlingEnabled = false
             if flingToggle then flingToggle.Set(false) end
             clearFlight()
+            if not fly.LiftEnabled then clearPlatform() end
         end
     end)
     fly.FlightToggle = flightToggle
@@ -13034,7 +13035,10 @@ function Settings.SetupColdWarCarFly()
     Elements.Toggle(section, "Face Camera", true, function(on) fly.FaceCamera = on end)
     Elements.Label(section, "Driver seat: WASD, Space up, Left Ctrl down.")
     local liftSection = gameSection("Cold War", MainTab.Left, "Car Lift")
-    liftToggle = Elements.Toggle(liftSection, "Car Lift", false, function(on) fly.LiftEnabled = on if not on then clearPlatform() end end)
+    liftToggle = Elements.Toggle(liftSection, "Car Lift", false, function(on)
+        fly.LiftEnabled = on
+        if not on and not fly.Enabled then clearPlatform() end
+    end)
     Elements.Label(liftSection, "Platform follows directly beneath your wheels.")
     local flingSection = gameSection("Cold War", MainTab.Left, "Car Fling")
     flingToggle = Elements.Toggle(flingSection, "Car Fling", false, function(on)
