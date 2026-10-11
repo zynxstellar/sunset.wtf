@@ -79,7 +79,7 @@ controls["Car Lift"](true)
 fly.Step(1/60)
 local plate=objects[#objects]
 assert(plate.ClassName=="Part" and plate.Anchored and plate.CanCollide)
-assert(plate.CFrame.Position.Y+0.5<8,"plate started above underside")
+assert(plate.CFrame.Position.Y+0.5==8,"plate started above underside")
 local firstY=plate.CFrame.Position.Y
 fly.Step(1/60) assert(plate.CFrame.Position.Y==firstY,"idle platform rose")
 controls["Car Fly"](true)
@@ -93,10 +93,10 @@ controls["Car Fly"](false)
 assert(not plate.Destroyed,"flight disable destroyed catch platform")
 chassis.Position=Vector3.new(20,18,30)
 fly.Step(1/60)
-assert(plate.CFrame.Position.Y==flightHeight,"platform followed falling car downward")
+assert(plate.CFrame.Position.Y==flightHeight-2,"platform did not follow falling car downward")
 assert(plate.CFrame.Position.X==20 and plate.CFrame.Position.Z==30,"platform did not follow driving horizontally")
 for _=1,200 do fly.Step(1/60) end
-assert(plate.CFrame.Position.Y==flightHeight,"platform height drifted after landing")
+assert(plate.CFrame.Position.Y==flightHeight-2,"platform height drifted below the wheels")
 menu=true local paused=plate.CFrame.Position.Y
 fly.Step(1/60) assert(plate.CFrame.Position.Y==paused)
 menu=false
@@ -108,6 +108,35 @@ connections[#connections].Disconnect()
 Settings.SetupColdWarCarFly()
 fly=Settings.ColdWarCarFly
 joints={{Part0=seat,Part1=root}}
+do
+local function event()
+    local fn
+    return {Connect=function(_,callback) fn=callback return {Disconnect=function() fn=nil end} end,
+        Fire=function(_,part) if fn then fn(part) end end}
+end
+local model={Name="Car",Parent=workspace,DescendantAdded=event(),DescendantRemoving=event(),
+    IsA=function(_,kind) return kind=="Model" end,GetAttribute=function() return 1 end,
+    FindFirstChildOfClass=function() end,GetBoundingBox=function() return chassis.CFrame,chassis.Size end}
+local wheel={Name="Tire",Parent=model,Position=Vector3.new(20,17,30),Size=Vector3.new(2,4,2),
+    CFrame={RightVector=Vector3.new(0,1,0),UpVector=Vector3.new(1,0,0),LookVector=Vector3.new(0,0,1)},
+    IsA=function(_,kind) return kind=="BasePart" end}
+model.GetDescendants=function() return {wheel} end
+chassis.FindFirstAncestorOfClass=function() return model end
+seat.Parent=model
+controls["Car Lift"](true) fly.Step(1/60)
+local wheelPlate=objects[#objects]
+assert(wheelPlate.CFrame.Position.Y+0.5==16,"rotated wheel bounds were ignored")
+wheel.Position=Vector3.new(20,19,30) fly.Step(1/60)
+assert(wheelPlate.CFrame.Position.Y+0.5==18,"suspension movement did not move support")
+local second={Name="WheelRear",Parent=model,Position=Vector3.new(20,14,30),Size=wheel.Size,CFrame=wheel.CFrame,IsA=wheel.IsA}
+model.DescendantAdded:Fire(second) fly.Step(1/60)
+assert(wheelPlate.CFrame.Position.Y+0.5==13,"new wheel was not tracked")
+model.DescendantRemoving:Fire(second) second.Parent=nil fly.Step(1/60)
+assert(wheelPlate.CFrame.Position.Y+0.5==18,"removed wheel kept support too low")
+controls["Car Lift"](false) assert(wheelPlate.Destroyed)
+chassis.FindFirstAncestorOfClass=function() return nil end
+seat.Parent=nil
+end
 Settings.ColdWarCarNoclip={Enabled=true}
 controls["Car Fling"](true)
 assert(fly.Enabled and fly.ContactFlingEnabled and Settings.ColdWarCarNoclip.Enabled)

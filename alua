@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-category-drag-car-ram-k349"
+local SUNSET_BUILD = "20261010-rift-wheel-follow-lift-k350"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12415,10 +12415,12 @@ function Settings.SetupColdWarCarNoclip()
 end
 
 function Settings.SetupColdWarCarFly()
-    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, PlatformGap = 2, FollowFlight = true, ContactFlingEnabled = false, ContactCollisionActive = false, RamSpeed = 150, ContactRange = 8, Destroyed = false }
+    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, ContactFlingEnabled = false, ContactCollisionActive = false, RamSpeed = 150, ContactRange = 8, Destroyed = false }
     Settings.ColdWarCarFly = fly
     local vehicleRoot, attachment, velocity, orientation
     local platform, platformTop, platformClearance
+    local wheelParts = {}
+    local wheelAdded, wheelRemoving
     local lastError = -math.huge
     local contactParams
     local flightToggle, liftToggle, flingToggle
@@ -12466,8 +12468,37 @@ function Settings.SetupColdWarCarFly()
         attachment, velocity, orientation = nil, nil, nil
     end
     local function clearPlatform()
+        if wheelAdded then wheelAdded:Disconnect() wheelAdded = nil end
+        if wheelRemoving then wheelRemoving:Disconnect() wheelRemoving = nil end
+        table.clear(wheelParts)
         if platform then platform:Destroy() end
         platform, platformTop, platformClearance = nil, nil, nil
+    end
+    local function includeWheel(part, model)
+        if not part:IsA("BasePart") then return end
+        local ancestor, matched = part, false
+        for _ = 1, 8 do
+            if not ancestor or ancestor == model then break end
+            if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return end
+            local name = ancestor.Name:lower()
+            if name:find("wheel", 1, true) or name:find("tire", 1, true) or name:find("tyre", 1, true) then
+                matched = true
+            end
+            ancestor = ancestor.Parent
+        end
+        if matched then wheelParts[part] = true end
+    end
+    local function wheelBottom(root)
+        local bottom = math.huge
+        for part in pairs(wheelParts) do
+            if part.Parent then
+                local cf, size = part.CFrame, part.Size
+                local extent = (math.abs(cf.RightVector.Y) * size.X
+                    + math.abs(cf.UpVector.Y) * size.Y + math.abs(cf.LookVector.Y) * size.Z) / 2
+                bottom = math.min(bottom, part.Position.Y - extent)
+            else wheelParts[part] = nil end
+        end
+        return bottom < math.huge and bottom or root.Position.Y - platformClearance
     end
     local function clear()
         clearFlight()
@@ -12507,20 +12538,23 @@ function Settings.SetupColdWarCarFly()
                     ancestor = ancestor.Parent
                 end
                 local bounds, size = root.CFrame, root.Size
-                if model then bounds, size = model:GetBoundingBox() end
-                -- Start below the vehicle bounds, without moving or welding the vehicle.
+                if model then
+                    bounds, size = model:GetBoundingBox()
+                    for _, part in ipairs(model:GetDescendants()) do includeWheel(part, model) end
+                    wheelAdded = model.DescendantAdded:Connect(function(part) includeWheel(part, model) end)
+                    wheelRemoving = model.DescendantRemoving:Connect(function(part) wheelParts[part] = nil end)
+                end
+                -- Follow the live wheel bottoms; use vehicle bounds if wheel names are unavailable.
                 platformClearance = root.Position.Y - (bounds.Position.Y - size.Y / 2)
-                platformTop = root.Position.Y - platformClearance - fly.PlatformGap
+                platformTop = wheelBottom(root)
                 platform = new("Part", { Name = "RiftCarLift", Anchored = true, CanCollide = true,
                     CanTouch = false, CanQuery = false, Transparency = 0.35,
                     Color = Color3.fromRGB(65, 145, 255), Material = Enum.Material.SmoothPlastic,
-                    Size = Vector3.new(math.clamp(size.X + 4, 8, 40), 1, math.clamp(size.Z + 4, 8, 50)),
+                    Size = Vector3.new(math.clamp(math.max(size.X, size.Z) + 4, 8, 60), 1, math.clamp(math.max(size.X, size.Z) + 4, 8, 60)),
                     CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z) }, workspace)
             end
-            if fly.Enabled and fly.FollowFlight and not anyMenuVisible() and not UIS:GetFocusedTextBox() then
-                platformTop = root.Position.Y - platformClearance - fly.PlatformGap
-            end
-            -- Freeze Y after flight ends; continue following X/Z as the car lands and drives.
+            platformTop = wheelBottom(root)
+            -- Keep support directly below the wheels during flight, driving and falling.
             platform.CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z)
         elseif platform then clearPlatform() end
         if not fly.Enabled then clearFlight() return end
@@ -12591,8 +12625,7 @@ function Settings.SetupColdWarCarFly()
     Elements.Label(section, "Driver seat: WASD, Space up, Left Ctrl down.")
     local liftSection = gameSection("Cold War", MainTab.Left, "Car Lift")
     liftToggle = Elements.Toggle(liftSection, "Car Lift", false, function(on) fly.LiftEnabled = on if not on then clearPlatform() end end)
-    Elements.Slider(liftSection, "Platform Gap", 0, 12, 2, "studs", function(value) fly.PlatformGap = value end)
-    Elements.Toggle(liftSection, "Follow Flight Height", true, function(on) fly.FollowFlight = on end)
+    Elements.Label(liftSection, "Platform follows directly beneath your wheels.")
     local flingSection = gameSection("Cold War", MainTab.Left, "Car Fling")
     flingToggle = Elements.Toggle(flingSection, "Car Fling", false, function(on)
         fly.ContactFlingEnabled = on
