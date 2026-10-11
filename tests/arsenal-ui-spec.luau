@@ -24,6 +24,8 @@ local function aimUnobstructed() return sight end
 local function focusedGame() return true end
 local function aimStatus() end
 function game:GetService() return {MenuIsOpen=false} end
+local silentTarget
+local function closestTarget() return silentTarget end
 -- INSERT_IMPORTED_UI
 RivalsAim.ArsenalSilentAvailable = true
 RivalsAim.StopAutoFire = function() end
@@ -51,6 +53,12 @@ for _, gameName in ipairs({"Arsenal","Rivals"}) do
         assert(obj.Name ~= "Dev Tools","developer category remains")
     end
     assert(cards.Fly and cards.Noclip and cards["Auto Shoot"] and cards.Aimbot)
+    assert(cards.Fly.Size.Y.Offset == 30 and cards.Noclip.Size.Y.Offset == 30, "row height disagrees with category sizing")
+    local layer = board:FindFirstChild("CategoryLayer")
+    assert(layer:FindFirstChild("Misc").Size.Y.Offset == 32, "empty category is not header only")
+    if IS_GENERIC then assert(layer:FindFirstChild("Fun").Size.Y.Offset == 32, "empty Arsenal Fun is not header only") end
+    local movement = layer:FindFirstChild("Movement")
+    assert(movement.Size.Y.Offset >= 38 + 3 * 32, "movement list clips module rows")
     assert(not cards["Third Person"] and not cards["Zoom Unlocker"] and not cards["Player Outlines"])
     assert(not cards["Hide Visuals"] and not cards["Named Presets"] and not cards["Preset Profiles"])
     assert(not IS_GENERIC or not cards["Kill Chat"],"Arsenal kill chat remains")
@@ -158,6 +166,17 @@ do
     RivalsAim.Aimbot.Enabled=false
     autoFire(RivalsAim.AutoShoot,nil,target,camera)
     assert(firingWanted==true,"trigger depended on aimbot being enabled")
+    silentTarget={Position=Vector3.new(100,0,100),IsDescendantOf=function() return true end}
+    RivalsAim.Enabled=true
+    autoFire(RivalsAim.AutoShoot,nil,nil,camera)
+    assert(firingWanted==true,"silent aim target was not used off crosshair")
+    RivalsAim.AutoShoot.MaxDistance=50
+    autoFire(RivalsAim.AutoShoot,nil,target,camera)
+    assert(firingWanted==false,"silent target bypassed shoot distance")
+    RivalsAim.Enabled=false
+    RivalsAim.AutoShoot.MaxDistance=200
+    autoFire(RivalsAim.AutoShoot,nil,silentTarget,camera)
+    assert(firingWanted==false,"trigger ignored alignment with silent aim off")
 end
 print("PASS imported Auto Shoot: disabled aim never fires, independent trigger, alignment, visibility, range")
 do

@@ -567,7 +567,7 @@ function Settings.IsRetiredSection(title)
     return false
 end
 function Settings.MakeMenuDraggable(frame, menu)
-    local pointer, startPoint, startPosition, destroyed
+    local pointer, startPoint, startPosition, startAbsolute, destroyed
     Settings.MenuDragRegions = Settings.MenuDragRegions or {}
     if menu then Settings.MenuDragRegions[frame] = menu end
     local function inside(object, point)
@@ -620,6 +620,7 @@ function Settings.MakeMenuDraggable(frame, menu)
         end
         Settings.MenuDragOwner = frame
         pointer, startPoint, startPosition = input, point, frame.Position
+        startAbsolute = frame.AbsolutePosition
     end))
     track(UIS.InputChanged:Connect(function(input)
         if not pointer or destroyed then return end
@@ -629,7 +630,15 @@ function Settings.MakeMenuDraggable(frame, menu)
         local delta = input.Position - startPoint
         local scaleOwner = menu or frame
         local scale = scaleOwner.FindFirstChildOfClass and scaleOwner:FindFirstChildOfClass("UIScale")
-        if scale and scale.Scale > 0 then delta = delta * (1 / scale.Scale) end
+        local scaleValue = scale and scale.Scale > 0 and scale.Scale or 1
+        delta = delta * (1 / scaleValue)
+        local camera = workspace.CurrentCamera
+        if camera then
+            local viewport, size = camera.ViewportSize, frame.AbsoluteSize
+            local x = math.clamp(startAbsolute.X + delta.X * scaleValue, 0, math.max(0, viewport.X - size.X))
+            local y = math.clamp(startAbsolute.Y + delta.Y * scaleValue, 0, math.max(0, viewport.Y - size.Y))
+            delta = Vector2.new((x - startAbsolute.X) / scaleValue, (y - startAbsolute.Y) / scaleValue)
+        end
         frame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
     end))

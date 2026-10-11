@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-startup-k365"
+local SUNSET_BUILD = "20261011-rift-imported-compact-ui-k366"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -544,7 +544,7 @@ function Settings.IsRetiredSection(title)
     return false
 end
 function Settings.MakeMenuDraggable(frame, menu)
-    local pointer, startPoint, startPosition, destroyed
+    local pointer, startPoint, startPosition, startAbsolute, destroyed
     Settings.MenuDragRegions = Settings.MenuDragRegions or {}
     if menu then Settings.MenuDragRegions[frame] = menu end
     local function inside(object, point)
@@ -597,6 +597,7 @@ function Settings.MakeMenuDraggable(frame, menu)
         end
         Settings.MenuDragOwner = frame
         pointer, startPoint, startPosition = input, point, frame.Position
+        startAbsolute = frame.AbsolutePosition
     end))
     track(UIS.InputChanged:Connect(function(input)
         if not pointer or destroyed then return end
@@ -606,7 +607,15 @@ function Settings.MakeMenuDraggable(frame, menu)
         local delta = input.Position - startPoint
         local scaleOwner = menu or frame
         local scale = scaleOwner.FindFirstChildOfClass and scaleOwner:FindFirstChildOfClass("UIScale")
-        if scale and scale.Scale > 0 then delta = delta * (1 / scale.Scale) end
+        local scaleValue = scale and scale.Scale > 0 and scale.Scale or 1
+        delta = delta * (1 / scaleValue)
+        local camera = workspace.CurrentCamera
+        if camera then
+            local viewport, size = camera.ViewportSize, frame.AbsoluteSize
+            local x = math.clamp(startAbsolute.X + delta.X * scaleValue, 0, math.max(0, viewport.X - size.X))
+            local y = math.clamp(startAbsolute.Y + delta.Y * scaleValue, 0, math.max(0, viewport.Y - size.Y))
+            delta = Vector2.new((x - startAbsolute.X) / scaleValue, (y - startAbsolute.Y) / scaleValue)
+        end
         frame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
     end))
@@ -8731,8 +8740,10 @@ function BedWars.BuildUI(boardGame)
         local camera = workspace.CurrentCamera
         if not camera then return end
         if columnLayout then
-            local scale = math.max(0.32, math.min(1, (camera.ViewportSize.Y - 32) / 640))
-            boardWidth = math.min(fullColumnWidth + 24, math.max(320, (camera.ViewportSize.X - 32) / scale))
+            local scale = math.max(0.1, math.min(1,
+                (camera.ViewportSize.X - 32) / (fullColumnWidth + 24),
+                (camera.ViewportSize.Y - 32) / 640))
+            boardWidth = fullColumnWidth + 24
             board.Size = UDim2.fromOffset(boardWidth, 640)
             boardScale.Scale = openingScale.Value * scale
             return
@@ -8904,7 +8915,8 @@ function BedWars.BuildUI(boardGame)
                 height = math.clamp(44 + column.VisibleCount * 32 + (name == "KIT" and 94 or 0), 100, 540)
             end
             column.Frame.Size = UDim2.fromOffset(columnLayout and columnWidth or 666,
-                column.Collapsed and (columnLayout and 32 or 44) or height)
+                (column.Collapsed or column.VisibleCount == 0) and (columnLayout and 32 or 44) or height)
+            column.List.Visible = not column.Collapsed and column.VisibleCount > 0
         end
         columns[name].Reflow = reflow
         local function toggleColumn()
@@ -9566,7 +9578,7 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             local card = new("TextButton", {
-                Name = name, Size = UDim2.new(1, -3, 0, 46),
+                Name = name, Size = UDim2.new(1, -3, 0, columnLayout and 30 or 46),
                 BackgroundColor3 = T.inner, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
@@ -9605,7 +9617,7 @@ function BedWars.BuildUI(boardGame)
             nameLabel.Size = UDim2.new(1, columnLayout and (hasSettings and -62 or -38) or (hasSettings and -45 or -20), 0, 21)
             nameLabel.TextTruncate = Enum.TextTruncate.None
             nameLabel.TextWrapped = true
-            nameLabel.Size = UDim2.new(nameLabel.Size.X.Scale, nameLabel.Size.X.Offset, 0, 36)
+            nameLabel.Size = UDim2.new(nameLabel.Size.X.Scale, nameLabel.Size.X.Offset, 0, columnLayout and 21 or 36)
             local options = new("TextButton", {
                 Name = "SettingsButton", AnchorPoint = Vector2.new(1, 0.5),
                 Position = UDim2.new(1, -8, 0.5, 0),
@@ -10616,11 +10628,16 @@ end
         -- Manual firing owns the mouse button; aim never clicks/releases it.
         if not RivalsAim.AutoShoot.Enabled then stopAutoFire() return end
         local wanted = false
+        local silent = RivalsAim.Enabled == true
+        if silent then
+            options = RivalsAim
+            part = closestTarget(fighter, options)
+        end
         if part then
             local visible = not options.VisibleOnly or aimUnobstructed(fighter, part, camera.CFrame.Position, options)
             local direction = part.Position - camera.CFrame.Position
             local aligned = direction.Magnitude > 0.001
-                and camera.CFrame.LookVector:Dot(direction.Unit) >= math.cos(math.rad(2))
+                and (silent or camera.CFrame.LookVector:Dot(direction.Unit) >= math.cos(math.rad(2)))
             local shoot = RivalsAim.AutoShoot
             wanted = canFire(shoot, part:IsDescendantOf(workspace), visible, aligned, focusedGame())
                 and (part.Position - camera.CFrame.Position).Magnitude <= shoot.MaxDistance
@@ -12467,7 +12484,7 @@ end
         Boxes = true, BoxStyle = "Corners", Names = true, Health = true, Distance = true, WeaponNames = true,
         Skeleton = false, Chams = false, Arrows = true, Tracers = false, Radar = false,
         TeamCheck = true, VisibleOnly = false, MaxDistance = 1000, TextSize = 13, Thickness = 1.5,
-        UpdateRate = 20, FillOpacity = 0.18, AlertCooldown = 3, AlertDuration = 1.5,
+        UpdateRate = 100, FillOpacity = 0.18, AlertCooldown = 3, AlertDuration = 1.5,
         AlertFacingOnly = false, FacingAngle = 35, RadarRange = 200,
         EnemyColor = Color3.fromRGB(247, 125, 139), VisibleColor = Color3.fromRGB(92, 224, 186),
         Accent = Color3.fromRGB(94, 176, 255), HiddenColor = Color3.fromRGB(171, 157, 207),
@@ -12693,8 +12710,8 @@ end
         if entry and entry.Model ~= model then destroyEntry(player); entry = nil end
         entry = entry or makeEntry(player, model)
         hide(entry, true)
-        -- Visual color/alert checks are capped at 10 Hz. Shot validation remains uncached.
-        if not entry.VisibilityAt or now - entry.VisibilityAt >= (options.FPSMode and 0.3 or 0.1) then
+        -- Refresh ESP visibility every 0.01 seconds; shot validation remains uncached.
+        if not entry.VisibilityAt or now - entry.VisibilityAt >= 0.01 then
             entry.Seen, entry.VisibilityAt = visible(model, camera), now
         end
         local seen = entry.Seen
@@ -12963,7 +12980,7 @@ end
         scene.Tick(camera,now)
 
         if not camera then canvas.Visible = false return end
-        if now - frameAt < 1 / (options.FPSMode and math.min(options.UpdateRate,10)or options.UpdateRate)then return end
+        if now - frameAt < 0.01 then return end
         frameAt = now
         mod.LastError = nil
         local paused = deps.Paused()

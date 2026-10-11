@@ -8,6 +8,9 @@ local function signal()
 end
 local Vector={}
 local meta={__sub=function(a,b) return Vector.new(a.X-b.X,a.Y-b.Y) end}
+meta.__mul=function(a,b) return Vector.new(a.X*b,a.Y*b) end
+local Vector2=Vector
+local workspace={CurrentCamera={ViewportSize={X=1280,Y=720}}}
 function Vector.new(x,y) return setmetatable({X=x,Y=y},meta) end
 local UDim2={new=function(xs,xo,ys,yo) return {X={Scale=xs,Offset=xo},Y={Scale=ys,Offset=yo}} end}
 local Enum={UserInputType={MouseButton1="click",MouseMovement="move",Touch="touch"},ScrollingDirection={X="x",Y="y"}}
@@ -73,6 +76,13 @@ assert(frame.Position.X.Offset==menuX,"dragging a category also moved the whole 
 click(470,140)
 frame.Visible=false frame.Visibility:Fire() frame.Visible=true move(550,300)
 assert(category.Position.X.Offset==370,"closing menu left category drag active")
+frame.Position=UDim2.new(0.5,0,0.5,0)
+click(110,190) move(5000,5000) release()
+assert(frame.Position.X.Offset==680 and frame.Position.Y.Offset==220,"menu escaped viewport on drag")
+frame.Position=UDim2.new(0.5,0,0.5,0)
+click(110,190) move(-5000,-5000) release()
+assert(frame.Position.X.Offset==-100 and frame.Position.Y.Offset==-100,"drag did not clamp to top left")
+frame.Position=UDim2.new(0.5,30,0.5,0)
 for _,c in ipairs(connections) do c:Disconnect() end
 click(110,190) move(500,500)
 assert(frame.Position.X.Offset==30,"unloaded drag handler still moved the window")

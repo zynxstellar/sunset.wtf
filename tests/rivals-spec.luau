@@ -696,7 +696,7 @@ Camera.ViewportSize = Vector2.new(1920, 1080)
 Camera.signals.ViewportSize:Fire()
 assert(menuScale.Scale == 1, "menu did not resize after viewport replacement")
 end
-assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==46)
+assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==30)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and not cards.outlines and cards.boxes,"new Rivals modules are missing")
 assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")
@@ -1128,13 +1128,13 @@ collapse.MouseButton1Click:Fire()
 assert(combat.Size.Y.Offset==32 and canvas:FindFirstChild("Visuals").Visible,
     "collapsing one category hid other columns")
 collapse.MouseButton1Click:Fire()
-assert(combat.Size.Y.Offset>=100,"category did not reopen")
+assert(combat.Size.Y.Offset==32,"empty category should stay closed")
 Camera.ViewportSize=Vector2.new(960,720)
 Camera.signals.ViewportSize:Fire()
 local scale=BedWarsUI:FindFirstChildOfClass("UIScale").Scale
-assert(scale==1 and BedWarsUI.Size.X.Offset<=928,
-    "BedWars should scroll horizontally instead of shrinking readable text")
-assert(scrollCanvas.CanvasSize.X.Offset>BedWarsUI.Size.X.Offset)
+assert(scale<1 and BedWarsUI.Size.X.Offset*scale<=928,
+    "all categories must fit within the screen width")
+assert(BedWarsUI.Size.Y.Offset*scale<=688, "menu exceeds viewport height")
 local positionBefore=combat.Position
 scrollCanvas.CanvasPosition=Vector2.new(80,0)
 scrollCanvas:GetPropertyChangedSignal("CanvasPosition"):Fire()
