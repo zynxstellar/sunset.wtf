@@ -1,14 +1,14 @@
 -- INSERT_CURRENT_RELEASE
 -- INSERT_UNIVERSAL_RELEASE
+-- INSERT_IMPORTED_RELEASE
 local suppliedSource, downloadFailure, compileFailure
 local executions, requests, compilations = 0, 0, 0
 local environment = {}
 local game = { PlaceId = 6872265039 }
 function game:HttpGet(url)
     requests += 1
-    local dedicated = game.PlaceId == 6872265039 or game.PlaceId == 17625359962
-        or game.PlaceId == 13687899540 or game.PlaceId == 7336302630
-    local expectedFile = dedicated and "alua" or "universal%.lua"
+    local imported = game.PlaceId == 286090429 or game.PlaceId == 17625359962 or game.GameId == 6035872082
+    local expectedFile = imported and "arsenal%-rivals%.lua" or "alua"
     assert(url:match("/[%da-f]+/" .. expectedFile .. "$") and not url:find("/main/"), "release URL is not pinned")
     if downloadFailure then error("offline") end
     return suppliedSource
@@ -54,12 +54,20 @@ assert(executions == 2 and requests == beforeRequests and compilations == before
     "an unsupported game downloaded or started a client")
 suppliedSource = releaseSource
 assert(pcall(run), "unsupported games should stop cleanly")
-game.PlaceId = 286090429
-suppliedSource = universalReleaseSource
-run()
-assert(executions == 2 and requests == beforeRequests, "Arsenal downloaded a universal client")
-game.PlaceId = 17625359962
-suppliedSource = releaseSource
-run()
-assert(executions == 3 and environment.SunsetLoaderUrl:match("/[%da-f]+/alua$"),
-    "Rivals did not retain its dedicated source")
+for _, location in ipairs({{286090429,nil},{17625359962,nil},{999999,6035872082}}) do
+    game.PlaceId,game.GameId=location[1],location[2]
+    suppliedSource=importedReleaseSource
+    local before=executions
+    run()
+    assert(executions==before+1 and environment.SunsetLoaderUrl:match("/arsenal%-rivals%.lua$"),
+        "Arsenal/Rivals did not route to the supplied client")
+    suppliedSource=releaseSource
+    assert(not pcall(run),"dedicated source accepted for imported game")
+end
+for _, place in ipairs({13687899540,7336302630}) do
+    game.PlaceId,game.GameId=place,nil
+    suppliedSource=releaseSource
+    local before=executions
+    run()
+    assert(executions==before+1 and environment.SunsetLoaderUrl:match("/alua$"),"existing game route changed")
+end

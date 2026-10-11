@@ -110,6 +110,16 @@ def main():
             UNIVERSAL.read_text(encoding='utf-8')).group(0)
         loader_spec = loader_spec.replace('-- INSERT_UNIVERSAL_RELEASE',
             'local universalReleaseSource = [====[' + universal_build_line + ']====]')
+        imported_source = (ROOT / 'arsenal-rivals.lua').read_text(encoding='utf-8')
+        imported_inner = imported_source.split('local source = [========[', 1)[1].split(']========]', 1)[0]
+        imported_build = re.search(r'local SUNSET_BUILD = "[^"]+"', imported_inner).group(0)
+        loader_spec = loader_spec.replace('-- INSERT_IMPORTED_RELEASE',
+            'local importedReleaseSource = [====[' + imported_build + ']====]')
+        imported_path = temp / 'arsenal-rivals-inner.lua'
+        imported_path.write_text(imported_inner, encoding='utf-8')
+        for path in [ROOT / 'arsenal-rivals.lua', imported_path]:
+            subprocess.run([str(compiler), '--null', str(path)], check=True)
+        assert 'IS_GENERIC and "Arsenal" or "Rivals"' in imported_inner
         loader_spec = loader_spec.replace('-- INSERT_LOADER_PRODUCTION', loader_source)
         loader_path = temp / 'loader-spec.luau'
         loader_path.write_text(loader_spec, encoding='utf-8')
