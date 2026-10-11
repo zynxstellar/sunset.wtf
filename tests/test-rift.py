@@ -67,6 +67,7 @@ def main():
         for name, marker, production in [
             ('coldwar-penetration', '-- INSERT_PENETRATION', between(inner, 'function Settings.ColdWarPenetrationTrace(', '\nfunction Settings.SetupColdWarAim(')),
             ('config-confirm', '-- INSERT_CONFIG_CONFIRM', 'do\n' + between(inner, '    local s = makeSection(SettingsTab.Right, "Configs")', '\ndo\n    local s = makeSection(SettingsTab.Left, "Arena Travel")')),
+            ('music-timeline', '-- INSERT_MUSIC_STEP', between(inner, '    function BedWars.SpotifyStep()', '\n    task.spawn(function()')),
             ('menu-drag', '-- INSERT_MENU_DRAG', between(inner, 'function Settings.MakeMenuDraggable(', '\nlocal function makeTab(')),
             ('coldwar-spider', '-- INSERT_COLDWAR_SPIDER', between(inner, 'function Settings.SetupColdWarSpider()', '\nfunction Settings.SetupColdWarSession()')),
         ]:

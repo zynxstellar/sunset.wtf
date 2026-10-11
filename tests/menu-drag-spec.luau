@@ -10,7 +10,7 @@ local Vector={}
 local meta={__sub=function(a,b) return Vector.new(a.X-b.X,a.Y-b.Y) end}
 function Vector.new(x,y) return setmetatable({X=x,Y=y},meta) end
 local UDim2={new=function(xs,xo,ys,yo) return {X={Scale=xs,Offset=xo},Y={Scale=ys,Offset=yo}} end}
-local Enum={UserInputType={MouseButton1="click",MouseMovement="move",Touch="touch"}}
+local Enum={UserInputType={MouseButton1="click",MouseMovement="move",Touch="touch"},ScrollingDirection={X="x",Y="y"}}
 local UIS={InputBegan=signal(),InputChanged=signal(),InputEnded=signal(),WindowFocusReleased=signal()}
 local Settings={}
 local connections={}
@@ -30,6 +30,8 @@ local input=child("TextBox",250,130,100,35)
 local scroll=child("ScrollingFrame",120,220,300,150)
 scroll.ClipsDescendants=true
 local clipped=child("TextButton",450,240,100,30,scroll)
+local horizontal=child("ScrollingFrame",120,380,300,80)
+horizontal.ScrollingDirection=Enum.ScrollingDirection.X
 -- INSERT_MENU_DRAG
 Settings.MakeMenuDraggable(frame)
 local function event(kind,x,y) return {UserInputType=kind,Position=Vector.new(x,y)} end
@@ -39,7 +41,7 @@ local function release() UIS.InputEnded:Fire(event("click",0,0)) end
 click(110,190) move(150,240) release()
 assert(frame.Position.X.Offset==40 and frame.Position.Y.Offset==50,"background dragging failed")
 frame.Position=UDim2.new(0.5,0,0.5,0)
-for _,point in ipairs({{150,140},{270,140},{417,250},{90,90}}) do
+for _,point in ipairs({{150,140},{270,140},{417,250},{90,90},{200,455}}) do
     click(point[1],point[2]) move(500,400) release()
     assert(frame.Position.X.Offset==0,"interactive control or outside click dragged the window")
 end

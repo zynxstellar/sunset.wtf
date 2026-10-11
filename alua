@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-all-game-columns-k347"
+local SUNSET_BUILD = "20261010-rift-ui-polish-k348"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -663,7 +663,9 @@ function Settings.MakeMenuDraggable(frame)
                 if object:IsA("GuiButton") or object:IsA("TextBox") then return end
                 if object:IsA("ScrollingFrame") then
                     if kind == Enum.UserInputType.Touch
-                        or point.X >= object.AbsolutePosition.X + object.AbsoluteSize.X - 8 then return end
+                        or point.X >= object.AbsolutePosition.X + object.AbsoluteSize.X - 8
+                        or (object.ScrollingDirection == Enum.ScrollingDirection.X
+                            and point.Y >= object.AbsolutePosition.Y + object.AbsoluteSize.Y - 8) then return end
                 end
             end
         end
@@ -799,7 +801,7 @@ function Persistence.RestoreHUDPositions(positions, legacyLayout)
     if type(positions) ~= "table" then return end
     for name, value in pairs(positions) do
         local frame = Persistence.HUDFrames[name]
-        if name ~= "ModuleList"
+        if name ~= "ModuleList" and name ~= "Watermark"
             and not (legacyLayout and (name == "BedWarsMenu" or name == "RivalsMenu"))
             and frame and frame.Parent and type(value) == "table"
             and type(value[1]) == "number" and type(value[2]) == "number"
@@ -1852,8 +1854,8 @@ end
 
 
 local Watermark = new("TextLabel", {
-    Position = UDim2.fromOffset(10, 10),
-    Size = UDim2.fromOffset(300, 20),
+    Position = UDim2.fromOffset(48, 24),
+    Size = UDim2.fromOffset(380, 24),
     BackgroundColor3 = T.bg, BorderSizePixel = 0,
     Font = T.font, TextSize = 13, TextColor3 = T.text,
     Text = "", TextXAlignment = Enum.TextXAlignment.Left,
@@ -1863,8 +1865,7 @@ local Watermark = new("TextLabel", {
 border(Watermark, T.outer)
 new("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, Watermark)
 new("Frame", { Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.red, BorderSizePixel = 0 }, Watermark)
-makeDraggable(Watermark, Watermark)
-Persistence.HUDFrames.Watermark = Watermark
+-- Watermark stays pinned at the top left; old saved HUD positions do not move it.
 
 task.spawn(function()
     local frames, last = 0, os.clock()
@@ -1896,7 +1897,7 @@ SettingsTab.Button.Text = "Rift Settings"
 do
     local s = makeSection(SettingsTab.Left, "Watermark")
     Elements.Toggle(s, "Enabled", true, function(on) Settings.WatermarkOn = on end)
-    Elements.Button(s, "Reset Position", function() Watermark.Position = UDim2.fromOffset(10, 10) end)
+    Elements.Button(s, "Reset Position", function() Watermark.Position = UDim2.fromOffset(48, 24) end)
 end
 do
     local s = makeSection(SettingsTab.Left, "Menu Blur")
@@ -3274,9 +3275,11 @@ do
     BedWars.SpotifyTitle.TextTruncate = Enum.TextTruncate.AtEnd
     local timeText = label(BedWars.SpotifyPanel, "0:00 / 0:00", 10,
         T.muted, Enum.TextXAlignment.Right)
+    timeText.Visible = false
     timeText.Position = UDim2.fromOffset(185, 59)
     timeText.Size = UDim2.fromOffset(100, 13)
     local progressBack = new("Frame", {
+        Name = "MusicTimeline", Visible = false,
         Position = UDim2.fromOffset(10, 79), Size = UDim2.fromOffset(280, 4),
         BackgroundColor3 = T.panel, BorderSizePixel = 0,
     }, BedWars.SpotifyPanel)
@@ -3297,6 +3300,9 @@ do
     end
     makeDraggable(BedWars.SpotifyPanel, BedWars.SpotifyPanel)
     function BedWars.SpotifyStep()
+        progressBack.Visible = false
+        timeText.Visible = false
+        progressFill.Size = UDim2.fromScale(0, 1)
         local url = "http://127.0.0.1:47821/now-playing?t=" .. tostring(os.clock())
         local requestFn = type(ENV.request) == "function" and ENV.request
             or type(ENV.http_request) == "function" and ENV.http_request
@@ -3330,13 +3336,15 @@ do
         if not decoded or type(data) ~= "table" then
             BedWars.SpotifyTitle.Text = "Music data unavailable"
             clearCover()
-        elseif data.available and type(data.title) == "string" then
+        elseif data.available and type(data.title) == "string" and data.title:match("%S") then
             local artist = type(data.artist) == "string" and data.artist or ""
             BedWars.SpotifyTitle.Text = (artist ~= ""
                 and (data.title .. " - " .. artist) or data.title):sub(1, 120)
             local duration = math.max(0, tonumber(data.duration) or 0)
             local position = math.clamp(tonumber(data.position) or 0, 0,
                 math.max(duration, 0))
+            progressBack.Visible = duration > 0
+            timeText.Visible = duration > 0
             timeText.Text = clockTime(position) .. " / " .. clockTime(duration)
             progressFill.Size = UDim2.fromScale(duration > 0 and position / duration or 0, 1)
             clearCover()
@@ -8616,7 +8624,7 @@ function BedWars.BuildUI(boardGame)
         PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
     }, searchFrame)
-    searchFrame.Visible = not columnLayout
+    searchFrame.Visible = true
     Settings.ActiveSearchBox = searchBox
     local closeButton = new("TextButton", {
         AnchorPoint = Vector2.new(0, 0.5),
@@ -8671,7 +8679,7 @@ function BedWars.BuildUI(boardGame)
             new("Frame", { Name = "BlueHeader", Size = UDim2.new(1, 0, 0, 32),
                 BackgroundColor3 = accent, BorderSizePixel = 0 }, col)
         end
-        local heading = label(col, (columnLayout and "v  " or "") .. (name == "Sunset" and "Rift Settings" or name), 14,
+        local heading = label(col, name == "Sunset" and "Rift Settings" or name, 14,
             Color3.fromRGB(242, 244, 255))
         heading.Font = Enum.Font.GothamBold
         heading.Position = UDim2.fromOffset(13, columnLayout and 6 or 12)
@@ -8680,7 +8688,7 @@ function BedWars.BuildUI(boardGame)
             Text = "0", Font = Enum.Font.GothamBold,
             TextSize = columnLayout and 12 or 17, TextColor3 = columnLayout and T.text or gold,
             TextXAlignment = Enum.TextXAlignment.Right,
-            Position = UDim2.new(1, -48, 0, 8),
+            Position = UDim2.new(1, columnLayout and -62 or -48, 0, columnLayout and 4 or 8),
             Size = UDim2.fromOffset(34, 25),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             AutoButtonColor = false,
@@ -8729,13 +8737,13 @@ function BedWars.BuildUI(boardGame)
                         and column.VisibleCount == 0
                 end
             end
-            if columnLayout then heading.Text = (column.Collapsed and ">  " or "v  ") .. (name == "Sunset" and "Rift Settings" or name) end
             reflow()
         end
         count.MouseButton1Click:Connect(toggleColumn)
         if columnLayout then
             local collapse = new("TextButton", { Name = "CollapseCategory",
-                Size = UDim2.new(1, -52, 0, 32), Text = "",
+                Position = UDim2.new(1, -28, 0, 5), Size = UDim2.fromOffset(22, 22), Text = "-",
+                TextColor3 = T.text, Font = Enum.Font.GothamBold, TextSize = 14,
                 BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false,
             }, col)
             collapse.MouseButton1Click:Connect(toggleColumn)
@@ -9561,7 +9569,7 @@ function BedWars.BuildUI(boardGame)
                     local active = entry.Control and entry.Control.Get() or false
                     if entry.Indicator then
                         entry.Indicator.BackgroundColor3 = active and accent or cardColor
-                        entry.Indicator.Text = active and utf8.char(10003) or ""
+                        entry.Indicator.Text = ""
                     end
                     local targetColor = active and (columnLayout and T.inner or Color3.fromRGB(28, 70, 114))
                         or (entry.Hovered() and cardColor or T.inner)
@@ -12975,9 +12983,9 @@ do
         if Settings.GameBoards[detectedGame] then
             Watermark.BackgroundTransparency = 1
             Watermark.Size = UDim2.fromOffset(380, 24)
-            Watermark.Position = UDim2.new(1, -15, 0, 8)
-            Watermark.AnchorPoint = Vector2.new(1, 0)
-            Watermark.TextXAlignment = Enum.TextXAlignment.Right
+            Watermark.Position = UDim2.fromOffset(48, 24)
+            Watermark.AnchorPoint = Vector2.new(0, 0)
+            Watermark.TextXAlignment = Enum.TextXAlignment.Left
             Watermark.Font = Enum.Font.GothamMedium
             Watermark.TextSize = 15
             Watermark.TextColor3 = T.gold

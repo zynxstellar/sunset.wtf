@@ -1104,6 +1104,11 @@ assert(BedWarsUI.Name=="RiftBedWarsBoard")
 assert(Persistence.HUDFrames.BedWarsMenu==BedWarsUI)
 do
 local canvas=BedWarsUI:FindFirstChild("CategoryColumns")
+assert(Settings.ActiveSearchBox.Parent.Visible,"search bar is hidden")
+for _,object in ipairs(BedWarsUI:GetDescendants()) do
+    if object.Name=="EnabledIndicator" then assert(object.Text=="","toggle still shows a checkmark") end
+    if object:IsA("TextLabel") then assert(not object.Text:match("^v  "),"category shows a literal v") end
+end
 assert(canvas and canvas.ScrollingDirection==Enum.ScrollingDirection.X,
     "BedWars columns need horizontal scrolling on small screens")
 local kitColumn=canvas:FindFirstChild("KIT")

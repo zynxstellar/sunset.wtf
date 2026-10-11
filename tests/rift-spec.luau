@@ -417,9 +417,10 @@ print("PASS Spider: sideways/backward/diagonal movement, horizontal velocity, wa
 
 local listFrame={Parent=true,Position=UDim2.new(1,-14,0,38)}
 local hudFrame={Parent=true,Position=UDim2.new(0,0,0,0)}
-Persistence.HUDFrames={ModuleList=listFrame,TargetHUD=hudFrame}
-Persistence.RestoreHUDPositions({ModuleList={1,-310,0,38},TargetHUD={0,50,0,60}},false)
+Persistence.HUDFrames={ModuleList=listFrame,TargetHUD=hudFrame,Watermark={Parent=true,Position=UDim2.new(0,48,0,24)}}
+Persistence.RestoreHUDPositions({ModuleList={1,-310,0,38},TargetHUD={0,50,0,60},Watermark={1,-15,0,8}},false)
 assert(listFrame.Position.X.Offset==-14 and hudFrame.Position.X.Offset==50, "saved shifted module position was restored")
+assert(Persistence.HUDFrames.Watermark.Position.X.Offset==48 and Persistence.HUDFrames.Watermark.Position.Y.Offset==24, "old config moved the pinned watermark")
 BedWars.Notify("Feature enabled","Scaffold",true)
 flushNotifications()
 assert(Settings.NotificationStack.AnchorPoint.X==1 and Settings.NotificationStack.Position.X.Scale==1

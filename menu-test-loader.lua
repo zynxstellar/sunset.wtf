@@ -592,7 +592,9 @@ function Settings.MakeMenuDraggable(frame)
                 if object:IsA("GuiButton") or object:IsA("TextBox") then return end
                 if object:IsA("ScrollingFrame") then
                     if kind == Enum.UserInputType.Touch
-                        or point.X >= object.AbsolutePosition.X + object.AbsoluteSize.X - 8 then return end
+                        or point.X >= object.AbsolutePosition.X + object.AbsoluteSize.X - 8
+                        or (object.ScrollingDirection == Enum.ScrollingDirection.X
+                            and point.Y >= object.AbsolutePosition.Y + object.AbsoluteSize.Y - 8) then return end
                 end
             end
         end
@@ -728,7 +730,7 @@ function Persistence.RestoreHUDPositions(positions, legacyLayout)
     if type(positions) ~= "table" then return end
     for name, value in pairs(positions) do
         local frame = Persistence.HUDFrames[name]
-        if name ~= "ModuleList"
+        if name ~= "ModuleList" and name ~= "Watermark"
             and not (legacyLayout and (name == "BedWarsMenu" or name == "RivalsMenu"))
             and frame and frame.Parent and type(value) == "table"
             and type(value[1]) == "number" and type(value[2]) == "number"
