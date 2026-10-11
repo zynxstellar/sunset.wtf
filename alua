@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-routing-filters-k360"
+local SUNSET_BUILD = "20261010-rift-car-void-height-k361"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12562,6 +12562,8 @@ function Settings.SetupColdWarCarKillAll()
         local root = character and character:FindFirstChild("HumanoidRootPart")
         if not character or not character.Parent or not humanoid or humanoid.Health <= 0
             or not root or root.Anchored or humanoid.SeatPart or humanoid.Sit then return end
+        local destroyHeight = workspace.FallenPartsDestroyHeight
+        if type(destroyHeight) == "number" and root.Position.Y < destroyHeight + 80 then return end
         local values = character:FindFirstChild("CharacterValues")
         local unconscious = values and values:FindFirstChild("Unconscious")
         if unconscious and unconscious.Value == true then return end
@@ -12644,7 +12646,9 @@ function Settings.SetupColdWarCarKillAll()
         local passed = fromTarget.X * passDirection.X + fromTarget.Z * passDirection.Z
         if passed >= 6 then passDirection = passDirection * -1 end
         local desired = center + passDirection * 8
-        travelY = travelY or math.min(root.Position.Y, center.Y) - 12
+        local destroyHeight = workspace.FallenPartsDestroyHeight
+        local minimumY = type(destroyHeight) == "number" and destroyHeight + 64 or -436
+        travelY = math.max(travelY or center.Y - 12, minimumY)
         local horizontal = Vector3.new(center.X - root.Position.X, 0, center.Z - root.Position.Z)
         if travelPhase == "Descend" and root.Position.Y <= travelY + 1 then travelPhase = "Cruise" end
         if travelPhase == "Cruise" and horizontal.Magnitude <= 12 then travelPhase = "Rise" end
@@ -12960,6 +12964,11 @@ function Settings.SetupColdWarCarFly()
         fly.ContactCollisionActive = contact == true or (autoRam and autoRam.Active == true and autoRam.Contact == true) or false
         local speed = contact and math.clamp(fly.RamSpeed, 50, 250) or fly.Speed
         velocity.VectorVelocity = autoVelocity or movement * speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
+        local destroyHeight = workspace.FallenPartsDestroyHeight
+        if type(destroyHeight) == "number" and root.Position.Y < destroyHeight + 64 then
+            local intended = velocity.VectorVelocity
+            velocity.VectorVelocity = Vector3.new(intended.X, math.max(intended.Y, fly.VerticalSpeed), intended.Z)
+        end
         orientation.Enabled = not (Settings.ColdWarCarAntiAim and Settings.ColdWarCarAntiAim.Enabled)
         if autoForward or fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, autoForward or forward) end
     end

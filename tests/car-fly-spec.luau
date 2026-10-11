@@ -57,6 +57,14 @@ fly.Step(1/60)
 assert(#objects==3 and math.abs(objects[2].VectorVelocity.Magnitude-math.sqrt(45*45+25*25))<0.001)
 assert(objects[2].VectorVelocity.Y==25)
 for _=1,100 do fly.Step(1/60) end assert(#objects==3,"constraints recreated each frame")
+workspace.FallenPartsDestroyHeight=-500
+chassis.Position=Vector3.new(0,-450,0)
+keys.Space=false keys.LeftControl=true
+fly.Step(1/60)
+assert(objects[2].VectorVelocity.Y>=fly.VerticalSpeed,"flight continued downward into destruction height")
+chassis.Position=Vector3.new(0,10,0)
+keys.LeftControl=false
+
 menu=true fly.Step(1/60) assert(objects[2].VectorVelocity.Magnitude==0)
 menu=false typing=true fly.Step(1/60) assert(objects[2].VectorVelocity.Magnitude==0)
 typing=false
