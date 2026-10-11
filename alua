@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-remove-hitboxes-k352"
+local SUNSET_BUILD = "20261010-rift-floating-categories-k353"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -8673,7 +8673,7 @@ function BedWars.BuildUI(boardGame)
     }, board)
     navigation.Visible = not columnLayout
     new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, navigation)
-    local columnCanvas
+    local columnCanvas, categoryLayer
     if columnLayout then
         columnCanvas = new("ScrollingFrame", {
             Name = "CategoryColumns", Position = UDim2.fromOffset(12, 76),
@@ -8682,6 +8682,26 @@ function BedWars.BuildUI(boardGame)
             ScrollingDirection = Enum.ScrollingDirection.X, ScrollBarThickness = 5,
             ScrollBarImageColor3 = accent,
         }, board)
+        -- Floating categories must not inherit the scrolling viewport's clipping.
+        categoryLayer = new("Frame", {
+            Name = "CategoryLayer", Position = UDim2.fromOffset(12, 76),
+            Size = UDim2.new(1, -24, 1, -84), BackgroundTransparency = 1,
+            BorderSizePixel = 0, ClipsDescendants = false,
+        }, board)
+        local previousScroll = 0
+        track(columnCanvas:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            local scroll = columnCanvas.CanvasPosition.X
+            local delta = scroll - previousScroll
+            previousScroll = scroll
+            for _, name in ipairs(categoryOrder) do
+                local column = columns[name]
+                if column then
+                    local position = column.Frame.Position
+                    column.Frame.Position = UDim2.new(position.X.Scale, position.X.Offset - delta,
+                        position.Y.Scale, position.Y.Offset)
+                end
+            end
+        end))
     end
     for index, name in ipairs(categoryOrder) do
         local nav = new("TextButton", {
@@ -8698,7 +8718,7 @@ function BedWars.BuildUI(boardGame)
             Visible = columnLayout or index == 1,
             Size = UDim2.fromOffset(columnLayout and columnWidth or 666, 540), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
-        }, columnCanvas or board)
+        }, categoryLayer or board)
         new("UICorner", { CornerRadius = UDim.new(0, columnLayout and 3 or 10) }, col)
         border(col, T.border)
         Settings.MakeMenuDraggable(col, board)
@@ -12452,7 +12472,8 @@ function Settings.SetupColdWarCarKillAll()
         TargetCharacter = nil, Active = false, Destroyed = false, LastTeleport = -math.huge }
     Settings.ColdWarCarKillAll = ram
     local fly = Settings.ColdWarCarFly
-    local nextScan = 0
+    local nextScan, targetStarted = 0, 0
+    local previousTarget
     local function reset()
         ram.Target, ram.TargetCharacter, ram.Active = nil, nil, false
         ram.LastTeleport = -math.huge
@@ -12464,7 +12485,19 @@ function Settings.SetupColdWarCarKillAll()
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
         local root = character and character:FindFirstChild("HumanoidRootPart")
         if not character or not character.Parent or not humanoid or humanoid.Health <= 0
-            or not root or root.Anchored then return end
+            or not root or root.Anchored or humanoid.SeatPart or humanoid.Sit then return end
+        for _, joint in ipairs(root:GetJoints()) do
+            local other = joint.Part1 == root and joint.Part0 or joint.Part0 == root and joint.Part1
+            if other and not other:IsDescendantOf(character) then
+                if other:IsA("Seat") or other:IsA("VehicleSeat") or other.Name:lower():find("seat", 1, true) then return end
+                local ancestor = other.Parent
+                for _ = 1, 8 do
+                    if not ancestor or ancestor == workspace then break end
+                    if ancestor:GetAttribute("VehicleNetId") ~= nil then return end
+                    ancestor = ancestor.Parent
+                end
+            end
+        end
         for _, name in ipairs({ "Head", "Torso" }) do
             local limb = character:FindFirstChild(name)
             local health = limb and limb:FindFirstChild("Health")
@@ -12478,16 +12511,18 @@ function Settings.SetupColdWarCarKillAll()
         if anyMenuVisible() or UIS:GetFocusedTextBox() then return Vector3.zero end
         local now = os.clock()
         local target, character = targetRoot(ram.Target)
-        if not target or character ~= ram.TargetCharacter then
+        if not target or character ~= ram.TargetCharacter or now - targetStarted >= 3 then
+            previousTarget = ram.Target or previousTarget
             reset()
             if now < nextScan then return Vector3.zero end
             nextScan = now + 0.5
             local candidates = {}
             for _, player in ipairs(Players:GetPlayers()) do
-                if targetRoot(player) then table.insert(candidates, player) end
+                if player ~= previousTarget and targetRoot(player) then table.insert(candidates, player) end
             end
             if #candidates == 0 then return Vector3.zero end
             ram.Target = candidates[math.random(1, #candidates)]
+            targetStarted = now
             target, ram.TargetCharacter = targetRoot(ram.Target)
             if not target then reset() return Vector3.zero end
         end
@@ -12525,7 +12560,7 @@ function Settings.SetupColdWarCarKillAll()
     end)
     Elements.Toggle(section, "Team Check", true, function(on) ram.TeamCheck = on reset() end)
     Elements.Slider(section, "Ram Speed", 50, 250, 150, "studs/s", function(value) ram.Speed = value end)
-    Elements.Label(section, "Driver only. Repeats on a living player; vehicle damage is not guaranteed.")
+    Elements.Label(section, "Driver only. Skips seated players; switches after 3 seconds. Damage is unverified.")
 end
 
 function Settings.SetupColdWarCarNoclip()

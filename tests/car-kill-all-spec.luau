@@ -30,7 +30,7 @@ local function player(team,x)
     local health={Value=100,IsA=function(_,k) return k=="NumberValue" end}
     local limb={FindFirstChild=function() return health end}
     local hum={Health=100}
-    local root={Position=Vector3.new(x,10,0),Anchored=false,CFrame={LookVector=Vector3.new(0,0,-1)}}
+    local root={Position=Vector3.new(x,10,0),Anchored=false,GetJoints=function() return {} end,CFrame={LookVector=Vector3.new(0,0,-1)}}
     local character={Parent={},FindFirstChildOfClass=function() return hum end,
         FindFirstChild=function(_,name) return name=="HumanoidRootPart" and root or limb end}
     return {Parent=Players,Team=team,Character=character},hum,root,health
@@ -48,6 +48,19 @@ assert(ram.Enabled and fly.Enabled)
 local velocity=fly.AutoRamControl(car)
 assert(ram.Target==foe and ram.Active and car.CFrame.Position.X==100 and car.CFrame.Position.Y==7.5)
 assert(velocity.Magnitude<=150)
+target.GetJoints=function() return {{Part1=target,Part0={Name="PassengerSeat",IsDescendantOf=function() return false end,IsA=function(_,kind) return kind=="Seat" end}}} end
+now+=0.1 fly.AutoRamControl(car) assert(ram.Target==nil,"custom vehicle passenger retained")
+target.GetJoints=function() return {} end
+hum.SeatPart={} now+=1 fly.AutoRamControl(car)
+assert(ram.Target==nil,"seated target retained")
+hum.SeatPart=nil
+local foe2,hum2=player(2,120)
+roster={LocalPlayer,ally,foe,foe2}
+now+=1 fly.AutoRamControl(car)
+assert(ram.Target==foe2,"seated former target was immediately reselected")
+now+=3.1 fly.AutoRamControl(car)
+assert(ram.Target==foe,"three-second timeout did not switch to another player")
+roster={LocalPlayer,ally,foe}
 local firstTarget=ram.Target
 now+=0.1 fly.AutoRamControl(car) assert(ram.Target==firstTarget,"living target changed")
 menu=true assert(fly.AutoRamControl(car).Magnitude==0 and not ram.Active)

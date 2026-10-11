@@ -676,7 +676,7 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="Spinbot" then cards.spin=o end
     if o:IsA("TextButton") and o.Name=="FOV" then cards.cameraFOV=o end
     if o:IsA("TextButton") and o.Name=="Kill Chat" then cards.killChat=o end
-    if o.Parent==RivalsUI:FindFirstChild("CategoryColumns") and o:IsA("Frame") then columns[o.Name]=o end
+    if o.Parent==RivalsUI:FindFirstChild("CategoryLayer") and o:IsA("Frame") then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
 assert(columns.Combat.Visible and columns.Visuals.Visible and columns.Combat.Position.X.Offset~=columns.Visuals.Position.X.Offset, "columns overlap at startup")
@@ -1103,13 +1103,14 @@ BedWars.BuildUI()
 assert(BedWarsUI.Name=="RiftBedWarsBoard")
 assert(Persistence.HUDFrames.BedWarsMenu==BedWarsUI)
 do
-local canvas=BedWarsUI:FindFirstChild("CategoryColumns")
+local scrollCanvas=BedWarsUI:FindFirstChild("CategoryColumns")
+local canvas=BedWarsUI:FindFirstChild("CategoryLayer")
 assert(Settings.ActiveSearchBox.Parent.Visible,"search bar is hidden")
 for _,object in ipairs(BedWarsUI:GetDescendants()) do
     if object.Name=="EnabledIndicator" then assert(object.Text=="","toggle still shows a checkmark") end
     if object:IsA("TextLabel") then assert(not object.Text:match("^v  "),"category shows a literal v") end
 end
-assert(canvas and canvas.ScrollingDirection==Enum.ScrollingDirection.X,
+assert(canvas and canvas.ClipsDescendants==false and scrollCanvas.ScrollingDirection==Enum.ScrollingDirection.X,
     "BedWars columns need horizontal scrolling on small screens")
 local kitColumn=canvas:FindFirstChild("KIT")
 assert(kitColumn,"column renderer lost kit controls")
@@ -1133,14 +1134,19 @@ Camera.signals.ViewportSize:Fire()
 local scale=BedWarsUI:FindFirstChildOfClass("UIScale").Scale
 assert(scale==1 and BedWarsUI.Size.X.Offset<=928,
     "BedWars should scroll horizontally instead of shrinking readable text")
-assert(canvas.CanvasSize.X.Offset>BedWarsUI.Size.X.Offset)
+assert(scrollCanvas.CanvasSize.X.Offset>BedWarsUI.Size.X.Offset)
+local positionBefore=combat.Position
+scrollCanvas.CanvasPosition=Vector2.new(80,0)
+scrollCanvas:GetPropertyChangedSignal("CanvasPosition"):Fire()
+assert(combat.Position.X.Offset==positionBefore.X.Offset-80,"floating categories lost horizontal scrolling")
+assert(combat.Parent.Parent==BedWarsUI and combat.Parent.ClipsDescendants==false,"category remains inside a clipping viewport")
 Camera.ViewportSize=Vector2.new(1920,1080)
 Camera.signals.ViewportSize:Fire()
 assert(BedWarsUI.Size.X.Offset>928,"BedWars did not expand on a larger screen")
 print("PASS BedWars columns: simultaneous categories, collapse/reopen, responsive scrolling and retained kits")
 Settings.SelectedGame="Project Delta"
 BedWars.BuildUI("Project Delta")
-local deltaCanvas=Settings.GameBoards["Project Delta"]:FindFirstChild("CategoryColumns")
+local deltaCanvas=Settings.GameBoards["Project Delta"]:FindFirstChild("CategoryLayer")
 assert(deltaCanvas and deltaCanvas:FindFirstChild("Combat").Visible
     and deltaCanvas:FindFirstChild("Visuals").Visible and not deltaCanvas:FindFirstChild("KIT"),
     "Project Delta did not use its own categories in the shared column renderer")
