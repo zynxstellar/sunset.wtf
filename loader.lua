@@ -12,8 +12,8 @@ if not dedicated then
     warn("[RIFT] This game is unsupported. No client was downloaded or started.")
     return
 end
-local expectedBuild = "20261010-rift-car-ram-path-k356"
-local sourceUrl = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/47ea089165c5f7e08e9836900600fdae29c32c83/alua"
+local expectedBuild = "20261010-rift-car-underground-route-k357"
+local sourceUrl = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/78c6820bad38b0f7f114d839aebee74454b1b5cf/alua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
 assert(ok and type(source) == "string", "RIFT: current build download failed: " .. tostring(source))
