@@ -120,11 +120,17 @@ def main():
         loader_spec = loader_spec.replace('-- INSERT_BLOX_RELEASE',
             'local bloxReleaseSource = [====[' + blox_build + ']====]')
         subprocess.run([str(compiler), '--null', str(ROOT / 'blox-fruits.lua')], check=True)
-        assert re.findall(r'^makeRow\("([^"]+)"', blox_source, re.M) == ['Fly', 'Speed']
+        assert blox_source == runpy.run_path(str(ROOT / 'tools/build-blox.py'))['build']()
+        blox_inner = blox_source.split('local source = [========[',1)[1].split(']========]',1)[0]
+        blox_inner_path = temp / 'blox-inner.luau'
+        blox_inner_path.write_text(blox_inner,encoding='utf-8')
+        subprocess.run([str(compiler), '--null', str(blox_inner_path)],check=True)
+        assert re.findall(r'^local \w+Section=section\("([^"]+)"', blox_source,re.M)==['Fly','Speed']
+        assert 'CategoryLayer' in blox_source and 'SettingsButton' in blox_source
         blox_spec = (ROOT / 'tests' / 'blox-movement-spec.luau').read_text(encoding='utf-8')
         blox_path = temp / 'blox-movement-spec.luau'
         blox_path.write_text(blox_spec.replace('-- INSERT_MOVEMENT', between(blox_source,
-            'local function makeMovement(', '\nlocal function new(')), encoding='utf-8')
+            'local function makeMovement(', '\nlocal movement = makeMovement(')), encoding='utf-8')
         subprocess.run([str(runtime), str(blox_path)], check=True)
         imported_path = temp / 'arsenal-rivals-inner.lua'
         imported_path.write_text(imported_inner, encoding='utf-8')
@@ -138,6 +144,17 @@ def main():
         huss_path.write_text(huss_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(huss_path)], check=True)
         ui_prefix = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8').split('-- INSERT_RIVALS_PRODUCTION', 1)[0]
+        blox_ui_parts = [
+            between(blox_inner,'function Settings.IsRetiredSection(', 'function Settings.MakeMenuDraggable('),
+            between(blox_inner,'function Elements.Label(', '\nfunction Elements.Line'),
+            between(blox_inner,'local Binds = {}', '\nfunction Elements.ColorPicker'),
+            between(blox_inner,'local MainTab=makeTab(', '\ntrack(RunService.PreSimulation:'),
+            between(blox_inner,'function BedWars.BuildUI(', '\nBedWars.BuildUI("Blox Fruits")'),
+        ]
+        blox_ui_spec = (ROOT / 'tests/blox-ui-spec.luau').read_text(encoding='utf-8')
+        blox_ui_path = temp / 'blox-ui-spec.luau'
+        blox_ui_path.write_text(ui_prefix + blox_ui_spec.replace('-- INSERT_BLOX_UI','\n'.join(blox_ui_parts)),encoding='utf-8')
+        subprocess.run([str(runtime),str(blox_ui_path)],check=True)
         imported_ui_parts = [
             between(imported_inner, 'local RivalsAim = {', '\nlocal function new('),
             between(imported_inner, 'function Settings.IsRetiredSection(', 'function Settings.MakeMenuDraggable('),

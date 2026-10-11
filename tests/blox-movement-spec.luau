@@ -14,11 +14,13 @@ local root={Parent=true,Anchored=false,AssemblyLinearVelocity=zero}
 local paused=false
 local direction=vector.new(1,1,0)
 local created,destroyed,command=0,0,nil
+local speedCommands=0
 -- INSERT_MOVEMENT
 local movement=makeMovement({Zero=zero,
     Character=function() return character,humanoid,root end,
     Paused=function() return paused end,
     Direction=function() return direction end,
+    MoveSpeed=function(_,_,speed) speedCommands+=1;assert(speed==32 or speed==70) end,
     CreateFlight=function()
         created+=1
         return {SetVelocity=function(_,value) command=value end,Destroy=function() destroyed+=1 end}
@@ -38,6 +40,10 @@ root.Anchored=false;humanoid.SeatPart={};movement.Step();assert(created==1)
 humanoid.SeatPart=nil;movement.Step();assert(created==2)
 movement.SetFly(false);assert(destroyed==2 and not humanoid.PlatformStand)
 movement.SetSpeed(true);movement.Step();assert(humanoid.WalkSpeed==32)
+assert(speedCommands==1, "speed did not apply physical movement")
+movement.AfterPhysics();assert(speedCommands==2,"speed correction did not run after physics")
+paused=true;movement.Step();movement.AfterPhysics();assert(speedCommands==2,"speed ran with the menu open")
+paused=false
 movement.WalkSpeed=70;movement.Step();assert(humanoid.WalkSpeed==70)
 humanoid.WalkSpeed=20;movement.Step();assert(humanoid.WalkSpeed==70)
 movement.SetSpeed(false);assert(humanoid.WalkSpeed==20,"native speed update was lost")
