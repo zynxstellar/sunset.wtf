@@ -1,19 +1,21 @@
--- Game support includes: BedWars (easy.gg; Full Support), Rivals, Cold War (Full Support).
+-- Game support includes: Arsenal, BedWars (easy.gg; Full Support), Rivals, Cold War (Full Support).
 -- Executor support includes: Potassium, Synapse Z, and Volt. Other executors are labeled NOT TESTED.
 -- Contact z.y.n.x. on Discord for help, assistance, or suggestions.
 -- You can also join the Discord at: https://discord.gg/4pj9cedscb
 
--- Only explicitly supported games are loaded. There is no universal fallback.
+-- Route Arsenal and Rivals to the supplied client; retain the other dedicated clients.
+local imported = game.PlaceId == 286090429 or game.PlaceId == 17625359962 or game.GameId == 6035872082
 local dedicated = game.PlaceId == 6872265039 or game.GameId == 2619619496
-    or game.PlaceId == 17625359962 or game.GameId == 6035872082
     or game.PlaceId == 13687899540 or game.GameId == 4750561026
     or game.PlaceId == 7336302630 or game.GameId == 2862098693
-if not dedicated then
+if not imported and not dedicated then
     warn("[RIFT] This game is unsupported. No client was downloaded or started.")
     return
 end
-local expectedBuild = "20261010-rift-car-void-height-k361"
-local sourceUrl = "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/52a8f1d11e5347cc2c956a7b8493d3f964f081ba/alua"
+local expectedBuild = imported and "20261010-rift-arsenal-rivals-import-k362" or "20261010-rift-car-void-height-k361"
+local sourceUrl = imported
+    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/7de8864f7fde29859eb4380fef22eebb28b599ce/arsenal-rivals.lua"
+    or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/52a8f1d11e5347cc2c956a7b8493d3f964f081ba/alua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
 assert(ok and type(source) == "string", "RIFT: current build download failed: " .. tostring(source))
