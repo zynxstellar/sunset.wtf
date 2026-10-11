@@ -121,6 +121,11 @@ def main():
             subprocess.run([str(compiler), '--null', str(path)], check=True)
         assert 'game.PlaceId == 107535308163741 and "Huss Valley"' in imported_inner
         assert 'and game.PlaceId ~= 107535308163741' in imported_inner.split('local ENV =', 1)[0]
+        huss_spec = (ROOT / 'tests' / 'huss-movement-spec.luau').read_text(encoding='utf-8')
+        huss_spec = huss_spec.replace('-- INSERT_HUSS_SPEED', between(imported_inner, 'function Settings.MakeHussSpeedModifier(', '\nfunction RivalsSpeed.Setup()'))
+        huss_path = temp / 'huss-movement-spec.luau'
+        huss_path.write_text(huss_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(huss_path)], check=True)
         ui_prefix = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8').split('-- INSERT_RIVALS_PRODUCTION', 1)[0]
         imported_ui_parts = [
             between(imported_inner, 'local RivalsAim = {', '\nlocal function new('),

@@ -69,7 +69,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-huss-valley-k370"
+local SUNSET_BUILD = "20261011-rift-huss-movement-k371"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -11609,7 +11609,40 @@ function RivalsView.Setup()
         restore()
     end })
 end
+function Settings.MakeHussSpeedModifier(player)
+    local active, original, applied = false, nil, nil
+    local adapter = {}
+    function adapter.Tick(enabled, multiplier)
+        local current = player:GetAttribute("TrollSpeed")
+        if not enabled then
+            if active and current == applied then player:SetAttribute("TrollSpeed", original) end
+            active, original, applied = false, nil, nil
+            return
+        end
+        if not active or current ~= applied then original = current end
+        active = true
+        local value = tonumber(multiplier) or 1
+        if value ~= value then value = 1 end
+        applied = math.clamp(value, 0.5, 3)
+        if current ~= applied then player:SetAttribute("TrollSpeed", applied) end
+    end
+    function adapter.Close() adapter.Tick(false) end
+    return adapter
+end
 function RivalsSpeed.Setup()
+    if BOARD_GAME_NAME == "Huss Valley" then
+        local modifier = Settings.MakeHussSpeedModifier(LocalPlayer)
+        RivalsSpeed.Multiplier = 1
+        function RivalsSpeed.Apply()
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            modifier.Tick(RivalsSpeed.Enabled and Settings.SelectedGame == BOARD_GAME_NAME
+                and humanoid ~= nil and humanoid.Health > 0, RivalsSpeed.Multiplier)
+        end
+        track(RunService.PreSimulation:Connect(RivalsSpeed.Apply))
+        track({Disconnect=function() RivalsSpeed.Enabled=false;modifier.Close() end})
+        return
+    end
     local trackedHumanoid, originalSpeed
     local function restore()
         if trackedHumanoid and trackedHumanoid.Parent then trackedHumanoid.WalkSpeed = originalSpeed end
@@ -11801,15 +11834,23 @@ function RivalsAim.BuildUI()
         RivalsFOV.Apply()
     end)
     buildSpinbot(gameSection(BOARD_GAME_NAME, PlayerTab.Left, "Spinbot"))
-    local speed = gameSection(BOARD_GAME_NAME, MainTab.Left, "Speed")
-    RivalsSpeed.Toggle = Elements.Toggle(speed, "Speed", false, function(on)
+    local speedTitle = BOARD_GAME_NAME == "Huss Valley" and "Speed Modifier" or "Speed"
+    local speed = gameSection(BOARD_GAME_NAME, MainTab.Left, speedTitle)
+    RivalsSpeed.Toggle = Elements.Toggle(speed, speedTitle, false, function(on)
         RivalsSpeed.Enabled = on
         RivalsSpeed.Apply()
     end)
+    if BOARD_GAME_NAME == "Huss Valley" then
+    Elements.Slider(speed, "Speed Multiplier", 0.5, 3, 1, "x", function(value)
+        RivalsSpeed.Multiplier = value
+        RivalsSpeed.Apply()
+    end, 0.05)
+    else
     Elements.Slider(speed, "Walk Speed", 0, 300, 16, "studs/s", function(value)
         RivalsSpeed.Value = value
         RivalsSpeed.Apply()
     end, 1, true)
+    end
     if not IS_GENERIC then
     local killChat = gameSection(BOARD_GAME_NAME, FunTab.Left, "Kill Chat")
     if IS_GENERIC then

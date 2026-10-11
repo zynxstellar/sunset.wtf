@@ -84,6 +84,16 @@ for _, gameName in ipairs({"Arsenal","Rivals","Huss Valley"}) do
     end
     if gameName == "Huss Valley" then
         assert(not cards["Kill All"] and not cards["Silent Aim"],"Arsenal-only weapon controls leaked into Huss Valley")
+        assert(cards["Speed Modifier"] and not cards.Speed,"native speed modifier missing")
+        local foundSpeed, foundFly = false, false
+        for _, option in ipairs(ConfigControls) do
+            if option.Key == "Movement/Huss Valley/Speed Modifier/Speed Multiplier" then
+                option.Set(2.5);assert(RivalsSpeed.Multiplier==2.5);foundSpeed=true
+            elseif option.Key == "Movement/Huss Valley/Fly/Fly Speed" then
+                option.Set(123);assert(Settings.FlySpeed==123);foundFly=true
+            end
+        end
+        assert(foundSpeed and foundFly,"Huss movement sliders missing")
     end
     control("Aimbot","Aimbot").Set(true)
     assert(RivalsAim.Aimbot.Enabled and not RivalsAim.AutoShoot.Enabled,"aimbot enabled auto firing")
