@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-readable-ui-k363"
+local SUNSET_BUILD = "20261011-rift-blue-cleanup-k364"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -633,6 +633,10 @@ local function makeDraggable(frame, handle)
 end
 
 local Tabs, currentTab = {}, nil
+function Settings.IsRetiredSection(title)
+    if title == "Player Outlines" or title == "Third Person" or title == "Zoom Unlocker" then return true end
+    return false
+end
 function Settings.MakeMenuDraggable(frame, menu)
     local pointer, startPoint, startPosition, destroyed
     Settings.MenuDragRegions = Settings.MenuDragRegions or {}
@@ -995,6 +999,7 @@ end
 
 function Elements.Label(parent, text, rightText)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1 }, parent)
+    row.Visible = false
     local l = label(row, text)
     row.AutomaticSize = Enum.AutomaticSize.Y
     l.TextWrapped = true
@@ -9262,6 +9267,9 @@ function BedWars.BuildUI(boardGame)
     end
 
 
+    for index = #specs, 1, -1 do
+        if Settings.IsRetiredSection(specs[index][5]) then table.remove(specs, index) end
+    end
     local listedSections = {}
     for _, spec in ipairs(specs) do
         listedSections[spec[3] .. "/" .. spec[4] .. "/" .. spec[5]] = true
@@ -9270,7 +9278,7 @@ function BedWars.BuildUI(boardGame)
         if section.Game == boardGame then
             local heading = section.Box:FindFirstChildOfClass("TextLabel")
             local title = heading and heading.Text
-            if title then
+            if title and not Settings.IsRetiredSection(title) then
                 for _, control in ipairs(ConfigControls) do
                     if control.Kind == "toggle" and control.Box == section.Box then
                         local tabName = control.Key:match("^([^/]+)/")
@@ -9515,7 +9523,7 @@ function BedWars.BuildUI(boardGame)
                 tooltipText.Text = descriptions[name]
                     or (name .. " module. " .. (control and "Click to toggle."
                         or "Click to open its settings."))
-                tooltip.Visible = true
+                tooltip.Visible = false
             end)
             card.MouseLeave:Connect(function()
                 hovered = false
@@ -13488,6 +13496,10 @@ do
 end
 if detectedGame then
     Settings.StartupStage(Settings.RecoveryMode and "Recovery: saved modules paused" or "Restoring settings...")
+    for index = #ConfigControls, 1, -1 do
+        local title = ConfigControls[index].Key:match("^[^/]+/[^/]+/([^/]+)/")
+        if Settings.IsRetiredSection(title) then table.remove(ConfigControls, index) end
+    end
     Persistence.Restore(detectedGame, menuKeyControl)
     Persistence.Start()
     track(LocalPlayer.OnTeleport:Connect(function(state)

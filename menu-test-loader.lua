@@ -562,6 +562,10 @@ local function makeDraggable(frame, handle)
 end
 
 local Tabs, currentTab = {}, nil
+function Settings.IsRetiredSection(title)
+    if title == "Player Outlines" or title == "Third Person" or title == "Zoom Unlocker" then return true end
+    return false
+end
 function Settings.MakeMenuDraggable(frame, menu)
     local pointer, startPoint, startPosition, destroyed
     Settings.MenuDragRegions = Settings.MenuDragRegions or {}
@@ -924,6 +928,7 @@ end
 
 function Elements.Label(parent, text, rightText)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1 }, parent)
+    row.Visible = false
     local l = label(row, text)
     row.AutomaticSize = Enum.AutomaticSize.Y
     l.TextWrapped = true

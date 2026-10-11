@@ -698,7 +698,7 @@ assert(menuScale.Scale == 1, "menu did not resize after viewport replacement")
 end
 assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==46)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
-assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
+assert(cards.assist and cards.aimbot and not cards.outlines and cards.boxes,"new Rivals modules are missing")
 assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")
 assert(cards.killChat and eliminationApi.EliminationEffect==nativeElimination,"Kill Chat missing or enabled on startup")
 local function findConfig(key)
@@ -960,7 +960,7 @@ print("PASS Rivals HUDs: locked target, name/avatar, health changes, death/menu/
 local outlineColor,boxColor=color(0.4,0.2,0.9),color(0.2,0.8,0.4)
 findConfig("Visuals/Rivals/Player Outlines/Color").Set(outlineColor)
 findConfig("Visuals/Rivals/ESP Boxes/Color").Set(boxColor)
-cards.outlines.MouseButton1Click:Fire()
+findConfig("Visuals/Rivals/Player Outlines/Player Outlines").Set(not RivalsVisuals.OutlinesOn)
 cards.boxes.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
 local function liveVisuals()
@@ -1008,7 +1008,7 @@ local respawnFound=false
 for _,entry in ipairs(highlights) do if entry.Adornee==enemy.Fighter.Entity.Model then respawnFound=true end end
 assert(#highlights==3 and respawnFound,"respawned entity did not replace the old visual")
 enemy.Fighter.Entity=oldEntity
-cards.outlines.MouseButton1Click:Fire()
+findConfig("Visuals/Rivals/Player Outlines/Player Outlines").Set(not RivalsVisuals.OutlinesOn)
 cards.boxes.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
 highlights,boxes=liveVisuals()
@@ -1086,7 +1086,7 @@ Settings.ActiveSearchBox:GetPropertyChangedSignal("Text"):Fire()
 assert(cards.aim.Visible and not cards.fov.Visible,"shared search filtering failed")
 assert(columns.Combat.Visible and columns.Visuals.Visible, "search hid category columns")
 print("PASS Rivals board: shared BedWars layout/cards/search, game-specific controls, FOV slider")
-cards.outlines.MouseButton1Click:Fire()
+findConfig("Visuals/Rivals/Player Outlines/Player Outlines").Set(not RivalsVisuals.OutlinesOn)
 RunService.RenderStepped:Fire(1/60)
 assert(#liveVisuals()==3)
 ENV.SunsetRivalsAimHook.Restore()
@@ -1237,7 +1237,7 @@ end
         if object:IsA("TextButton") and object.Name=="Spinbot" then foundSpinbot=true end
         if object.Name=="KIT" then kitColumn=true end
     end
-    assert(foundBoxes and foundOutlines and foundSpinbot and not kitColumn,
+    assert(foundBoxes and not foundOutlines and foundSpinbot and not kitColumn,
         "Cold War visuals or Spinbot missing, or BedWars kit controls leaked")
     assert(findConfig("Player/Cold War/Spinbot/Spinbot"),"Cold War Spinbot settings were not created")
     local boxesControl=findConfig("Visuals/Cold War/ESP Boxes/ESP Boxes")

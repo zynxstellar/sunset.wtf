@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-readable-ui-k363"
+local SUNSET_BUILD = "20261011-rift-imported-blue-ui-k364"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -91,20 +91,20 @@ end
 
 
 local T = {
-    bg        = Color3.fromRGB(16, 18, 29),
-    panel     = Color3.fromRGB(22, 27, 41),
-    inner     = Color3.fromRGB(26, 32, 48),
-    element   = Color3.fromRGB(34, 40, 59),
-    elementHi = Color3.fromRGB(47, 54, 78),
-    border    = Color3.fromRGB(52, 60, 89),
-    outer     = Color3.fromRGB(74, 64, 128),
-    red       = Color3.fromRGB(139, 92, 246),
-    accent    = Color3.fromRGB(139, 92, 246),
-    gold      = Color3.fromRGB(77, 224, 208),
+    bg        = Color3.fromRGB(11, 17, 28),
+    panel     = Color3.fromRGB(17, 26, 42),
+    inner     = Color3.fromRGB(21, 33, 51),
+    element   = Color3.fromRGB(27, 43, 65),
+    elementHi = Color3.fromRGB(35, 56, 84),
+    border    = Color3.fromRGB(42, 63, 89),
+    outer     = Color3.fromRGB(51, 80, 115),
+    red       = Color3.fromRGB(64, 145, 255),
+    accent    = Color3.fromRGB(64, 145, 255),
+    gold      = Color3.fromRGB(112, 182, 255),
     text      = Color3.fromRGB(242, 244, 255),
     dim       = Color3.fromRGB(154, 167, 195),
     muted     = Color3.fromRGB(154, 167, 195),
-    font      = Enum.Font.Code,
+    font      = Enum.Font.GothamMedium,
 }
 local BedWars
 local bedWarsHiddenSections = {}
@@ -156,6 +156,15 @@ local RivalsAim = { Enabled = false, FOVVisible = false, Radius = 150, FOVThickn
         AimWhileFiring = true, KeepFiring = false, IgnoreMap = false, IgnoreFOV = true, TeamCheck = true,
         UseWallbang = true, RequireMapFloor = true, FloorCheckDistance = 100 },
     Available = false }
+RivalsAim.Aimbot.Strength = 8
+RivalsAim.AutoShoot = table.clone(RivalsAim.Aimbot)
+RivalsAim.AutoShoot.Enabled = false
+RivalsAim.AutoShoot.AutoFire = true
+RivalsAim.AutoShoot.AutomaticSnap = true
+RivalsAim.AutoShoot.HoldMouse = false
+RivalsAim.AutoShoot.Strength = 8
+RivalsAim.Legit.AutoFire = false
+RivalsAim.Aimbot.AutoFire = false
 local RivalsVisuals = { BoxesOn = false, OutlinesOn = false,
     TargetHUDOn = false, TargetHUDBarTime = 0.3, MusicOverlayOn = false,
     BoxColor = Color3.fromRGB(139, 92, 246), OutlineColor = Color3.fromRGB(77, 224, 208) }
@@ -506,6 +515,97 @@ local function makeDraggable(frame, handle)
 end
 
 local Tabs, currentTab = {}, nil
+Settings.GameBoards = {}
+Settings.StartupStage = function() end
+function Settings.IsRetiredSection(title)
+    if title == "Player Outlines" or title == "Third Person" or title == "Zoom Unlocker" then return true end
+    if title == "Enhanced ESP" or title == "Instant Hit" or title == "Hide Visuals"
+        or title == "Named Presets" or title == "Preset Profiles" or title == "Configs" or title == "Colors"
+        or title == "Legit Aimbot" or title == "Rivals Compatibility" then return true end
+    if IS_GENERIC and title == "Kill Chat" then return true end
+    return false
+end
+function Settings.MakeMenuDraggable(frame, menu)
+    local pointer, startPoint, startPosition, destroyed
+    Settings.MenuDragRegions = Settings.MenuDragRegions or {}
+    if menu then Settings.MenuDragRegions[frame] = menu end
+    local function inside(object, point)
+        local position, size = object.AbsolutePosition, object.AbsoluteSize
+        return point.X >= position.X and point.X <= position.X + size.X
+            and point.Y >= position.Y and point.Y <= position.Y + size.Y
+    end
+    local function visibleAt(object, point)
+        local current = object
+        while current and current ~= frame do
+            if current:IsA("GuiObject") then
+                if not current.Visible then return false end
+                if current.ClipsDescendants and not inside(current, point) then return false end
+            end
+            current = current.Parent
+        end
+        return current == frame
+    end
+    local function finish()
+        pointer, startPoint, startPosition = nil, nil, nil
+        if Settings.MenuDragOwner == frame then Settings.MenuDragOwner = nil end
+    end
+    track(UIS.InputBegan:Connect(function(input)
+        local kind = input.UserInputType
+        if destroyed or pointer or Settings.MenuDragOwner or not frame.Visible or not frame.Parent
+            or (menu and not menu.Visible)
+            or (kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch)
+            or not inside(frame, input.Position) then return end
+        local point = input.Position
+        if menu then
+            local ancestor = frame.Parent
+            while ancestor and ancestor ~= menu do
+                if ancestor:IsA("GuiObject") and ancestor.ClipsDescendants and not inside(ancestor, point) then return end
+                ancestor = ancestor.Parent
+            end
+        end
+        for region, owner in pairs(Settings.MenuDragRegions) do
+            if owner == frame and region.Visible and region.Parent and inside(region, point) then return end
+        end
+        for _, object in ipairs(frame:GetDescendants()) do
+            if object:IsA("GuiObject") and visibleAt(object, point) and inside(object, point) then
+                if object:IsA("GuiButton") or object:IsA("TextBox") then return end
+                if object:IsA("ScrollingFrame") then
+                    if kind == Enum.UserInputType.Touch
+                        or point.X >= object.AbsolutePosition.X + object.AbsoluteSize.X - 8
+                        or (object.ScrollingDirection == Enum.ScrollingDirection.X
+                            and point.Y >= object.AbsolutePosition.Y + object.AbsoluteSize.Y - 8) then return end
+                end
+            end
+        end
+        Settings.MenuDragOwner = frame
+        pointer, startPoint, startPosition = input, point, frame.Position
+    end))
+    track(UIS.InputChanged:Connect(function(input)
+        if not pointer or destroyed then return end
+        if not frame.Visible or not frame.Parent or (menu and not menu.Visible) then finish() return end
+        local touch = pointer.UserInputType == Enum.UserInputType.Touch
+        if (touch and input ~= pointer) or (not touch and input.UserInputType ~= Enum.UserInputType.MouseMovement) then return end
+        local delta = input.Position - startPoint
+        local scaleOwner = menu or frame
+        local scale = scaleOwner.FindFirstChildOfClass and scaleOwner:FindFirstChildOfClass("UIScale")
+        if scale and scale.Scale > 0 then delta = delta * (1 / scale.Scale) end
+        frame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end))
+    track(UIS.InputEnded:Connect(function(input)
+        if input == pointer or (pointer and pointer.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseButton1) then finish() end
+    end))
+    track(UIS.WindowFocusReleased:Connect(finish))
+    track(frame:GetPropertyChangedSignal("Visible"):Connect(function() if not frame.Visible then finish() end end))
+    if menu then
+        track(menu:GetPropertyChangedSignal("Visible"):Connect(function() if not menu.Visible then finish() end end))
+    end
+    track({ Disconnect = function()
+        destroyed = true finish()
+        Settings.MenuDragRegions[frame] = nil
+    end })
+end
 local function makeTab(name)
     local btn = new("TextButton", {
         Size = UDim2.new(1 / 8, -6, 0, 26),
@@ -617,8 +717,8 @@ function Persistence.RestoreHUDPositions(positions, legacyLayout)
     if type(positions) ~= "table" then return end
     for name, value in pairs(positions) do
         local frame = Persistence.HUDFrames[name]
-        if name ~= "ModuleList"
-            and not (legacyLayout and (name == "BedWarsMenu" or name == "RivalsMenu"))
+        if name ~= "ModuleList" and name ~= "Watermark"
+            and not (legacyLayout and (name == "BedWarsMenu" or name == "RivalsMenu" or name == "ArsenalMenu"))
             and frame and frame.Parent and type(value) == "table"
             and type(value[1]) == "number" and type(value[2]) == "number"
             and type(value[3]) == "number" and type(value[4]) == "number" then
@@ -651,7 +751,7 @@ do
         end
         local data = { Version = 5, Game = gameName, Controls = saved,
             AutoReinjectVersion = 1,
-            RiftThemeVersion = 1,
+            RiftThemeVersion = 1, RiftLayoutVersion = 2,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions() }
         if isRivalsMode(gameName) then
             data.RivalsAim = { Enabled = RivalsAim.Enabled,
@@ -778,7 +878,7 @@ do
         if data.MenuKey and Enum.KeyCode[data.MenuKey] and menuKeyControl then
             menuKeyControl.SetBind(Enum.KeyCode[data.MenuKey])
         end
-        Persistence.RestoreHUDPositions(data.HUDPositions, (data.Version or 1) < 4)
+        Persistence.RestoreHUDPositions(data.HUDPositions, (data.RiftLayoutVersion or 0) < 2)
         return true
     end
     function Persistence.Start()
@@ -804,6 +904,7 @@ end
 
 function Elements.Label(parent, text, rightText)
     local row = new("Frame", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1 }, parent)
+    row.Visible = false
     local l = label(row, text)
     row.AutomaticSize = Enum.AutomaticSize.Y
     l.TextWrapped = true
@@ -1381,6 +1482,7 @@ local function createCharacterCollision(player)
     function controller.Apply()
         if not manual and not flight then restore() return end
         local current = player.Character
+        if Settings.FlyEnabled and Settings.FlightReadyCharacter ~= current then restore() return end
         if current ~= character then
             restore()
             character = current
@@ -1448,6 +1550,7 @@ do
     local attachment, velocity, hover, orientation, pre, post
     local moving = false
     function Fly.Stop()
+        Settings.FlightReadyCharacter = nil
         if pre then pre:Disconnect() pre = nil end
         if post then post:Disconnect() post = nil end
         if velocity then velocity:Destroy() end
@@ -1497,7 +1600,8 @@ do
             Mode = Enum.OrientationAlignmentMode.OneAttachment,
             RigidityEnabled = true, CFrame = root.CFrame.Rotation,
         }, root)
-        CharacterCollision.SetFlight(true)
+        Settings.FlightReadyCharacter = character
+        CharacterCollision.Apply()
         pre = RunService.PreSimulation:Connect(function()
             if not root.Parent or humanoid.Health <= 0 or LocalPlayer.Character ~= root.Parent then Fly.Stop() return end
             local dir = Vector3.zero
@@ -1540,9 +1644,9 @@ do
         end)
     end
     track(LocalPlayer.CharacterAdded:Connect(function(character)
-        character:WaitForChild("HumanoidRootPart")
-        task.wait(0.5)
-        if Settings.FlyEnabled then Fly.Start() end
+        local root = character:WaitForChild("HumanoidRootPart", 10)
+        local humanoid = character:WaitForChild("Humanoid", 10)
+        if root and humanoid and LocalPlayer.Character == character and Settings.FlyEnabled then Fly.Start() end
     end))
 end
 
@@ -1820,7 +1924,6 @@ local VisualsTab = makeTab("Visuals")
 local AimTab = makeTab("Combat")
 local MiscTab = makeTab("Misc")
 local FunTab = makeTab("Fun")
-makeTab("Dev Tools")
 local SettingsTab = makeTab("Sunset")
 SettingsTab.Button.Text = BRAND
 
@@ -2801,7 +2904,7 @@ do
         end
         local path = configPath(name)
         local ok = pcall(writefile, path, HttpService:JSONEncode({
-            Version = 5, Game = Settings.SelectedGame, Controls = saved, RiftThemeVersion = 1,
+            Version = 5, Game = Settings.SelectedGame, Controls = saved, RiftThemeVersion = 1, RiftLayoutVersion = 2,
             RiftVisualValues=Settings.CaptureVisualPreset and Settings.CaptureVisualPreset() or nil,
             MenuKey = Settings.MenuKey.Name, HUDPositions = Persistence.SavedHUDPositions(),
         }))
@@ -2819,7 +2922,7 @@ do
             status.Text = "Config missing or incompatible"
             return
         end
-        Persistence.RestoreHUDPositions(data.HUDPositions, data.Version < 4)
+        Persistence.RestoreHUDPositions(data.HUDPositions, (data.RiftLayoutVersion or 0) < 2)
         local byKey = {}
         for _, control in ipairs(ConfigControls) do
             if control.Key then byKey[control.Key] = control end
@@ -8251,12 +8354,6 @@ do
         end)
     end
     do
-        local dex = gameSection(gameName, Tabs["Dev Tools"].Left, "DEX")
-        Elements.Button(dex, "Open Explorer", function()
-            BedWars.OpenExplorer()
-        end)
-    end
-    do
         local notifications = gameSection(gameName, SettingsTab.Right, "Notifications")
         Elements.Toggle(notifications, "Notifications", false, function(on)
             BedWars.NotifyOn = on
@@ -8313,14 +8410,6 @@ do
         Elements.Toggle(spotify, "Music Overlay", false, function(on)
             BedWars.SpotifyHUDOn = on
         end)
-    end
-    do
-        local waterSpeed = gameSection(gameName, Tabs["Dev Tools"].Left, "Water Speed")
-        Elements.Toggle(waterSpeed, "Water Speed", false, function(on)
-            BedWars.WaterSpeedOn = on
-        end)
-        Elements.Slider(waterSpeed, "Swim Speed", 14, 60, 30, "studs",
-            function(value) BedWars.WaterSpeedValue = value end)
     end
     local afkSection = gameSection(gameName, MiscTab.Right, "Anti AFK")
     Elements.Toggle(afkSection, "Anti AFK", false, function(on)
@@ -8587,206 +8676,220 @@ function BedWars.KitCatalog()
 end
 function BedWars.BuildUI(boardGame)
     boardGame = boardGame or "BedWars"
+    T.red, T.accent, T.gold = Color3.fromRGB(64,145,255), Color3.fromRGB(64,145,255), Color3.fromRGB(112,182,255)
+    local columnLayout = true
     local isRivals = isRivalsMode(boardGame)
-    local categoryOrder = isRivals
-        and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Dev Tools", "Sunset" }
-        or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Dev Tools", "Sunset" }
-    local boardWidth = 20 + #categoryOrder * 215
-    local accent = Color3.fromRGB(139, 92, 246)
-    local gold = Color3.fromRGB(77, 224, 208)
-    local dark = Color3.fromRGB(16, 18, 29)
-    local columnColor = Color3.fromRGB(26, 32, 48)
-    local cardColor = Color3.fromRGB(34, 40, 59)
+    local isColdWar = boardGame == "Cold War"
+    local isProjectDelta = boardGame == "Project Delta"
+    local categoryOrder = isColdWar
+        and { "Combat", "Movement", "Player", "Visuals", "Misc", "Sunset" }
+        or (isRivals or isProjectDelta)
+        and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Sunset" }
+        or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Sunset" }
+    local columnWidth, columnGap = 250, 8
+    local fullColumnWidth = #categoryOrder * (columnWidth + columnGap) - columnGap
+    local boardWidth = columnLayout and fullColumnWidth + 24 or 880
+    local accent = columnLayout and Color3.fromRGB(0, 135, 255) or T.accent
+    local gold = T.gold
+    local dark = T.bg
+    local columnColor = T.panel
+    local cardColor = T.element
     local muted = Color3.fromRGB(154, 167, 195)
     local board = new("Frame", {
         Name = "Rift" .. boardGame .. "Board", Visible = false, Active = true,
-        Size = UDim2.fromOffset(boardWidth, 770),
-        Position = UDim2.new(0.5, 0, 0, 12),
-        AnchorPoint = Vector2.new(0.5, 0),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
+        Size = UDim2.fromOffset(boardWidth, 640),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = dark, BackgroundTransparency = columnLayout and 1 or 0, BorderSizePixel = 0,
     }, Gui)
-    if isRivals then RivalsUI = board else BedWarsUI = board end
+    new("UICorner", { CornerRadius = UDim.new(0, 14) }, board)
+    if not columnLayout then border(board, T.border) end
+    Settings.GameBoards[boardGame] = board
+    if isRivals then RivalsUI = board elseif boardGame == "BedWars" then BedWarsUI = board end
     Persistence.HUDFrames[boardGame .. "Menu"] = board
     local boardScale = new("UIScale", { Scale = 1 }, board)
     local openingScale = new("NumberValue", { Value = 1 }, board)
     local function fitBoard()
         local camera = workspace.CurrentCamera
         if not camera then return end
-        local scale = openingScale.Value * math.max(0.32, math.min(1,
+        if columnLayout then
+            local scale = math.max(0.32, math.min(1, (camera.ViewportSize.Y - 32) / 640))
+            boardWidth = math.min(fullColumnWidth + 24, math.max(320, (camera.ViewportSize.X - 32) / scale))
+            board.Size = UDim2.fromOffset(boardWidth, 640)
+            boardScale.Scale = openingScale.Value * scale
+            return
+        end
+        boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
             (camera.ViewportSize.X - 32) / boardWidth,
-            (camera.ViewportSize.Y - 32) / 770))
-        if boardScale.Scale ~= scale then boardScale.Scale = scale end
+            (camera.ViewportSize.Y - 32) / 640))
     end
-    fitBoard()
-    track(RunService.Heartbeat:Connect(fitBoard))
+    local viewportConnection
+    local function bindViewport()
+        if viewportConnection then viewportConnection:Disconnect() end
+        local camera = workspace.CurrentCamera
+        if camera then
+            viewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(fitBoard)
+        end
+        fitBoard()
+    end
+    bindViewport()
+    track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindViewport))
+    track({ Disconnect = function()
+        if viewportConnection then viewportConnection:Disconnect() end
+    end })
     track(openingScale:GetPropertyChangedSignal("Value"):Connect(fitBoard))
 
     local header = new("Frame", {
         Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1,
     }, board)
-    local logoId = riftAsset("rift-logo-transparent.png")
-    if logoId then
-        new("ImageLabel", {
-            Position = UDim2.fromOffset(19, 8), Size = UDim2.fromOffset(32, 32),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = logoId, ScaleType = Enum.ScaleType.Fit,
-        }, header)
-    else
-        local logoFallback = label(header, "R", 21, gold,
-            Enum.TextXAlignment.Center)
-        logoFallback.Font = Enum.Font.GothamBold
-        logoFallback.Position = UDim2.fromOffset(20, 8)
-        logoFallback.Size = UDim2.fromOffset(30, 30)
-    end
+    Settings.MakeMenuDraggable(board)
+    Settings.StartupStage("Drawing " .. boardGame .. " menu header...")
     local title = label(header, BRAND .. " | " .. string.upper(boardGame), 22, Color3.fromRGB(242, 244, 255))
     title.Font = Enum.Font.GothamBold
-    title.Position = UDim2.fromOffset(58, 10)
-    title.Size = UDim2.fromOffset(340, 27)
+    title.Position = UDim2.fromOffset(24, 12)
+    title.Size = UDim2.fromOffset(380, 27)
     local subtitle = label(header, string.upper(boardGame) .. "  /  BUILD " .. SUNSET_BUILD:sub(-4), 11, gold)
     subtitle.Font = Enum.Font.Gotham
     subtitle.Position = UDim2.fromOffset(24, 38)
-    subtitle.Size = UDim2.fromOffset(400, 17)
+    subtitle.Size = UDim2.fromOffset(235, 17)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(math.floor((boardWidth - 340) / 2 + 0.5), 17),
+        Position = UDim2.new(1, -400, 0, 17),
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, searchFrame)
-    border(searchFrame, Color3.fromRGB(74, 64, 128))
-    local searchRing = new("Frame", {
-        Position = UDim2.fromOffset(11, 8), Size = UDim2.fromOffset(13, 13),
-        BackgroundTransparency = 1, BorderSizePixel = 0,
-    }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchRing)
-    border(searchRing, gold, 2)
-    local searchHandle = new("Frame", {
-        Position = UDim2.fromOffset(23, 22), Size = UDim2.fromOffset(9, 2),
-        Rotation = 45, BackgroundColor3 = gold, BorderSizePixel = 0,
-    }, searchFrame)
-    new("UICorner", { CornerRadius = UDim.new(0, 2) }, searchHandle)
-    local searchId = riftAsset("search.png")
-    if searchId then
-        searchRing.Visible = false
-        searchHandle.Visible = false
-        new("ImageLabel", {
-            Position = UDim2.fromOffset(9, 7), Size = UDim2.fromOffset(22, 22),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = searchId, ImageColor3 = gold, ScaleType = Enum.ScaleType.Fit,
-        }, searchFrame)
-    end
+    new("UICorner", { CornerRadius = UDim.new(0, 8) }, searchFrame)
+    border(searchFrame, T.border)
     local searchBox = new("TextBox", {
-        Position = UDim2.fromOffset(36, 3),
-        Size = UDim2.new(1, -75, 1, -6),
+        Position = UDim2.fromOffset(12, 3),
+        Size = UDim2.new(1, -24, 1, -6),
         BackgroundTransparency = 1, BorderSizePixel = 0,
         Font = Enum.Font.GothamMedium, TextSize = 15,
         TextColor3 = Color3.fromRGB(242, 244, 255),
         PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
     }, searchFrame)
+    searchFrame.Visible = true
     Settings.ActiveSearchBox = searchBox
-    local clearSearch = new("TextButton", {
-        Position = UDim2.new(1, -30, 0, 3), Size = UDim2.fromOffset(26, 30),
-        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
-        Font = Enum.Font.GothamBold, TextSize = 19, TextColor3 = muted,
-        AutoButtonColor = false, Visible = true,
-    }, searchFrame)
-    local trashId = riftAsset("trash.png")
-    local trashIcon
-    if trashId then
-        trashIcon = new("ImageLabel", {
-            Position = UDim2.fromOffset(2, 3), Size = UDim2.fromOffset(23, 23),
-            BackgroundTransparency = 1, BorderSizePixel = 0,
-            Image = trashId, ImageColor3 = gold,
-            ImageTransparency = 0, ScaleType = Enum.ScaleType.Fit,
-        }, clearSearch)
-    else
-        riftTrashFallback(clearSearch, gold)
-    end
-    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-        if trashIcon then
-            trashIcon.ImageTransparency = 0
-        end
-    end)
-    clearSearch.MouseButton1Click:Connect(function()
-        searchBox.Text = ""
-        searchBox:CaptureFocus()
-    end)
     local closeButton = new("TextButton", {
-        Position = UDim2.new(1, -41, 0, 29),
-        Size = UDim2.fromOffset(26, 26),
-        BackgroundColor3 = Color3.fromRGB(47, 39, 79), BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(1, -44, 0, 35),
+        Size = UDim2.fromOffset(28, 28),
+        BackgroundColor3 = cardColor, BorderSizePixel = 0,
         Font = Enum.Font.GothamBold, TextSize = 13,
         Text = "X", TextColor3 = Color3.fromRGB(242, 244, 255),
+        TextXAlignment = Enum.TextXAlignment.Center, TextYAlignment = Enum.TextYAlignment.Center,
         AutoButtonColor = false,
     }, header)
-    new("UICorner", { CornerRadius = UDim.new(1, 0) }, closeButton)
-    border(closeButton, accent)
+    new("UICorner", { CornerRadius = UDim.new(0, 7) }, closeButton)
+    border(closeButton, T.border)
     closeButton.MouseButton1Click:Connect(function() board.Visible = false end)
+    Settings.StartupStage("Creating " .. boardGame .. " menu columns...")
     local columns = {}
-    for index, name in ipairs(categoryOrder) do
-        local x = 20 + (index - 1) * 215
-        local y = 74
-        local col = new("Frame", {
-            Name = name, Position = UDim2.fromOffset(x, y),
-            Size = UDim2.fromOffset(200, 250), Active = true,
-            BackgroundColor3 = columnColor, BorderSizePixel = 0,
+    local navigation = new("Frame", {
+        Position = UDim2.fromOffset(16, 84), Size = UDim2.fromOffset(166, 540),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+    }, board)
+    navigation.Visible = not columnLayout
+    new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, navigation)
+    local columnCanvas, categoryLayer
+    if columnLayout then
+        columnCanvas = new("ScrollingFrame", {
+            Name = "CategoryColumns", Position = UDim2.fromOffset(12, 76),
+            Size = UDim2.new(1, -24, 1, -76), BackgroundTransparency = 1,
+            BorderSizePixel = 0, CanvasSize = UDim2.fromOffset(fullColumnWidth, 0),
+            ScrollingDirection = Enum.ScrollingDirection.X, ScrollBarThickness = 5,
+            ScrollBarImageColor3 = accent,
         }, board)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, col)
-        border(col, Color3.fromRGB(74, 64, 128))
-        new("UIGradient", { Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 36, 56)),
-            ColorSequenceKeypoint.new(1, columnColor),
-        }), Rotation = 90 }, col)
-        local heading = label(col, string.upper(name == "Sunset" and BRAND or name), 14,
+        -- Floating categories must not inherit the scrolling viewport's clipping.
+        categoryLayer = new("Frame", {
+            Name = "CategoryLayer", Position = UDim2.fromOffset(12, 76),
+            Size = UDim2.new(1, -24, 1, -84), BackgroundTransparency = 1,
+            BorderSizePixel = 0, ClipsDescendants = false,
+        }, board)
+        local previousScroll = 0
+        track(columnCanvas:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+            local scroll = columnCanvas.CanvasPosition.X
+            local delta = scroll - previousScroll
+            previousScroll = scroll
+            for _, name in ipairs(categoryOrder) do
+                local column = columns[name]
+                if column then
+                    local position = column.Frame.Position
+                    column.Frame.Position = UDim2.new(position.X.Scale, position.X.Offset - delta,
+                        position.Y.Scale, position.Y.Offset)
+                end
+            end
+        end))
+    end
+    for index, name in ipairs(categoryOrder) do
+        local nav = new("TextButton", {
+            Name = name .. "Tab", Text = name == "Sunset" and "Rift Settings" or name,
+            Font = Enum.Font.GothamMedium, TextSize = 14, TextColor3 = muted,
+            TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false,
+            Size = UDim2.new(1, 0, 0, 42), LayoutOrder = index,
+            BackgroundColor3 = dark, BorderSizePixel = 0,
+        }, navigation)
+        new("UICorner", { CornerRadius = UDim.new(0, 8) }, nav)
+        new("UIPadding", { PaddingLeft = UDim.new(0, 12) }, nav)
+        local col = new("Frame", {
+            Name = name, Position = columnLayout and UDim2.fromOffset((index - 1) * (columnWidth + columnGap), 0) or UDim2.fromOffset(198, 84),
+            Visible = columnLayout or index == 1,
+            Size = UDim2.fromOffset(columnLayout and columnWidth or 666, 540), Active = true,
+            BackgroundColor3 = columnColor, BorderSizePixel = 0,
+        }, categoryLayer or board)
+        new("UICorner", { CornerRadius = UDim.new(0, columnLayout and 3 or 10) }, col)
+        border(col, T.border)
+        Settings.MakeMenuDraggable(col, board)
+        Persistence.HUDFrames[boardGame .. "Category" .. name] = col
+        if columnLayout then
+            new("Frame", { Name = "BlueHeader", Size = UDim2.new(1, 0, 0, 32),
+                BackgroundColor3 = accent, BorderSizePixel = 0 }, col)
+        end
+        local heading = label(col, name == "Sunset" and "Rift Settings" or name, 14,
             Color3.fromRGB(242, 244, 255))
         heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(13, 12)
-        heading.Size = UDim2.fromOffset(128, 20)
+        heading.Position = UDim2.fromOffset(13, columnLayout and 6 or 12)
+        heading.Size = UDim2.new(1, -72, 0, 20)
         local count = new("TextButton", {
             Text = "0", Font = Enum.Font.GothamBold,
-            TextSize = 17, TextColor3 = gold,
+            TextSize = columnLayout and 12 or 17, TextColor3 = columnLayout and T.text or gold,
             TextXAlignment = Enum.TextXAlignment.Right,
-            Position = UDim2.new(1, -48, 0, 8),
+            Position = UDim2.new(1, columnLayout and -62 or -48, 0, columnLayout and 4 or 8),
             Size = UDim2.fromOffset(34, 25),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             AutoButtonColor = false,
         }, col)
         new("Frame", {
-            Position = UDim2.fromOffset(13, 39),
+            Name = "CategoryDivider", AnchorPoint = Vector2.new(0.5, 0),
+            Position = UDim2.new(0.5, 0, 0, 39),
             Size = UDim2.new(1, -26, 0, 2),
-            BackgroundColor3 = accent, BorderSizePixel = 0,
+            BackgroundColor3 = accent, BorderSizePixel = 0, Visible = not columnLayout,
         }, col)
         local list = new("ScrollingFrame", {
-            Position = UDim2.fromOffset(9, 51),
-            Size = UDim2.new(1, -18, 1, -60),
+            Position = UDim2.fromOffset(columnLayout and 5 or 9, columnLayout and 38 or 51),
+            Size = UDim2.new(1, columnLayout and -10 or -18, 1, columnLayout and -44 or -60),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             ScrollBarThickness = 2, ScrollBarImageColor3 = accent,
             CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
             ScrollingDirection = Enum.ScrollingDirection.Y,
         }, col)
-        new("UIListLayout", { Padding = UDim.new(0, 7),
+        new("UIListLayout", { Padding = UDim.new(0, columnLayout and 2 or 7),
             SortOrder = Enum.SortOrder.LayoutOrder }, list)
         new("UIPadding", { PaddingBottom = UDim.new(0, 4) }, list)
-        local dragHandle = new("Frame", {
-            Position = UDim2.fromOffset(0, 0),
-            Size = UDim2.fromOffset(148, 43),
-            BackgroundTransparency = 1, Active = true,
-        }, col)
-        makeDraggable(col, dragHandle)
         columns[name] = { Frame = col, List = list, Count = count,
-            Collapsed = false, VisibleCount = 0, OpenHolder = nil }
+            Nav = nav, Collapsed = false, VisibleCount = 0, OpenHolder = nil }
+        nav.MouseButton1Click:Connect(function() columns.Select(name) end)
         local function reflow()
             local column = columns[name]
-            local extra = column.OpenHolder and column.OpenHolder.Visible
-                and column.OpenHolder.AbsoluteSize.Y + 7 or 0
-            column.Frame.Size = UDim2.fromOffset(200,
-                column.Collapsed and 44
-                    or name == "KIT" and math.min(540,
-                        math.max(176, 140 + column.VisibleCount * 42 + extra))
-                    or math.min(540, 65 + column.VisibleCount * 42 + extra))
+            local height = 540
+            if columnLayout and not column.OpenHolder and not column.KitOptionsVisible then
+                height = math.clamp(44 + column.VisibleCount * 32 + (name == "KIT" and 94 or 0), 100, 540)
+            end
+            column.Frame.Size = UDim2.fromOffset(columnLayout and columnWidth or 666,
+                column.Collapsed and (columnLayout and 32 or 44) or height)
         end
         columns[name].Reflow = reflow
-        count.MouseButton1Click:Connect(function()
+        local function toggleColumn()
             local column = columns[name]
             column.Collapsed = not column.Collapsed
             column.List.Visible = not column.Collapsed
@@ -8801,11 +8904,20 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             reflow()
-        end)
+        end
+        count.MouseButton1Click:Connect(toggleColumn)
+        if columnLayout then
+            local collapse = new("TextButton", { Name = "CollapseCategory",
+                Position = UDim2.new(1, -28, 0, 5), Size = UDim2.fromOffset(22, 22), Text = "-",
+                TextColor3 = T.text, Font = Enum.Font.GothamBold, TextSize = 14,
+                BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false,
+            }, col)
+            collapse.MouseButton1Click:Connect(toggleColumn)
+        end
     end
 
     local kitNames, kitIds = {}, {}
-    if not isRivals then kitNames, kitIds = BedWars.KitCatalog() end
+    if boardGame == "BedWars" then kitNames, kitIds = BedWars.KitCatalog() end
     local kitSelected = table.find(kitNames, "Miner") and "Miner" or kitNames[1]
     if columns.KIT then
         local column = columns.KIT
@@ -8861,6 +8973,8 @@ function BedWars.BuildUI(boardGame)
         end
         local function showKitOptions(show)
             kitOptions.Visible = show and not column.Collapsed
+            column.KitOptionsVisible = kitOptions.Visible
+            column.Reflow()
             column.List.Visible = not kitOptions.Visible and not column.Collapsed
             if column.KitEmpty then
                 column.KitEmpty.Visible = not kitOptions.Visible
@@ -8939,6 +9053,20 @@ function BedWars.BuildUI(boardGame)
         activeHolder, activeColumn = nil, nil
         if previousColumn then previousColumn.Reflow() end
     end
+    local selectedCategory
+    function columns.Select(name)
+        if not columns[name] then return end
+        closeSettings()
+        selectedCategory = name
+        for _, category in ipairs(categoryOrder) do
+            local column = columns[category]
+            local selected = category == name
+            column.Frame.Visible = columnLayout or selected
+            column.Nav.BackgroundColor3 = selected and T.element or dark
+            column.Nav.TextColor3 = selected and T.text or muted
+        end
+    end
+    columns.Select(categoryOrder[1])
     local function openSettings(box, holder, column)
         if not box or not holder then return end
         if activeHolder == holder then closeSettings() return end
@@ -8981,7 +9109,7 @@ function BedWars.BuildUI(boardGame)
                     bindButton.TextScaled = false
                     bindButton.TextSize = 10
                 end
-                if isRivalsMode(boardGame) and toggleName then
+                if (isRivals or isColdWar or isProjectDelta) and toggleName then
                     row.Size = UDim2.new(1, 0, 0, 22)
                     local checkbox = row:FindFirstChildOfClass("Frame")
                     if checkbox then
@@ -8997,7 +9125,7 @@ function BedWars.BuildUI(boardGame)
                     toggleName.Size = UDim2.new(toggleName.Size.X.Scale, toggleName.Size.X.Offset, 0, 40)
                     toggleName.TextYAlignment = Enum.TextYAlignment.Center
                 end
-                if isRivalsMode(boardGame) and bindButton and bindButton.Visible then
+                if (isRivals or isColdWar or isProjectDelta) and bindButton and bindButton.Visible then
                     bindButton.AnchorPoint = Vector2.new(1, 0.5)
                     bindButton.Position = UDim2.new(1, 0, 0.5, 0)
                     bindButton.Size = UDim2.fromOffset(40, 16)
@@ -9061,46 +9189,16 @@ function BedWars.BuildUI(boardGame)
         end)
     end
     local openingTween
-    local panelTweens = {}
-    local panelDestinations = {}
     track(board:GetPropertyChangedSignal("Visible"):Connect(function()
         if openingTween then openingTween:Cancel() end
-        for _, tween in pairs(panelTweens) do tween:Cancel() end
-        table.clear(panelTweens)
         if board.Visible then
-            openingScale.Value = 0.88
+            openingScale.Value = 0.98
             openingTween = TweenService:Create(openingScale,
-                TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                 { Value = 1 })
             openingTween:Play()
-            for index, name in ipairs(categoryOrder) do
-                local panel = columns[name].Frame
-                local destination = panel.Position
-                panelDestinations[name] = destination
-                panel.Position = destination + UDim2.fromOffset(0, -16)
-                local tween = TweenService:Create(panel,
-                    TweenInfo.new(0.28, Enum.EasingStyle.Quad,
-                        Enum.EasingDirection.Out, 0, false, (index - 1) * 0.035),
-                    { Position = destination })
-                panelTweens[name] = tween
-                local completedConnection
-                completedConnection = tween.Completed:Connect(function(state)
-                    if state == Enum.PlaybackState.Completed
-                        and panelTweens[name] == tween then
-                        panelTweens[name] = nil
-                        panelDestinations[name] = nil
-                    end
-                    completedConnection:Disconnect()
-                    tween:Destroy()
-                end)
-                tween:Play()
-            end
         else
             openingScale.Value = 1
-            for name, destination in pairs(panelDestinations) do
-                columns[name].Frame.Position = destination
-            end
-            table.clear(panelDestinations)
             closeSettings()
         end
         onMenuVisibility()
@@ -9169,7 +9267,7 @@ function BedWars.BuildUI(boardGame)
         { "Player", "Pickup Range", "Player", "BedWars", "Pickup Range", "Pickup Range" },
         { "Player", "Zoom Unlocker", "Player", "BedWars", "Zoom Unlocker", "Zoom Unlocker" },
         { "Player", "Third Person", "Player", "All", "Third Person", "Third Person" },
-        { "Visuals", "ESP Boxes", "Visuals", "All", "ESP Boxes", "ESP" },
+        { "Visuals", "ESP Boxes", "Visuals", "BedWars", "ESP Boxes", "ESP Boxes" },
         { "Visuals", "Player Outlines", "Visuals", "BedWars", "Player Outlines", "Player Outlines" },
         { "Visuals", "Name Tags", "Visuals", "BedWars", "Name Tags", "Name Tags" },
         { "Visuals", "Bed Outline", "Visuals", "BedWars", "Bed Outline", "Bed Outline" },
@@ -9192,14 +9290,12 @@ function BedWars.BuildUI(boardGame)
         { "Misc", "Trap Disabler", "Misc", "BedWars", "Trap Disabler", "Trap Disabler" },
         { "Misc", "Staff Detector", "Misc", "BedWars", "Staff Detector", "Staff Detector" },
         { "Misc", "Anti AFK", "Misc", "BedWars", "Anti AFK", "Anti AFK" },
-        { "Misc", "Spinbot", "Misc", "All", "Spinbot", "Spinbot" },
+        { "Player", "Spinbot", "Player", "All", "Spinbot", "Spinbot" },
         { "Fun", "Ghost Pulse", "Misc", "All", "Ghost Pulse", "Ghost Pulse" },
         { "Fun", "Kill Chat", "Fun", "BedWars", "Kill Chat", "Kill Chat" },
         { "Fun", "Auto Reply", "Fun", "BedWars", "Auto Reply", "Auto Reply" },
         { "Fun", "Fake Projectiles", "Fun", "All", "Fake Projectiles", "Throw Fake Projectiles" },
         { "Fun", "Colored Footsteps", "Fun", "All", "Colored Footsteps", "Colored Footsteps" },
-        { "Dev Tools", "DEX", "Dev Tools", "BedWars", "DEX" },
-        { "Dev Tools", "Water Speed", "Dev Tools", "BedWars", "Water Speed", "Water Speed" },
         { "Sunset", "Configs", "Sunset", "All", "Configs" },
         { "Sunset", "Notifications", "Sunset", "BedWars", "Notifications", "Notifications" },
         { "Visuals", "Music Overlay", "Visuals", "BedWars", "Music Overlay", "Music Overlay" },
@@ -9211,26 +9307,64 @@ function BedWars.BuildUI(boardGame)
         { "Sunset", "Menu Key", "Sunset", "All", "Main" },
     }
 
-    if isRivals then
+    if isProjectDelta then
         specs = {
-            { "Combat", "Silent Aim", "Combat", BOARD_GAME_NAME, "Silent Aim", "Silent Aim" },
-            { "Combat", "Aim Assist", "Combat", BOARD_GAME_NAME, "Aim Assist", "Aim Assist" },
-            { "Combat", "Legit Aimbot", "Combat", BOARD_GAME_NAME, "Legit Aimbot", "Legit Aimbot" },
-            { "Combat", "Aimbot", "Combat", BOARD_GAME_NAME, "Aimbot", "Aimbot" },
-            { "Combat", "Instant Hit", "Combat", BOARD_GAME_NAME, "Instant Hit" },
-            { "Sunset", "Preset Profiles", "Sunset", BOARD_GAME_NAME, "Preset Profiles" },
-            { "Sunset", "Named Presets", "Sunset", "All", "Configs" },
-            { "Sunset", "Hide Visuals", "Sunset", BOARD_GAME_NAME, "Hide Visuals", "Hide Visuals" },
-            { "Movement", "Fly", "Movement", BOARD_GAME_NAME, "Fly", "Fly" },
-            { "Misc", "Spinbot", "Misc", BOARD_GAME_NAME, "Spinbot", "Spinbot" },
-            { "Visuals", "FOV", "Visuals", BOARD_GAME_NAME, "FOV", "FOV" },
-            { "Visuals", "FOV Circle", "Visuals", BOARD_GAME_NAME, "FOV Circle", "FOV Circle" },
-            { "Visuals", "Player Outlines", "Visuals", BOARD_GAME_NAME, "Player Outlines", "Player Outlines" },
-            { "Visuals", "ESP Boxes", "Visuals", BOARD_GAME_NAME, "ESP Boxes", "ESP Boxes" },
-            { "Visuals", "Target HUD", "Visuals", BOARD_GAME_NAME, "Target HUD", "Target HUD" },
-            { "Visuals", "Music Overlay", "Visuals", BOARD_GAME_NAME, "Music Overlay", "Music Overlay" },
-            { "Fun", "Kill Chat", "Fun", BOARD_GAME_NAME, "Kill Chat", "Kill Chat" },
-            { "Sunset", "Module List", "Sunset", BOARD_GAME_NAME, "Module List", "Module List" },
+            { "Visuals", "ESP Boxes", "Visuals", "Project Delta", "ESP Boxes", "ESP Boxes" },
+            { "Visuals", "Player Outlines", "Visuals", "Project Delta", "Player Outlines", "Player Outlines" },
+            { "Visuals", "FOV", "Visuals", "Project Delta", "FOV", "FOV" },
+            { "Visuals", "Visibility", "Visuals", "Project Delta", "Visibility", "No Fog" },
+            { "Player", "Spinbot", "Player", "Project Delta", "Spinbot", "Spinbot" },
+            { "Player", "Third Person", "Player", "Project Delta", "Third Person", "Third Person" },
+            { "Player", "Zoom Unlocker", "Player", "Project Delta", "Zoom Unlocker", "Zoom Unlocker" },
+            { "Sunset", "Module List", "Sunset", "Project Delta", "Module List", "Module List" },
+            { "Sunset", "Configs", "Sunset", "All", "Configs" },
+            { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+            { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
+            { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
+            { "Sunset", "Colors", "Sunset", "All", "Colors" },
+            { "Sunset", "Menu Key", "Sunset", "All", "Main" },
+        }
+    elseif isColdWar then
+        specs = {
+            { "Movement", "Car Fly", "Movement", "Cold War", "Car Fly", "Car Fly" },
+            { "Movement", "Car Lift", "Movement", "Cold War", "Car Lift", "Car Lift" },
+            { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
+            { "Movement", "Car Anti Aim", "Movement", "Cold War", "Car Anti Aim", "Car Anti Aim" },
+            { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling", "Car Fling" },
+            { "Player", "Instant Actions", "Player", "Cold War", "Instant Actions", "Instant Actions" },
+            { "Combat", "Car Kill All", "Combat", "Cold War", "Car Kill All", "Car Kill All" },
+            { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
+            { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
+            { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
+            { "Player", "Spinbot", "Player", "Cold War", "Spinbot", "Spinbot" },
+            { "Visuals", "Reload Timer", "Visuals", "Cold War", "Reload Timer", "Reload Timer" },
+            { "Visuals", "FOV Circle", "Visuals", "Cold War", "FOV Circle", "FOV Circle" },
+            { "Visuals", "ESP Boxes", "Visuals", "Cold War", "ESP Boxes", "ESP Boxes" },
+            { "Visuals", "Player Outlines", "Visuals", "Cold War", "Player Outlines", "Player Outlines" },
+            { "Visuals", "Visibility", "Visuals", "Cold War", "Visibility", "No Fog" },
+            { "Sunset", "Module List", "Sunset", "Cold War", "Module List", "Module List" },
+            { "Sunset", "Configs", "Sunset", "All", "Configs" },
+            { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
+            { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
+            { "Sunset", "Auto Reinject", "Sunset", "All", "Arena Travel", "Auto Reinject" },
+            { "Sunset", "Colors", "Sunset", "All", "Colors" },
+            { "Sunset", "Menu Key", "Sunset", "All", "Main" },
+        }
+    elseif isRivals then
+        specs = {
+            { "Combat", "Silent Aim", "Combat", boardGame, "Silent Aim", "Silent Aim" },
+            { "Combat", "Aim Assist", "Combat", boardGame, "Aim Assist", "Aim Assist" },
+            { "Combat", "Aimbot", "Combat", boardGame, "Aimbot", "Aimbot" },
+            { "Movement", "Fly", "Movement", boardGame, "Fly", "Fly" },
+            { "Player", "Spinbot", "Player", boardGame, "Spinbot", "Spinbot" },
+            { "Visuals", "FOV", "Visuals", boardGame, "FOV", "FOV" },
+            { "Visuals", "FOV Circle", "Visuals", boardGame, "FOV Circle", "FOV Circle" },
+            { "Visuals", "Player Outlines", "Visuals", boardGame, "Player Outlines", "Player Outlines" },
+            { "Visuals", "ESP Boxes", "Visuals", boardGame, "ESP Boxes", "ESP Boxes" },
+            { "Visuals", "Target HUD", "Visuals", boardGame, "Target HUD", "Target HUD" },
+            { "Visuals", "Music Overlay", "Visuals", boardGame, "Music Overlay", "Music Overlay" },
+            { "Fun", "Kill Chat", "Fun", boardGame, "Kill Chat", "Kill Chat" },
+            { "Sunset", "Module List", "Sunset", boardGame, "Module List", "Module List" },
             { "Sunset", "Configs", "Sunset", "All", "Configs" },
             { "Sunset", "Watermark", "Sunset", "All", "Watermark", "Enabled" },
             { "Sunset", "Menu Blur", "Sunset", "All", "Menu Blur", "Enabled" },
@@ -9241,13 +9375,8 @@ function BedWars.BuildUI(boardGame)
     end
 
 
-    if IS_GENERIC then
-        for _, spec in ipairs(specs) do
-            if spec[2] == "Silent Aim" and not RivalsAim.ArsenalSilentAvailable then spec[6] = nil end
-        end
-    end
-    if boardGame==BOARD_GAME_NAME and (game.PlaceId==17625359962 or game.GameId==6035872082)then
-        table.insert(specs,{"Combat","Rivals Compatibility","Combat",BOARD_GAME_NAME,"Rivals Compatibility"})
+    for index = #specs, 1, -1 do
+        if Settings.IsRetiredSection(specs[index][5]) then table.remove(specs, index) end
     end
     local listedSections = {}
     for _, spec in ipairs(specs) do
@@ -9257,7 +9386,7 @@ function BedWars.BuildUI(boardGame)
         if section.Game == boardGame then
             local heading = section.Box:FindFirstChildOfClass("TextLabel")
             local title = heading and heading.Text
-            if title then
+            if title and not Settings.IsRetiredSection(title) then
                 for _, control in ipairs(ConfigControls) do
                     if control.Kind == "toggle" and control.Box == section.Box then
                         local tabName = control.Key:match("^([^/]+)/")
@@ -9284,7 +9413,7 @@ function BedWars.BuildUI(boardGame)
         ["Bed Alarm"] = "Alerts when an enemy approaches your team bed.",
         ["Notifications"] = "Shows Rift alerts for friends, staff, and enabled features.",
         ["Music Overlay"] = "Shows your desktop media with artwork and playback time.",
-        ["Fly"] = isRivals and "Flight stops when movement keys are released and includes noclip."
+        ["Fly"] = isRivals and "Velocity flight with adjustable coast when disabled."
             or "Balloon lift with a timed flight fallback.",
         ["Launch"] = "Launch yourself from a nearby cannon using its game action.",
         ["Speed"] = isRivals and "Sets movement speed; type a value above the slider range."
@@ -9293,7 +9422,6 @@ function BedWars.BuildUI(boardGame)
         ["Auto Team Upgrade"] = "Buys affordable team upgrades at a nearby team shop.",
         ["Health Display"] = "Shows your health below the crosshair.",
         ["Auto Mine"] = "Mines nearby iron ore blocks.",
-        ["Water Speed"] = "Adjusts horizontal swimming speed while in water.",
         ["Miner Statue ESP"] = "Highlights enemy petrified players for the Miner kit.",
         ["Miner Tracker"] = "Nearby statue alerts, valid gather range, and your rewards.",
         ["Adetunde Tracker"] = "Hammer hits, shield events, storm stacks, and strikes.",
@@ -9307,7 +9435,6 @@ function BedWars.BuildUI(boardGame)
         ["Gravity"] = "Adjusts gravity on your character locally.",
         ["Zoom Unlocker"] = "Allows the camera to zoom farther out.",
         ["Name Tags"] = "Shows player names and health above characters.",
-        ["DEX"] = "Open Rift's built-in game instance explorer.",
         ["Auto Reply"] = "Replies to mentions or chat using your saved message.",
         ["Module List"] = "Shows active modules along the screen edge.",
         ["Aim Assist"] = "Steers your aim toward nearby enemy players.",
@@ -9325,6 +9452,7 @@ function BedWars.BuildUI(boardGame)
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
         ["Spider"] = "Climbs walls while moving into them from any direction.",
+        ["Car Fling"] = "Boosts your car near vehicles; temporarily restores collision while Car Noclip stays enabled.",
         ["Void Water"] = "Places water when void is detected beneath you.",
         ["Noclip"] = "Lets your character pass through local collision surfaces.",
         ["Auto Bed"] = "Targets nearby enemy beds with supported tools.",
@@ -9333,16 +9461,6 @@ function BedWars.BuildUI(boardGame)
         ["Fast Consume"] = "Uses consumables with a shorter wait.",
         ["Pickup Range"] = "Expands the range for supported item pickup.",
         ["ESP Boxes"] = "Draws boxes around visible players.",
-        ["Enhanced ESP"] = "Names, health, distance, skeletons, chams, radar and cover colors.",
-        ["Peek Alerts"] = "Signals when an enemy changes from covered to visible.",
-        ["Custom Crosshair"] = "Preset and adjustable crosshair shapes, colors and movement gap.",
-        ["Weapon Appearance"] = "Local cosmetic materials and tint for detected own weapons.",
-        ["Graphic Filters"] = "Color grading, bloom and local fog presets.",
-        ["Transparent Walls"] = "Fades nearby map geometry locally without changing collision.",
-        ["Wallbang Experimental"] = "Experimental client firing filter; server hits unverified.",
-        ["Fast Equip"] = "Reduces detected client weapon EquipTime values.",
-        ["Preset Profiles"] = "Apply Transparent, Legit Player, Rage Cheat, Tactical, Streamer or Performance settings.",
-        ["Instant Hit"] = "Physical projectile conversion is unsupported; inspect the equipped weapon metadata.",
         ["Player Outlines"] = "Outlines every other living player, including teammates.",
         ["Third Person"] = "Moves the camera behind your character; adjust the distance in settings.",
         ["Bed Outline"] = "Highlights beds so they are easier to locate.",
@@ -9353,7 +9471,7 @@ function BedWars.BuildUI(boardGame)
         ["Crosshair"] = "Shows a custom centered crosshair.",
         ["FOV"] = "Changes your camera field of view.",
         ["Session Info"] = "Shows time played, kills, wins, and match stats.",
-        ["Atmosphere"] = "Changes local lighting, fog, time, and ambient mood.",
+        ["Atmosphere"] = "Changes local skies, lighting, fog, ambient colors, and screen tint.",
         ["Orbiting Stars"] = "Adds orbiting cosmetic stars around your character.",
         ["Water Fight"] = "Places water around you when an enemy gets close.",
         ["Auto Play Again"] = "Queues another match after the current one ends.",
@@ -9381,7 +9499,7 @@ function BedWars.BuildUI(boardGame)
         BorderSizePixel = 0, ZIndex = 500,
     }, Gui)
     new("UICorner", { CornerRadius = UDim.new(0, 2) }, tooltip)
-    border(tooltip, Color3.fromRGB(139, 92, 246))
+    border(tooltip, T.border)
     local tooltipText = label(tooltip, "", 13,
         Color3.fromRGB(242, 244, 255))
     tooltipText.Position = UDim2.fromOffset(10, 7)
@@ -9431,17 +9549,28 @@ function BedWars.BuildUI(boardGame)
             end
             local card = new("TextButton", {
                 Name = name, Size = UDim2.new(1, -3, 0, 46),
-                BackgroundColor3 = columnColor, BorderSizePixel = 0,
+                BackgroundColor3 = T.inner, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
-            new("UICorner", { CornerRadius = UDim.new(0, 2) }, card)
+            new("UICorner", { CornerRadius = UDim.new(0, columnLayout and 2 or 7) }, card)
+            local indicator
+            if columnLayout and control then
+                indicator = new("TextLabel", {
+                    Name = "EnabledIndicator", Position = UDim2.fromOffset(6, 6),
+                    Size = UDim2.fromOffset(18, 18), BackgroundColor3 = cardColor,
+                    BorderSizePixel = 0, Text = "", Font = Enum.Font.GothamBold,
+                    TextSize = 13, TextColor3 = Color3.fromRGB(255, 255, 255),
+                }, card)
+                new("UICorner", { CornerRadius = UDim.new(0, 2) }, indicator)
+                border(indicator, T.border)
+            end
             local holder
             if hasSettings then
                 holder = new("Frame", {
                     Name = name .. "Settings", Visible = false,
                     Size = UDim2.new(1, -3, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundColor3 = Color3.fromRGB(22, 27, 41),
+                    BackgroundColor3 = T.inner,
                     BorderSizePixel = 0, LayoutOrder = index * 2 + 1,
                 }, columns[category].List)
                 new("UICorner", { CornerRadius = UDim.new(0, 2) }, holder)
@@ -9451,29 +9580,33 @@ function BedWars.BuildUI(boardGame)
                     if holder.Visible then columns[category].Reflow() end
                 end))
             end
-            local activeGradient = new("UIGradient", {
-                Enabled = false, Rotation = 0,
-                Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(106, 72, 173)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 111, 130)),
-                }),
-            }, card)
             local nameLabel = label(card, name, 14, Color3.fromRGB(242, 244, 255))
             nameLabel.Font = Enum.Font.GothamMedium
-            nameLabel.Position = UDim2.fromOffset(10, 7)
-            nameLabel.Size = UDim2.new(1, hasSettings and -45 or -20, 0, 21)
+            nameLabel.Position = UDim2.fromOffset(columnLayout and (control and 32 or 8) or 13, columnLayout and 4 or 10)
+            nameLabel.TextSize = columnLayout and 12 or 14
+            nameLabel.Size = UDim2.new(1, columnLayout and (hasSettings and -62 or -38) or (hasSettings and -45 or -20), 0, 21)
             nameLabel.TextTruncate = Enum.TextTruncate.None
             nameLabel.TextWrapped = true
             nameLabel.Size = UDim2.new(nameLabel.Size.X.Scale, nameLabel.Size.X.Offset, 0, 36)
             local options = new("TextButton", {
-                Position = UDim2.new(1, -31, 0, 4),
-                Size = UDim2.fromOffset(27, 27),
+                Name = "SettingsButton", AnchorPoint = Vector2.new(1, 0.5),
+                Position = UDim2.new(1, -8, 0.5, 0),
+                Size = UDim2.fromOffset(28, 28),
                 BackgroundTransparency = 1,
-                BorderSizePixel = 0, Text = "···",
+                BorderSizePixel = 0, Text = columnLayout and ">" or "",
                 Font = Enum.Font.GothamBold, TextSize = 15,
                 TextColor3 = muted, AutoButtonColor = false,
                 Visible = hasSettings,
             }, card)
+            for dot = -1, columnLayout and -2 or 1 do
+                local mark = new("Frame", {
+                    Name = "Dot", AnchorPoint = Vector2.new(0.5, 0.5),
+                    Position = UDim2.new(0.5, dot * 5, 0.5, 0),
+                    Size = UDim2.fromOffset(3, 3), BackgroundColor3 = muted,
+                    BorderSizePixel = 0,
+                }, options)
+                new("UICorner", { CornerRadius = UDim.new(1, 0) }, mark)
+            end
             if hasSettings then
                 options.MouseButton1Click:Connect(function()
                     openSettings(box, holder, columns[category])
@@ -9498,7 +9631,7 @@ function BedWars.BuildUI(boardGame)
                 tooltipText.Text = descriptions[name]
                     or (name .. " module. " .. (control and "Click to toggle."
                         or "Click to open its settings."))
-                tooltip.Visible = true
+                tooltip.Visible = false
             end)
             card.MouseLeave:Connect(function()
                 hovered = false
@@ -9516,9 +9649,9 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             table.insert(cards, { Category = category, Card = card, Control = control,
-                Name = nameLabel, Options = options, Holder = holder, Search = searchText,
+                Name = nameLabel, Options = options, Holder = holder, Search = searchText, Indicator = indicator,
                 Kit = category == "KIT" and (kitIds[spec[7]] or spec[8]) or nil,
-                Hovered = function() return hovered end, Gradient = activeGradient })
+                Hovered = function() return hovered end })
         end
     end
     local function refreshSearch()
@@ -9535,7 +9668,8 @@ function BedWars.BuildUI(boardGame)
             entry.Card.Visible = show
             if show then counts[entry.Category] = (counts[entry.Category] or 0) + 1 end
         end
-        for name, column in pairs(columns) do
+        for _, name in ipairs(categoryOrder) do
+            local column = columns[name]
             column.Count.Text = tostring(counts[name] or 0)
             column.VisibleCount = counts[name] or 0
             if name == "KIT" then
@@ -9548,10 +9682,16 @@ function BedWars.BuildUI(boardGame)
             end
             column.Reflow()
         end
+        if query ~= "" and (counts[selectedCategory] or 0) == 0 then
+            for _, name in ipairs(categoryOrder) do
+                if (counts[name] or 0) > 0 then columns.Select(name) break end
+            end
+        end
     end
     searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
     if columns.KIT then columns.KIT.KitSelect(refreshSearch) end
     refreshSearch()
+    Settings.StartupStage("Finishing " .. boardGame .. " menu...")
     local moduleList = new("Frame", {
         Name = boardGame .. "ModuleList", Visible = false,
         AnchorPoint = Vector2.new(1, 0),
@@ -9568,8 +9708,7 @@ function BedWars.BuildUI(boardGame)
     moduleBrand.Size = UDim2.new(1, 0, 0, 24)
     moduleBrand.TextStrokeTransparency = 1
     for index, entry in ipairs(cards) do
-        if entry.Control and entry.Category ~= "Sunset"
-            and entry.Category ~= "Dev Tools" then
+        if entry.Control and entry.Category ~= "Sunset" then
             local textColor = gold
             local row = new("TextLabel", {
                 Visible = false, Size = UDim2.fromOffset(0, 18),
@@ -9608,9 +9747,12 @@ function BedWars.BuildUI(boardGame)
             if board.Visible then
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
-                    entry.Gradient.Enabled = active
-                    local targetColor = active and Color3.new(1, 1, 1)
-                        or (entry.Hovered() and cardColor or columnColor)
+                    if entry.Indicator then
+                        entry.Indicator.BackgroundColor3 = active and accent or cardColor
+                        entry.Indicator.Text = ""
+                    end
+                    local targetColor = active and (columnLayout and T.inner or Color3.fromRGB(28, 70, 114))
+                        or (entry.Hovered() and cardColor or T.inner)
                     if entry.LastColor ~= targetColor then
                         entry.LastColor = targetColor
                         TweenService:Create(entry.Card, TweenInfo.new(0.18,
@@ -9647,8 +9789,7 @@ function BedWars.BuildUI(boardGame)
                 math.max(1, viewport.Y - 52) / math.max(1, contentHeight))
             moduleBrand.Text = BRAND
             for index, entry in ipairs(activeRows) do
-                local progress = (#activeRows > 1) and (index - 1) / (#activeRows - 1) or 0
-                local color = gold:Lerp(Color3.fromRGB(139, 92, 246), progress)
+                local color = gold
                 entry.ModuleText.TextColor3 = color
                 entry.ModuleAccent.BackgroundColor3 = color
                 entry.ModuleRow.Position = UDim2.new(1, 0, 0,
@@ -9660,13 +9801,8 @@ function BedWars.BuildUI(boardGame)
             task.wait(0.15)
         end
     end)
-    local dragHandle = new("Frame", {
-        Name = "DragHandle", Position = UDim2.fromOffset(0, 0),
-        Size = UDim2.fromOffset(285, 69),
-        BackgroundTransparency = 1, Active = true,
-    }, header)
-    makeDraggable(board, dragHandle)
 end
+
 if game.PlaceId == 6872265039 or game.GameId == 2619619496 then
     BedWars.BuildUI()
 end
@@ -9698,7 +9834,7 @@ end
 
 local rivalsModuleLoaded=makeRivalsModuleCache({Env=ENV,Global=getloadedmodules,Now=os.clock})
 
-RivalsAim.Wallbang = { Enabled = false, Rays = 0 }
+RivalsAim.Wallbang = { Enabled = false, Rays = 0, Distance = 20, HitboxSize = 8 }
 
 function RivalsAim.Setup()
     -- Retire the global ray/mouse wrappers left by older builds.
@@ -10017,7 +10153,7 @@ local makeArsenalWallAim = function(deps)
     end
     function policy.Active(options)
         return deps.PlaceId == 286090429 and options == deps.Aim.Aimbot
-            and options.UseWallbang ~= false and deps.Aim.Wallbang.Enabled == true
+            and not options.LegitMode and options.UseWallbang ~= false and deps.Aim.Wallbang.Enabled == true
             and deps.Aim.MapRayAvailable == true and deps.Aim.Legit.Enabled ~= true
             and validMap() ~= nil
     end
@@ -10309,6 +10445,7 @@ end
         if RivalsAim.TargetHUD then RivalsAim.TargetHUD.Visible = false end
         RivalsKillChat.SetEnabled(false)
         RivalsAim.Assist.Enabled, RivalsAim.Aimbot.Enabled, RivalsAim.Legit.Enabled = false, false, false
+        RivalsAim.AutoShoot.Enabled = false
         pcall(function() RunService:UnbindFromRenderStep(cameraBinding) end)
         if visualsConnection then visualsConnection:Disconnect() visualsConnection = nil end
         for model, entry in pairs(visualEntries) do
@@ -10459,23 +10596,24 @@ end
     track(LocalPlayer.CharacterRemoving:Connect(stopAutoFire))
     local function autoFire(options, fighter, part, camera)
         -- Manual firing owns the mouse button; aim never clicks/releases it.
-        if (options.AimWhileFiring and not options.AutomaticSnap) or not options.AutoFire then stopAutoFire() return end
+        if not RivalsAim.AutoShoot.Enabled then stopAutoFire() return end
         local wanted = false
         if part then
             local visible = not options.VisibleOnly or aimUnobstructed(fighter, part, camera.CFrame.Position, options)
             local direction = part.Position - camera.CFrame.Position
             local aligned = direction.Magnitude > 0.001
                 and camera.CFrame.LookVector:Dot(direction.Unit) >= math.cos(math.rad(2))
-            wanted = canFire(options, part:IsDescendantOf(workspace), visible, aligned, focusedGame())
-        elseif options.KeepFiring and not options.VisibleOnly then
-            wanted = options.Enabled and focusedGame()
+            local shoot = RivalsAim.AutoShoot
+            wanted = canFire(shoot, part:IsDescendantOf(workspace), visible, aligned, focusedGame())
+                and (part.Position - camera.CFrame.Position).Magnitude <= shoot.MaxDistance
+
         end
         if game:GetService("GuiService").MenuIsOpen or anyMenuVisible() or UIS:GetFocusedTextBox() then wanted = false end
-        local ok, err = pcall(firing.Update, wanted, options.FireMode or "Hold", options.FireCPS, os.clock())
+        local ok, err = pcall(firing.Update, wanted, RivalsAim.AutoShoot.FireMode or "Hold", RivalsAim.AutoShoot.FireCPS, os.clock())
         if not ok then
             stopAutoFire()
-            options.AutoFire = false
-            if options.AutoFireToggle then options.AutoFireToggle.Set(false) end
+            RivalsAim.AutoShoot.Enabled = false
+            if RivalsAim.AutoShoot.Toggle then RivalsAim.AutoShoot.Toggle.Set(false) end
             aimStatus(options, "Auto Fire unavailable; manual fire remains available")
             warn("[Rift] Auto Fire input failed: " .. tostring(err))
         end
@@ -10504,6 +10642,77 @@ local function arsenalShotQuery(scriptPath, receiver, origin, direction, params,
 end
 
 -- Experimental client query filtering, not a verified server penetration bypass.
+-- Reject map filtering unless each covered surface fits the configured penetration budget.
+local function arsenalWallbangWithinDistance(origin, direction, params, budget)
+    if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" or direction.Magnitude < 0.001 then return false end
+    local cursor, unit, remaining = origin, direction.Unit, direction.Magnitude
+    local used, touched = 0, false
+    local query = RaycastParams.new()
+    query.FilterType = Enum.RaycastFilterType.Include
+    local map = workspace:FindFirstChild("Map")
+    if not map then return false end
+    query.FilterDescendantsInstances = {map}
+    query.IgnoreWater = true
+    for _ = 1, 8 do
+        local hit = workspace:Raycast(cursor, unit * remaining, query)
+        if not hit then return touched end
+        if not hit.Instance:IsA("BasePart") then return false end
+        local allowance = budget - used
+        if allowance <= 0 then return false end
+        local exitQuery = RaycastParams.new()
+        exitQuery.FilterType = Enum.RaycastFilterType.Include
+        exitQuery.FilterDescendantsInstances = {hit.Instance}
+        local exit = workspace:Raycast(hit.Position + unit * (allowance + 0.01), -unit * (allowance + 0.02), exitQuery)
+        if not exit then return false end
+        local thickness = (exit.Position - hit.Position):Dot(unit)
+        if thickness <= 0.001 or thickness > allowance then return false end
+        used, touched = used + thickness, true
+        local travelled = (exit.Position - cursor).Magnitude + 0.02
+        remaining = remaining - travelled
+        if remaining <= 0 then return true end
+        cursor = exit.Position + unit * 0.02
+    end
+    return false
+end
+local function makeArsenalHitboxes(deps)
+    local saved = {}
+    local function restore(part, original)
+        if part.Parent then
+            part.Size, part.CanCollide, part.CanTouch = original.Size, original.Collide, original.Touch
+            part.Massless, part.Transparency = original.Massless, original.Transparency
+        end
+        saved[part] = nil
+    end
+    local controller = {}
+    function controller.Tick(enabled, size, maxRange)
+        local keep = {}
+        local own = deps.Player.Character
+        local ownRoot = own and own:FindFirstChild("HumanoidRootPart")
+        if enabled and ownRoot then
+            for _, player in ipairs(deps.Players:GetPlayers()) do
+                local character = player.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                local head = character and character:FindFirstChild("Head")
+                local enemy = player ~= deps.Player and (deps.Player.Neutral or player.Neutral or player.Team ~= deps.Player.Team)
+                if enemy and humanoid and humanoid.Health > 0 and head and head:IsA("BasePart")
+                    and (head.Position - ownRoot.Position).Magnitude <= maxRange then
+                    keep[head] = true
+                    if not saved[head] then
+                        saved[head] = {Size=head.Size,Collide=head.CanCollide,Touch=head.CanTouch,Massless=head.Massless,Transparency=head.Transparency}
+                    end
+                    head.Size = deps.Vector.new(size,size,size)
+                    head.CanCollide, head.CanTouch, head.Massless, head.Transparency = false, false, true, 1
+                end
+            end
+        end
+        for part, original in pairs(saved) do if not keep[part] then restore(part, original) end end
+    end
+    function controller.Close()
+        for part, original in pairs(saved) do restore(part, original) end
+    end
+    return controller
+end
+
 local function arsenalWallbangFilter(params, world, players)
     if typeof(params) ~= "RaycastParams" or params.FilterType ~= Enum.RaycastFilterType.Exclude then return end
     local map = world:FindFirstChild("Map")
@@ -10634,8 +10843,10 @@ end
                 if state.Restored or not isRivalsMode(Settings.SelectedGame) or not focusedGame()
                     or anyMenuVisible() or UIS:GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then return end
                 local corrected, preserved = aimTransform(origin, direction, params)
-                if RivalsAim.Wallbang.Enabled and not RivalsAim.Legit.Enabled then
-                    local filtered = arsenalWallbangFilter(preserved or params, workspace, Players)
+                if RivalsAim.Wallbang.Enabled and not RivalsAim.Legit.Enabled and not RivalsAim.Aimbot.LegitMode then
+                    local shotDirection = corrected or direction
+                    local filtered = arsenalWallbangWithinDistance(origin, shotDirection, preserved or params, RivalsAim.Wallbang.Distance)
+                        and arsenalWallbangFilter(preserved or params, workspace, Players)
                     if filtered then
                         RivalsAim.Wallbang.Rays += 1
                         return corrected or direction, filtered
@@ -10704,6 +10915,7 @@ end
         local options = active(RivalsAim.Legit) and RivalsAim.Legit
             or active(RivalsAim.Aimbot) and RivalsAim.Aimbot
             or active(RivalsAim.Assist) and RivalsAim.Assist
+            or active(RivalsAim.AutoShoot) and RivalsAim.AutoShoot
         state.MapRayAimActive = options == RivalsAim.Aimbot
         if options ~= RivalsAim.Aimbot then state.LockedPlayer, state.LockedFighter = nil, nil end
         if not options then stopAutoFire() state.CameraTargetPlayer = nil return end
@@ -10748,7 +10960,9 @@ end
             if (part.Position - camera.CFrame.Position).Magnitude < 0.001 then stopAutoFire() return end
             aimStatus(options, "Tracking " .. tostring(state.CameraTargetPlayer and state.CameraTargetPlayer.Name or "target"))
             local goal = CFrame.lookAt(camera.CFrame.Position, part.Position)
-            if options == RivalsAim.Aimbot then
+            if options == RivalsAim.AutoShoot then
+                -- Trigger module observes the crosshair without moving the camera.
+            elseif options == RivalsAim.Aimbot and not options.LegitMode then
                 camera.CFrame = goal
             else
                 local alpha = 1 - math.exp(-options.Strength * math.clamp(delta or 1 / 60, 0, 0.1))
@@ -11159,7 +11373,7 @@ function RivalsAim.BuildUI()
     end)
     RivalsAim.AimPart = "Closest To Crosshair"
     RivalsAim.RedirectChance,RivalsAim.HeadshotChance=100,0
-    Elements.Slider(aim,"Redirect Chance",0,100,100,"%",function(value)RivalsAim.RedirectChance=value end)
+    Elements.Slider(aim,"Shot Redirect Chance",0,100,100,"%",function(value)RivalsAim.RedirectChance=value end)
     Elements.Slider(aim,"Headshot Chance",0,100,0,"%",function(value)RivalsAim.HeadshotChance=value end)
     Elements.Label(aim,"Headshot Chance mixes Head with Closest To Crosshair; a fixed Target Part overrides the mix. Chance is per firing query, not guaranteed damage.")
     Elements.Label(aim, "Closest To Crosshair selects a visible head, torso, arm or leg dynamically.")
@@ -11170,7 +11384,7 @@ function RivalsAim.BuildUI()
         RivalsAim.WallCheck = on
     end)
     end
-    for _, spec in ipairs({ { "Aim Assist", "Assist" }, { "Legit Aimbot", "Legit" }, { "Aimbot", "Aimbot" } }) do
+    for _, spec in ipairs({ { "Aim Assist", "Assist" }, { "Aimbot", "Aimbot" } }) do
         local name, key = spec[1], spec[2]
         local options = RivalsAim[key]
         local section = gameSection(BOARD_GAME_NAME, AimTab.Left, name)
@@ -11210,7 +11424,7 @@ function RivalsAim.BuildUI()
         elseif key == "Aimbot" then
             Elements.Label(section, "Clear line of sight is required unless the experimental wallbang module and this setting are enabled.")
             if game.PlaceId == 286090429 then
-                Elements.Toggle(section, "Use Experimental Wallbang", true, function(on) options.UseWallbang = on end)
+                Elements.Toggle(section, "Use Wallbang", true, function(on) options.UseWallbang = on end)
                 Elements.Toggle(section, "Require Map Floor", true, function(on) options.RequireMapFloor = on end)
                 Elements.Slider(section, "Floor Check Distance", 10, 250, 100, "studs", function(value) options.FloorCheckDistance = value end)
                 Elements.Label(section, "Map floor check rejects covered targets beneath the arena. Terrain and non-map obstructions remain blocking.")
@@ -11218,20 +11432,16 @@ function RivalsAim.BuildUI()
         else
             Elements.Toggle(section, "Wall Check", options.WallCheck, function(on) options.WallCheck = on end)
         end
-        if key == "Legit" or key == "Aimbot" then
-            options.AutoFireToggle = Elements.Toggle(section, "Auto Fire", options.AutoFire == true, function(on)
+        if key == "Aimbot" then
+            Elements.Dropdown(section, "Aim Mode", { "Standard", "Legit" }, "Standard", function(value)
+                options.LegitMode = value == "Legit"
+                options.AutomaticSnap = not options.LegitMode
+                options.VisibleOnly, options.WallCheck = true, true
+                options.HoldMouse, options.AimWhileFiring = false, false
+                options.IgnoreFOV = not options.LegitMode
                 RivalsAim.StopAutoFire()
-                options.AutoFire = on
             end)
-            Elements.Dropdown(section, "Fire Mode", { "Hold", "Clicks" }, "Hold", function(value)
-                RivalsAim.StopAutoFire()
-                options.FireMode = value
-            end)
-            Elements.Label(section, "Hold: automatic weapons. Clicks: semi-auto. Manual aim uses your own trigger.")
-            if key == "Aimbot" then
-                Elements.Label(section, "Auto Fire stops when the target is hidden or lost.")
-            end
-            Elements.Slider(section, "Fire Rate", 1, 20, 8, "clicks/s", function(value) options.FireCPS = value end)
+            Elements.Slider(section, "Legit Aim Smoothing", 1, 30, 8, "", function(value) options.Strength = value end)
         end
         if key == "Aimbot" or key == "Legit" then
             Elements.Slider(section, "Max Distance", 25, 5000, 1000, "studs", function(value)
@@ -11244,20 +11454,6 @@ function RivalsAim.BuildUI()
             end)
         end
     end
-    local outlines = gameSection(BOARD_GAME_NAME, VisualsTab.Left, "Player Outlines")
-    Elements.Toggle(outlines, "Player Outlines", false, function(on)
-        RivalsVisuals.OutlinesOn = on
-    end)
-    Elements.ColorPicker(outlines, "Color", RivalsVisuals.OutlineColor, function(color)
-        RivalsVisuals.OutlineColor = color
-    end)
-    local boxes = gameSection(BOARD_GAME_NAME, VisualsTab.Left, "ESP Boxes")
-    Elements.Toggle(boxes, "ESP Boxes", false, function(on)
-        RivalsVisuals.BoxesOn = on
-    end)
-    Elements.ColorPicker(boxes, "Color", RivalsVisuals.BoxColor, function(color)
-        RivalsVisuals.BoxColor = color
-    end)
     local targetHUD = gameSection(BOARD_GAME_NAME, VisualsTab.Left, "Target HUD")
     Elements.Toggle(targetHUD, "Target HUD", false, function(on)
         RivalsVisuals.TargetHUDOn = on
@@ -11266,9 +11462,10 @@ function RivalsAim.BuildUI()
     Elements.Slider(targetHUD, "Health Bar Time", 0.05, 1, 0.3, "seconds", function(value)
         RivalsVisuals.TargetHUDBarTime = value
     end, 0.05)
+    RivalsVisuals.MusicSource = "Music Bridge"
     local music = gameSection(BOARD_GAME_NAME, VisualsTab.Left, "Music Overlay")
     if IS_GENERIC then
-        Elements.Dropdown(music, "Source", { "Game Audio", "Music Bridge" }, "Game Audio", function(value)
+        Elements.Dropdown(music, "Source", { "Music Bridge", "Game Audio" }, "Music Bridge", function(value)
             RivalsVisuals.MusicSource = value
         end)
     end
@@ -11294,7 +11491,7 @@ function RivalsAim.BuildUI()
         RivalsFOV.Value = value
         RivalsFOV.Apply()
     end)
-    buildSpinbot(gameSection(BOARD_GAME_NAME, MiscTab.Left, "Spinbot"))
+    buildSpinbot(gameSection(BOARD_GAME_NAME, PlayerTab.Left, "Spinbot"))
     local speed = gameSection(BOARD_GAME_NAME, MainTab.Left, "Speed")
     RivalsSpeed.Toggle = Elements.Toggle(speed, "Speed", false, function(on)
         RivalsSpeed.Enabled = on
@@ -11304,24 +11501,7 @@ function RivalsAim.BuildUI()
         RivalsSpeed.Value = value
         RivalsSpeed.Apply()
     end, 1, true)
-    local thirdPerson = gameSection(BOARD_GAME_NAME, PlayerTab.Left, "Third Person")
-    Elements.Toggle(thirdPerson, "Third Person", false, function(on)
-        RivalsView.ThirdPerson = on
-        RivalsView.Apply()
-    end)
-    Elements.Slider(thirdPerson, "Distance", 5, 40, 10, "studs", function(value)
-        RivalsView.Distance = value
-        RivalsView.Apply()
-    end)
-    local zoom = gameSection(BOARD_GAME_NAME, PlayerTab.Left, "Zoom Unlocker")
-    Elements.Toggle(zoom, "Zoom Unlocker", false, function(on)
-        RivalsView.ZoomUnlocked = on
-        RivalsView.Apply()
-    end)
-    Elements.Slider(zoom, "Max Zoom", 40, 1000, 500, "studs", function(value)
-        RivalsView.MaxZoom = value
-        RivalsView.Apply()
-    end)
+    if not IS_GENERIC then
     local killChat = gameSection(BOARD_GAME_NAME, FunTab.Left, "Kill Chat")
     if IS_GENERIC then
         Elements.Label(killChat, "Requires replicated Humanoid creator tags.")
@@ -11333,6 +11513,7 @@ function RivalsAim.BuildUI()
     Elements.Slider(killChat, "Message Delay", 1, 10, 2, "seconds", function(value)
         RivalsKillChat.Cooldown = value
     end, 0.5)
+    end
     local list = gameSection(BOARD_GAME_NAME, SettingsTab.Left, "Module List")
     Elements.Toggle(list, "Module List", true, function(on)
         Settings.ModuleListOn = on
@@ -11346,6 +11527,19 @@ function RivalsAim.BuildUI()
         Settings.FlySpeed = value
     end)
     Elements.Label(flight, "Unanchored flight with hover braking, adjustable speed and noclip.")
+    local noclip = gameSection(BOARD_GAME_NAME, MainTab.Left, "Noclip")
+    Elements.Toggle(noclip, "Noclip", false, function(on)
+        Settings.NoclipEnabled = on
+        CharacterCollision.SetManual(on)
+    end)
+    local shoot = gameSection(BOARD_GAME_NAME, AimTab.Left, "Auto Shoot")
+    RivalsAim.AutoShoot.Toggle = Elements.Toggle(shoot, "Auto Shoot", false, function(on)
+        RivalsAim.AutoShoot.Enabled = on
+        RivalsAim.StopAutoFire()
+    end)
+    Elements.Slider(shoot, "Maximum Shoot Distance", 25, 5000, 1000, "studs", function(value) RivalsAim.AutoShoot.MaxDistance = value end)
+    Elements.Dropdown(shoot, "Fire Mode", { "Hold", "Clicks" }, "Hold", function(value) RivalsAim.AutoShoot.FireMode = value end)
+    Elements.Slider(shoot, "Fire Rate", 1, 20, 8, "clicks/s", function(value) RivalsAim.AutoShoot.FireCPS = value end)
     BedWars.BuildUI(BOARD_GAME_NAME)
 end
 
@@ -12139,7 +12333,7 @@ local makeEnvironmentRenderer=function(deps,options,mod,skyFaces,patch,restoreGr
                 patch("Sky",object,"StarCount",options.SkyStyle=="Galaxy"and 3000 or 0)
             end
             keep[deps.Lighting]=true
-            patch("Sky",deps.Lighting,"ClockTime",options.ClockTime)
+
             environment.SkyStatus=fallback and "Asset load failed; built-in sky active"
                 or loading[options.SkyStyle]and "Loading sky textures..."
                 or loaded[options.SkyStyle]and ("Active: "..options.SkyStyle.."; textures loaded")
@@ -12526,7 +12720,7 @@ end
             end
             return
         end
-        local frame3d, size3d = model:GetBoundingBox()
+        local frame3d, size3d = root.CFrame, Vector3.new(4, 6, 2)
         local x, y, width, height = deps.ProjectBounds(camera, frame3d, size3d)
         if not x then return end
         entry.Box.Position, entry.Box.Size = UDim2.fromOffset(x, y), UDim2.fromOffset(width, height)
@@ -12861,7 +13055,7 @@ end
 local makeProfileRuntime = function(deps)
     local titles={AutomaticSnap="Automatic Visible Snap",AimWhileFiring="Aim While Firing",
         HoldMouse="Hold Right Mouse",AutoFire="Auto Fire",FireMode="Fire Mode",FireCPS="Fire Rate",
-        MaxDistance="Max Distance",AimPart="Aim Part",Strength="Strength",UseWallbang="Use Experimental Wallbang",
+        MaxDistance="Max Distance",AimPart="Aim Part",Strength="Strength",UseWallbang="Use Wallbang",
         RequireMapFloor="Require Map Floor",FloorCheckDistance="Floor Check Distance",TeamCheck="Team Check",
         RedirectChance="Redirect Chance",HeadshotChance="Headshot Chance"}
     local function sync(section, title, value, immediate)
@@ -13511,469 +13705,83 @@ do
         end)
         custom.Bind(key, control)
     end
-    local themes = {
-        Clean = { VisibleColor = Color3.fromRGB(92,224,186), HiddenColor = Color3.fromRGB(171,157,207),
-            EnemyColor = Color3.fromRGB(247,125,139), Accent = Color3.fromRGB(94,176,255),
-            CrossColor = Color3.fromRGB(235,244,255), WeaponColor = Color3.fromRGB(94,176,255) },
-        Neon = { VisibleColor = Color3.fromRGB(66,255,217), HiddenColor = Color3.fromRGB(183,112,255),
-            EnemyColor = Color3.fromRGB(255,99,196), Accent = Color3.fromRGB(166,104,255),
-            CrossColor = Color3.fromRGB(106,255,224), WeaponColor = Color3.fromRGB(166,104,255) },
-        Ice = { VisibleColor = Color3.fromRGB(121,236,246), HiddenColor = Color3.fromRGB(125,155,198),
-            EnemyColor = Color3.fromRGB(255,151,173), Accent = Color3.fromRGB(109,201,255),
-            CrossColor = Color3.fromRGB(221,249,255), WeaponColor = Color3.fromRGB(138,225,255) },
-        Ember = { VisibleColor = Color3.fromRGB(255,204,111), HiddenColor = Color3.fromRGB(177,132,123),
-            EnemyColor = Color3.fromRGB(255,114,92), Accent = Color3.fromRGB(255,171,83),
-            CrossColor = Color3.fromRGB(255,234,205), WeaponColor = Color3.fromRGB(255,159,82) },
-        Mono = { VisibleColor = Color3.fromRGB(245,247,250), HiddenColor = Color3.fromRGB(138,148,163),
-            EnemyColor = Color3.fromRGB(224,232,244), Accent = Color3.fromRGB(204,214,229),
-            CrossColor = Color3.fromRGB(245,247,250), WeaponColor = Color3.fromRGB(205,214,228) },
-        Transparent = { VisibleColor = Color3.fromRGB(165,246,233), HiddenColor = Color3.fromRGB(161,190,221),
-            EnemyColor = Color3.fromRGB(255,173,190), Accent = Color3.fromRGB(145,218,255),
-            CrossColor = Color3.fromRGB(239,250,255), WeaponColor = Color3.fromRGB(145,218,255) },
-        Forest = { VisibleColor = Color3.fromRGB(157,233,150), HiddenColor = Color3.fromRGB(132,172,150),
-            EnemyColor = Color3.fromRGB(255,174,125), Accent = Color3.fromRGB(99,202,151),
-            CrossColor = Color3.fromRGB(228,251,218), WeaponColor = Color3.fromRGB(99,202,151) },
-        Sunset = { VisibleColor = Color3.fromRGB(255,218,162), HiddenColor = Color3.fromRGB(190,151,203),
-            EnemyColor = Color3.fromRGB(255,136,164), Accent = Color3.fromRGB(249,165,132),
-            CrossColor = Color3.fromRGB(255,237,221), WeaponColor = Color3.fromRGB(249,165,132) },
-        Mocha = {VisibleColor=Color3.fromRGB(166,227,161),HiddenColor=Color3.fromRGB(203,166,247),
-            EnemyColor=Color3.fromRGB(243,139,168),Accent=Color3.fromRGB(250,179,135),
-            CrossColor=Color3.fromRGB(205,214,244),WeaponColor=Color3.fromRGB(250,179,135)},
-        Nord = {VisibleColor=Color3.fromRGB(163,190,140),HiddenColor=Color3.fromRGB(129,161,193),
-            EnemyColor=Color3.fromRGB(191,97,106),Accent=Color3.fromRGB(136,192,208),
-            CrossColor=Color3.fromRGB(236,239,244),WeaponColor=Color3.fromRGB(136,192,208)},
-        Dracula = {VisibleColor=Color3.fromRGB(80,250,123),HiddenColor=Color3.fromRGB(189,147,249),
-            EnemyColor=Color3.fromRGB(255,121,198),Accent=Color3.fromRGB(189,147,249),
-            CrossColor=Color3.fromRGB(139,233,253),WeaponColor=Color3.fromRGB(189,147,249)},
-    }
-    local function applyVisualTheme(value)
-        custom.Apply(themes[value])
-        custom.Apply({MenuTransparency = value == "Transparent" and 0.4 or 0})
-        local menuPresets = { Clean="Rift", Neon="Amethyst", Ice="Ocean", Ember="Amber", Mono="Rift",
-            Transparent="Ocean", Forest="Emerald", Sunset="Sunset", Mocha="Mocha", Nord="Nord", Dracula="Dracula" }
-        for _, control in ipairs(ConfigControls) do
-            if control.Key == "Sunset/All/Colors/Preset" then
-                control.Set(menuPresets[value], true)
-                if Elements.ApplyMenuPreset then Elements.ApplyMenuPreset(menuPresets[value]) end
-                break
-            end
-        end
-    end
-    local esp = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Enhanced ESP")
-    toggle(esp, "ESP", "Enhanced ESP")
-    local themeChoice = Elements.Dropdown(esp, "Visual Theme", { "Clean", "Neon", "Ice", "Ember", "Mono", "Transparent", "Forest", "Sunset", "Mocha", "Nord", "Dracula" }, "Clean", applyVisualTheme)
-    slider(esp, "MenuTransparency", "Menu Transparency", 0, 0.75, "", 0.05)
-    local espPresets = {
-        Clean = { Boxes=true, Names=true, Health=true, Distance=true, WeaponNames=true,
-            Skeleton=false, Chams=false, Arrows=true, Tracers=false, Radar=false, BoxStyle="Corners", TextSize=13, Thickness=1.5 },
-        Tactical = { Boxes=true, Names=true, Health=true, Distance=true, WeaponNames=true,
-            Skeleton=true, Chams=true, Arrows=true, Tracers=false, Radar=true, BoxStyle="Corners", TextSize=13, Thickness=1.5 },
-        Minimal = { Boxes=false, Names=true, Health=false, Distance=true, WeaponNames=false,
-            Skeleton=false, Chams=false, Arrows=true, Tracers=false, Radar=false, BoxStyle="Corners", TextSize=12, Thickness=1 },
-        Detailed = { Boxes=true, Names=true, Health=true, Distance=true, WeaponNames=true,
-            Skeleton=true, Chams=true, Arrows=true, Tracers=true, Radar=true, BoxStyle="Full", TextSize=14, Thickness=2 },
-    }
-    local espChoice = Elements.Dropdown(esp, "ESP Preset", { "Clean", "Tactical", "Minimal", "Detailed" }, "Clean", function(value) custom.Apply(espPresets[value]); custom.Apply({ESP=true}) end)
-    for _, spec in ipairs({ {"TeamCheck","Enemies Only"}, {"VisibleOnly","Visible Only"},
-        {"Boxes","Boxes"}, {"Names","Names"}, {"Health","Health Bars and HP"},
-        {"Distance","Distance"}, {"WeaponNames","Weapon Names"}, {"Skeleton","Skeletons"},
-        {"Chams","Chams"}, {"Arrows","Off-screen Indicators"}, {"Tracers","Tracers"}, {"Radar","Radar"} }) do toggle(esp, spec[1], spec[2]) end
-    choice(esp,"BoxStyle","Box Style",{"Corners","Full","Rounded"})
-    choice(esp,"ESPFont","Label Font",{"GothamMedium","GothamBold","Code"})
-    choice(esp,"InfoLayout","Details Layout",{"Inline","Stacked"})
-    choice(esp,"NamePlacement","Name Placement",{"Above","Below"})
-    choice(esp,"HealthStyle","Health Bar Placement",{"Left","Bottom","Top"})
-    slider(esp,"HealthWidth","Health Bar Width",2,5,"px")
-    slider(esp,"CornerScale","Corner Length",0.1,0.4,"",0.02)
-    toggle(esp,"LabelPlates","Readable Label Backgrounds")
-    slider(esp,"ChamsOutline","Chams Outline Opacity",0,1,"",0.05)
-    choice(esp,"TracerOrigin","Tracer Origin",{"Bottom","Center","Top"})
-    choice(esp,"TracerEnd","Tracer Endpoint",{"Feet","Center","Head"})
-    slider(esp,"TracerOpacity","Tracer Opacity",0.1,1,"",0.05)
-    slider(esp,"TracerWidth","Tracer Width",1,3,"px",0.5)
-    slider(esp,"ArrowSize","Indicator Size",16,32,"px")
-    slider(esp,"ArrowMargin","Indicator Edge Margin",40,100,"px")
-    choice(esp,"CircleStyle","FOV Ring Style",{"Solid","Double","Dashed","Dotted"})
-    slider(esp,"CircleWidth","FOV Ring Width",1,3,"px",0.5)
-    slider(esp,"CircleOpacity","FOV Ring Opacity",0.2,1,"",0.05)
-    color(esp,"CircleColor","FOV Ring Color")
-    slider(esp, "MaxDistance", "Maximum Distance", 50, 3000, "studs")
-    slider(esp, "TextSize", "Text Size", 10, 20, "px")
-    slider(esp, "Thickness", "Line Thickness", 1, 4, "px", 0.5)
-    slider(esp, "FillOpacity", "Chams Opacity", 0, 0.8, "", 0.05)
-    slider(esp, "RadarRange", "Radar Range", 50, 500, "studs")
-    slider(esp, "UpdateRate", "Visual Update Rate", 5, 60, "Hz")
+    custom.Apply({BoxStyle="Full", Arrows=false, WeaponNames=false, Chams=false, Skeleton=false})
+    local esp = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "ESP Boxes")
+    toggle(esp, "ESP", "ESP Boxes")
+    toggle(esp, "Names", "Player Names")
+    toggle(esp, "Health", "Health Bars")
+    toggle(esp, "Distance", "Distance")
+    toggle(esp, "TeamCheck", "Enemies Only")
     color(esp, "VisibleColor", "Visible Player Color")
     color(esp, "HiddenColor", "Covered Player Color")
-    color(esp, "EnemyColor", "Indicator and Alert Color")
-    color(esp, "Accent", "Radar Accent")
-    Elements.Label(esp, "Visibility uses raycasts. Covered players can be displayed without making shots pass through cover.")
-    local alerts = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Peek Alerts")
-    toggle(alerts, "Alerts", "Peek Alerts")
-    Elements.Dropdown(alerts, "Alert Preset", { "All Exposed", "Facing You", "Quiet" }, "All Exposed", function(value)
-        custom.Apply(value == "Facing You" and { AlertFacingOnly=true, AlertCooldown=3, AlertDuration=1.5 }
-            or value == "Quiet" and { AlertFacingOnly=false, AlertCooldown=6, AlertDuration=1 }
-            or { AlertFacingOnly=false, AlertCooldown=3, AlertDuration=1.5 })
-        custom.Apply({Alerts=true})
-    end)
-    toggle(alerts, "AlertFacingOnly", "Only When Facing You")
-    slider(alerts, "FacingAngle", "Facing Angle", 10, 80, "degrees")
-    slider(alerts, "AlertCooldown", "Per-player Cooldown", 1, 10, "seconds", 0.5)
-    slider(alerts, "AlertDuration", "Alert Duration", 0.5, 5, "seconds", 0.5)
-    Elements.Label(alerts, "Alerts when an enemy changes from covered to visible. Facing you is estimated from head orientation, not confirmed enemy aim.")
-    local crosshair = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Custom Crosshair")
-    toggle(crosshair, "Crosshair", "Custom Crosshair")
-    local crossPresets = { Cross={CrossLength=7,CrossGap=4,CrossWidth=2,CrossDot=true,DynamicGap=false},
-        Dot={CrossLength=0,CrossGap=0,CrossWidth=3,CrossDot=true,DynamicGap=false},
-        Tight={CrossLength=4,CrossGap=2,CrossWidth=1,CrossDot=false,DynamicGap=false},
-        Dynamic={CrossLength=8,CrossGap=5,CrossWidth=2,CrossDot=true,DynamicGap=true} }
-    local crossChoice = Elements.Dropdown(crosshair, "Crosshair Preset", { "Cross", "Dot", "Tight", "Dynamic" }, "Cross", function(value) custom.Apply(crossPresets[value]); custom.Apply({Crosshair=true}) end)
-    color(crosshair, "CrossColor", "Color")
-    slider(crosshair, "CrossLength", "Length", 0, 25, "px")
-    slider(crosshair, "CrossGap", "Gap", 0, 25, "px")
-    slider(crosshair, "CrossWidth", "Width", 1, 6, "px")
-    toggle(crosshair, "CrossDot", "Center Dot")
-    toggle(crosshair, "CrossOutline", "Dark Outline")
-    toggle(crosshair, "DynamicGap", "Movement Gap")
-    local weapon = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Weapon Appearance")
-    toggle(weapon, "Weapon", "Weapon Appearance")
-    local weaponPresets = {
-        ["Ice Neon"]={WeaponMaterial="Neon",WeaponColor=Color3.fromRGB(138,225,255),WeaponReflectance=0.05},
-        Chrome={WeaponMaterial="Metal",WeaponColor=Color3.fromRGB(203,215,230),WeaponReflectance=0.65},
-        ["Crimson Matte"]={WeaponMaterial="SmoothPlastic",WeaponColor=Color3.fromRGB(182,66,86),WeaponReflectance=0},
-        ["Gold Metal"]={WeaponMaterial="Metal",WeaponColor=Color3.fromRGB(228,181,89),WeaponReflectance=0.25},
-    }
-    local weaponChoice = Elements.Dropdown(weapon, "Weapon Preset", { "Ice Neon", "Chrome", "Crimson Matte", "Gold Metal" }, "Ice Neon", function(value) custom.Apply(weaponPresets[value]); custom.Apply({Weapon=true}) end)
-    color(weapon, "WeaponColor", "Tint")
-    choice(weapon, "WeaponMaterial", "Material", { "Neon", "Metal", "SmoothPlastic", "Glass", "ForceField" })
-    slider(weapon, "WeaponReflectance", "Reflectance", 0, 1, "", 0.05)
-    toggle(weapon, "RemoveTextures", "Hide Supported Textures")
-    local weaponStatus = Elements.Label(weapon, "Off")
-    Elements.Label(weapon, "Local tint and supported textures on own gun/viewmodel parts. SurfaceAppearance can override mesh textures; disable to restore.")
-    local sceneSection=gameSection(BOARD_GAME_NAME,VisualsTab.Right,"Lighting and VFX")
-    toggle(sceneSection,"SceneLighting","Scene Lighting")
-    color(sceneSection,"SceneAmbient","Indoor Ambient")
-    color(sceneSection,"SceneOutdoor","Outdoor Ambient")
-    color(sceneSection,"SceneTop","Top Light Tint")
-    color(sceneSection,"SceneBottom","Bottom Light Tint")
-    slider(sceneSection,"SceneBrightness","Light Brightness",0,5,"",0.1)
-    toggle(sceneSection,"SceneShadows","Scene Shadows")
-    slider(sceneSection,"SceneShadowSoftness","Shadow Softness",0,1,"",0.05)
-    slider(sceneSection,"SceneDiffuse","Diffuse Light",0,1,"",0.05)
-    slider(sceneSection,"SceneSpecular","Specular Light",0,1,"",0.05)
-    slider(sceneSection,"SceneSunRays","Sun Rays",0,0.3,"",0.01)
-    slider(sceneSection,"SceneRaySpread","Ray Spread",0,1,"",0.05)
-    toggle(sceneSection,"EffectStyle","Restyle VFX and Shot Trails")
-    color(sceneSection,"EffectColor","VFX Primary Color")
-    color(sceneSection,"EffectSecondary","VFX Secondary Color")
-    slider(sceneSection,"EffectGlow","VFX Glow",0,1,"",0.05)
-    slider(sceneSection,"ShotWidth","Beam Width",0.03,0.6,"studs",0.01)
-    slider(sceneSection,"TrailLifetime","Trail Lifetime",0.05,0.8,"seconds",0.05)
-    local fpsSection=gameSection(BOARD_GAME_NAME,VisualsTab.Right,"Maximum FPS")
-    toggle(fpsSection,"FPSMode","Maximum FPS Mode")
-    local fpsStatus=Elements.Label(fpsSection,"Off")
-    Elements.Label(fpsSection,"Disables particles, trails, dynamic lights and post-effects; requests graphics quality 1. Choose Maximum FPS in Theme Preset for the full lightweight ESP setup.")
-    Elements.Button(fpsSection,"Export Maximum FPS FastFlags",function()
-        local write=ENV.writefile or writefile
-        if typeof(write)~="function"then fpsStatus.Text="Executor file writing unavailable"return end
-        local ok,err=pcall(write,"ClientAppSettings-MaximumFPS.json",game:GetService("HttpService"):JSONEncode({["DFIntDebugFRMQualityLevelOverride"]="1",["DFFlagTextureQualityOverrideEnabled"]="True",["DFIntTextureQualityOverride"]="0",["FIntDebugForceMSAASamples"]="1",["FIntFRMMaxGrassDistance"]="0",["FIntFRMMinGrassDistance"]="0"}))
-        fpsStatus.Text=ok and "Exported ClientAppSettings-MaximumFPS.json; client configuration needs a Roblox restart"or tostring(err)
-    end)
-    Elements.Label(fpsSection,"FastFlags are optional, client-wide startup settings. Only allowlisted keys are exported; changing themes cannot undo imported flags.")
-    local sceneStatus=Elements.Label(sceneSection,"Off")
-    Elements.Button(sceneSection,"Reapply Full Scene",custom.Scene.Refresh)
-    Elements.Label(sceneSection,"Styles existing VFX with restrained trails. Themes preserve map surfaces, clear atmosphere and use bright lighting. Changes restore on disable or F8.")
-    local graphics = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Graphic Filters")
-    toggle(graphics, "Graphics", "Graphic Filters")
-    toggle(graphics,"OverrideGameFilters","Override Game Filters")
-    local graphicsStatus=Elements.Label(graphics,"Off")
-    Elements.Button(graphics,"Reapply Sky and Graphics",custom.Environment.Refresh)
-    Elements.Label(graphics,"Overrides game color/bloom filters locally; originals restore on disable. Some post-effects depend on Roblox graphics quality.")
-    local graphicsPresets = {
-        Natural={Brightness=0,Contrast=0.08,Saturation=0.08,Tint=Color3.new(1,1,1),Bloom=0.1,NoFog=false},
-        Cinematic={Brightness=-0.02,Contrast=0.15,Saturation=-0.2,Tint=Color3.fromRGB(242,249,255),Bloom=0.15,NoFog=false},
-        Vibrant={Brightness=0.02,Contrast=0.12,Saturation=0.3,Tint=Color3.new(1,1,1),Bloom=0.25,NoFog=false},
-        Competitive={Brightness=0.08,Contrast=0.12,Saturation=0.1,Tint=Color3.new(1,1,1),Bloom=0,NoFog=true},
-    }
-    local graphicsChoice = Elements.Dropdown(graphics, "Graphics Preset", { "Natural", "Cinematic", "Vibrant", "Competitive" }, "Natural", function(value) custom.Apply(graphicsPresets[value]); custom.Apply({Graphics=true}) end)
-    slider(graphics, "Brightness", "Brightness", -0.3, 0.3, "", 0.01)
-    slider(graphics, "Contrast", "Contrast", -0.4, 0.5, "", 0.01)
-    slider(graphics, "Saturation", "Saturation", -1, 0.6, "", 0.05)
-    color(graphics, "Tint", "Tint")
-    slider(graphics, "Bloom", "Bloom Intensity", 0, 1, "", 0.05)
-    slider(graphics, "BloomSize", "Bloom Size", 4, 56, "")
-    toggle(graphics, "NoFog", "Remove Local Fog")
-    local walls = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Transparent Walls")
-    toggle(walls, "Walls", "Transparent Walls")
-    Elements.Dropdown(walls, "Wall Preset", { "Subtle", "Clear", "Fully Transparent" }, "Clear", function(value)
-        custom.Apply({ Walls=true, WallOpacity = value == "Subtle" and 0.5 or value == "Fully Transparent" and 1 or 0.8 })
-    end)
-    slider(walls, "WallOpacity", "Local Transparency", 0, 1, "", 0.05)
-    slider(walls, "WallDistance", "Effect Distance", 50, 2000, "studs")
-    toggle(walls, "WallsOnly", "Keep Broad Flat Floors Visible")
-    local wallStatus = Elements.Label(walls, "Off")
-    Elements.Label(walls, "Fades nearby collidable geometry under Map. Collision, bullet filtering and aim visibility stay independent.")
-    local skySection = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Custom Sky")
-    toggle(skySection, "Sky", "Custom Sky")
-    toggle(skySection,"ClearSky","Clear Sky Obstructions")
-    local skyStatus=Elements.Label(skySection,"Off")
-    Elements.Button(skySection,"Retry Sky Textures",custom.Environment.RetrySky)
-    Elements.Label(skySection,"Clears local atmosphere/cloud cover while enabled. Failed asset loads use the built-in sky and report the failure.")
-    choice(skySection, "SkyStyle", "Sky Style", {"Built-in","Blue","Pink Morning","Sunset","Galaxy","Vaporwave"})
-    slider(skySection, "ClockTime", "Time of Day", 0, 24, "hours", 0.5)
-    local textureChoice = Elements.Dropdown(weapon, "Texture Preset", {"Original","Scratch","Water","Lightning","Dots"}, "Original", function(name)
-        local textures={Original="",Scratch="rbxassetid://6248583558",Water="rbxassetid://12734728683",Lightning="rbxassetid://247707592",Dots="rbxassetid://6665227233"}
-        custom.Apply({WeaponTexture=textures[name],RemoveTextures=false,Weapon=true})
-    end)
-    custom.Bind("WeaponTexture", {Set=function(value)
-        local names={[""]="Original",["rbxassetid://6248583558"]="Scratch",["rbxassetid://12734728683"]="Water",["rbxassetid://247707592"]="Lightning",["rbxassetid://6665227233"]="Dots"}
-        textureChoice.Set(names[value] or "Original", true)
-    end})
-    local profileSection = gameSection(BOARD_GAME_NAME, SettingsTab.Right, "Preset Profiles")
-    local selectedTheme,selectedModules="Default","1 - Minimal Silent"
-    local profileStatus = Elements.Label(profileSection, "Choose a theme and a module level independently. Selection applies immediately.")
-    local function profileToggle(title, value)
-        if title == "Wallbang Experimental" and value and RivalsAim.MapRayAvailable ~= true then return false end
-        if title=="Infinite Ammo" and value and not IS_GENERIC then return false end
-        local suffix = "/" .. BOARD_GAME_NAME .. "/" .. title .. "/" .. title
-        for _, control in ipairs(ConfigControls) do
-            if control.Kind == "toggle" and control.Key:sub(-#suffix) == suffix then
-                control.Set(value, false, true)
-                return true
-            end
+    slider(esp, "MaxDistance", "Maximum ESP Distance", 50, 5000, "studs")
+    slider(esp, "TextSize", "Label Size", 10, 20, "px")
+    slider(esp, "Thickness", "Box Thickness", 1, 4, "px", 0.5)
+    local lighting = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Lighting")
+    toggle(lighting, "SceneLighting", "Lighting")
+    color(lighting, "SceneAmbient", "Indoor Ambient")
+    color(lighting, "SceneOutdoor", "Outdoor Ambient")
+    slider(lighting, "SceneBrightness", "Brightness", 0, 5, "", 0.1)
+    toggle(lighting, "SceneShadows", "Shadows")
+    local visibility = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Visibility")
+    local visibilityOn, fullBright, noFog = false, true, true
+    local beforeVisibility
+    local function applyVisibility()
+        if visibilityOn and not beforeVisibility then
+            beforeVisibility = {SceneLighting=opts.SceneLighting,SceneBrightness=opts.SceneBrightness,SceneAmbient=opts.SceneAmbient,SceneOutdoor=opts.SceneOutdoor,SceneShadows=opts.SceneShadows}
         end
-        return false
-    end
-    local function aimOption(name, title, value)
-        local section = name == "Legit" and "Legit Aimbot" or name == "Assist" and "Aim Assist" or "Aimbot"
-        local suffix = "/" .. BOARD_GAME_NAME .. "/" .. section .. "/" .. title
-        for _, control in ipairs(ConfigControls) do
-            if control.Key:sub(-#suffix) == suffix then control.Set(value, false, true) return end
+        custom.Apply({Graphics=visibilityOn, NoFog=visibilityOn and noFog,
+            Brightness=0, Contrast=0, Saturation=0, Tint=Color3.new(1,1,1), Bloom=0})
+        if visibilityOn and fullBright then
+            custom.Apply({SceneLighting=true,SceneBrightness=3,SceneAmbient=Color3.new(1,1,1),SceneOutdoor=Color3.new(1,1,1),SceneShadows=false})
+        elseif beforeVisibility then
+            custom.Apply(beforeVisibility)
         end
+        if not visibilityOn then beforeVisibility=nil end
     end
-    local profiles = makeProfileController({
-        PlaceId=game.PlaceId,IsRivals=not IS_GENERIC,
-        VisualDefaults=visualDefaults,
-        ThemeCircle=function()
-            RivalsAim.FOVColor,RivalsAim.FOVThickness=opts.CircleColor,opts.CircleWidth
-            RivalsAim.FOVStyle,RivalsAim.FOVOpacity=opts.CircleStyle,opts.CircleOpacity
-            local suffix="/"..BOARD_GAME_NAME.."/FOV Circle/Color"
-            for _,control in ipairs(ConfigControls)do
-                if control.Key:sub(-#suffix)==suffix then control.Set(opts.CircleColor,true)break end
-            end
-        end,
-        Runtime = makeProfileRuntime({Aim=RivalsAim,Speed=RivalsSpeed,Settings=Settings,
-            Controls=ConfigControls,Game=BOARD_GAME_NAME,Accent=function()return opts.Accent end}),
-        DisableAim = function()
-            if RivalsAim.Toggle then RivalsAim.Toggle.Set(false, false, true) end
-            for _, mode in ipairs({"Assist","Legit","Aimbot"}) do
-                if RivalsAim[mode] and RivalsAim[mode].Toggle then RivalsAim[mode].Toggle.Set(false, false, true) end
-            end
-            if RivalsAim.StopAutoFire then RivalsAim.StopAutoFire() end
-        end,
-        EnableAim = function(mode)
-            if mode=="Silent" then
-                if IS_GENERIC and not RivalsAim.ArsenalSilentAvailable then error("Silent Aim adapter unavailable in this game")end
-                if RivalsAim.Toggle then RivalsAim.Toggle.Set(true,false,true)end
-                if not RivalsAim.Enabled then error(RivalsAim.LoadError or "Silent Aim could not initialize")end
-                return
-            end
-            if RivalsAim[mode].Toggle then RivalsAim[mode].Toggle.Set(true, false, true) end
-            if not RivalsAim[mode].Enabled then error(RivalsAim.LoadError or "Aim mode could not initialize")end
-        end,
-        Movement = function(flight,noclip)
-            if not profileToggle("Fly",flight) and flight then error("Fly control unavailable")end
-            for _,control in ipairs(ConfigControls)do
-                if control.Key=="Movement/All/Noclip/Noclip" then
-                    control.Set(noclip,false,true)
-                    return
-                end
-            end
-            if noclip then error("Noclip control unavailable")end
-        end,
-        Toggle = profileToggle,
-        VisualReset = function() custom.Apply(visualDefaults) end,
-        VisualApply = custom.Apply,
-        FOV = function(value)
-            RivalsFOV.Enabled = value ~= nil
-            if value then RivalsFOV.Value = value end
-            for _, control in ipairs(ConfigControls) do
-                if control.Key == "Visuals/" .. BOARD_GAME_NAME .. "/FOV/FOV" then control.Set(value ~= nil, true) end
-                if value and control.Key == "Visuals/" .. BOARD_GAME_NAME .. "/FOV/Field of View" then control.Set(value, true) end
-            end
-            if RivalsFOV.Apply then RivalsFOV.Apply() end
-        end,
-        Theme = function(name) themeChoice.Set(name, true); applyVisualTheme(name) end,
-        ESP = function(name) espChoice.Set(name, true); custom.Apply(espPresets[name]) end,
-        Crosshair = function(name) crossChoice.Set(name, true); custom.Apply(crossPresets[name]) end,
-        Graphics = function(name) graphicsChoice.Set(name, true); custom.Apply(graphicsPresets[name]) end,
-        Weapon = function(name) weaponChoice.Set(name, true); custom.Apply(weaponPresets[name]) end,
-    })
-    local function applySelection(action,value)
-        local ok, applied, message = pcall(action,value)
-        profileStatus.Text = ok and message or ("Preset failed: " .. tostring(applied):sub(1,100))
-    end
-    Elements.Dropdown(profileSection, "Theme Preset", profiles.ThemeNames, "Default", function(value)
-        selectedTheme=value
-        applySelection(profiles.ApplyTheme,value)
-    end, true)
-    Elements.Button(profileSection,"Apply Theme",function()applySelection(profiles.ApplyTheme,selectedTheme)end)
-    selectedModules=profiles.ModuleNames[1]
-    Elements.Dropdown(profileSection,"Module Preset",profiles.ModuleNames,selectedModules,function(value)
-        selectedModules=value
-        applySelection(profiles.ApplyModules,value)
-    end,true)
-    Elements.Button(profileSection,"Apply Modules",function()applySelection(profiles.ApplyModules,selectedModules)end)
-    Elements.Label(profileSection,(game.PlaceId==286090429 or not IS_GENERIC) and "Levels: 1 ESP only; 2 25px / 80% silent; 3 50px / 100% silent + 1.5x speed; 4 75px / 40% head + relative fire/reload; 5 100px / head + 3x speed; 6 full visible aimbot."
-        or "All six module levels enable enemy ESP. Levels 1-3 use nearest visible body-part silent aim; higher levels add visible snap, flight and gun modules.")
-    Elements.Label(profileSection,"Redirect chance rolls per eligible firing ray. Failed rolls keep the original shot; chance settings do not guarantee damage or hit acceptance.")
-    Elements.Label(profileSection,"Themes own sky, lighting, weapon finish, ESP style/tracers, crosshair, colors and camera FOV. Modules own aim, circle radius, speed and combat features. Name and save your edited setup in Sunset > Named Presets.")
-    Elements.Label(profileSection,"Maximum uses available modules; instant lobby kills and physical projectile instant hits remain unavailable.")
--- Only controls this script's presentation. Gameplay options remain untouched.
-local makePresentationHide=function(deps)
-    local names={MenuUI=true,EspGui=true,RiftCustomVisuals=true,RiftNotifications=true,
-        SunsetCenteredCrosshair=true,RiftRivalsESP=true,SunsetRivalsFOV=true}
-    local saved={}
-    local module={Hidden=false,Closed=false}
-    function module.Tick()
-        if module.Closed or not module.Hidden then return end
-        for _,gui in ipairs(deps.Parent:GetChildren())do
-            if gui:IsA("ScreenGui") and names[gui.Name] then
-                if saved[gui]==nil then saved[gui]=gui.Enabled end
-                gui.Enabled=false
-            end
-        end
-    end
-    function module.Set(value)
-        module.Hidden=value==true
-        deps.Settings.HideVisuals=module.Hidden
-        if module.Hidden then
-            module.Tick()
-            deps.Visual.Hide()
-        else
-            for gui,enabled in pairs(saved)do
-                if gui.Parent then gui.Enabled=enabled end
-                saved[gui]=nil
-            end
-        end
-        if deps.VisibilityChanged then deps.VisibilityChanged()end
-    end
-    function module.Close()
-        module.Set(false)
-        module.Closed=true
-    end
-    return module
-end
-
-    do
-        local hiding=makePresentationHide({Parent=Gui.Parent,Settings=Settings,Visual=custom,VisibilityChanged=onMenuVisibility})
-        local section=gameSection(BOARD_GAME_NAME,SettingsTab.Right,"Hide Visuals")
-        local control=Elements.Toggle(section,"Hide Visuals",false,hiding.Set)
-        control.NoSave=true
-        ConfigControls[#ConfigControls].NoSave=true
-        Elements.Label(section,"F8 hides/restores this script's menu, ESP, circles, crosshair and cosmetic changes. Aim, movement and weapon settings remain active.")
-        Elements.Label(section,"This hides local visuals only; other players and server checks can still observe gameplay behavior.")
-        track(UIS.InputBegan:Connect(function(input,processed)
-            if not processed and not listeningFor and not UIS:GetFocusedTextBox() and input.KeyCode==Enum.KeyCode.F8 then
-                control.Set(not hiding.Hidden,false,true)
-            end
-        end))
-        local nextTick=0
-        track(RunService.RenderStepped:Connect(function()
-            if os.clock()>=nextTick then nextTick=os.clock()+0.1;hiding.Tick()end
-        end))
-        track({Disconnect=hiding.Close})
-    end
-    if not IS_GENERIC then
-        local wallStatus=gameSection(BOARD_GAME_NAME,AimTab.Right,"Wallbang Experimental")
-        Elements.Label(wallStatus,"Unavailable: no server-accepted Rivals wallbang implementation has been verified.")
-        Elements.Label(wallStatus,"Transparent Walls changes local rendering only. Visible aim checks remain separate from wall appearance.")
-        local instantStatus=gameSection(BOARD_GAME_NAME,AimTab.Right,"Instant Hit")
-        Elements.Label(instantStatus,"Raycast-only native redirection is available when the gun adapter loads. Physical-projectile Instant Hit is unavailable.")
-        Elements.Label(instantStatus,"Use Rivals Compatibility > Check Rivals Compatibility to inspect this session's native adapter and weapon fields.")
-    end
-    local errorStatus = Elements.Label(esp, "Renderer ready")
-    local statusAt = 0
+    Elements.Toggle(visibility, "Visibility", false, function(on) visibilityOn=on;applyVisibility() end)
+    Elements.Toggle(visibility, "No Fog", true, function(on) noFog=on;applyVisibility() end)
+    Elements.Toggle(visibility, "Full Bright", true, function(on) fullBright=on;applyVisibility() end)
+    local sky = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Sky")
+    toggle(sky, "Sky", "Sky")
+    choice(sky, "SkyStyle", "Sky Preset", {"Built-in","Blue","Pink Morning","Sunset","Galaxy","Vaporwave"})
+    local cross = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "Crosshair")
+    toggle(cross, "Crosshair", "Crosshair")
+    color(cross, "CrossColor", "Color")
+    slider(cross, "CrossLength", "Length", 0, 25, "px")
+    slider(cross, "CrossGap", "Gap", 0, 25, "px")
+    slider(cross, "CrossWidth", "Thickness", 1, 6, "px")
+    local fps = gameSection(BOARD_GAME_NAME, VisualsTab.Right, "FPS Boost")
+    toggle(fps, "FPSMode", "FPS Boost")
+    local lastError, lastErrorAt
     track(RunService.RenderStepped:Connect(function()
-        local now = os.clock()
-        local ok, err = pcall(custom.Tick, now)
-        if now >= statusAt then
-            statusAt = now + 0.5
-            fpsStatus.Text=custom.FPS.Status
-            sceneStatus.Text=custom.Scene.Status
-            skyStatus.Text=custom.Environment.SkyStatus
-            graphicsStatus.Text=custom.Environment.GraphicsStatus
-            if custom.Environment.WeatherError then skyStatus.Text=skyStatus.Text.." | weather error: "..custom.Environment.WeatherError end
-            weaponStatus.Text = opts.Weapon and (custom.WeaponParts > 0 and ("Tinted parts: " .. custom.WeaponParts) or "No supported own weapon parts found") or "Off"
-            wallStatus.Text = opts.Walls and ("Faded map parts: " .. custom.WallParts) or "Off"
-            errorStatus.Text = (not ok or custom.LastError) and ("Renderer error: " .. tostring(err or custom.LastError):sub(1, 100)) or "Renderer ready"
+        local ok, err = pcall(custom.Tick, os.clock())
+        if not ok and (err ~= lastError or os.clock() - (lastErrorAt or 0) >= 5) then
+            lastError, lastErrorAt = err, os.clock()
+            Settings.Notify("Visuals", tostring(err))
         end
     end))
-    track({ Disconnect = custom.Close })
+    track({Disconnect=custom.Close})
 end
 
 if game.PlaceId == 286090429 then
-    do
-        local section = gameSection(BOARD_GAME_NAME, AimTab.Right, "Wallbang Experimental")
-        Elements.Toggle(section, "Wallbang Experimental", false, function(on)
-            RivalsAim.Wallbang.Enabled = on == true and RivalsAim.MapRayAvailable == true
-            local ray = ENV.RiftArsenalDirectAimRay
-            if ray then ray.Active = RivalsAim.Wallbang.Enabled or RivalsAim.Enabled or RivalsAim.Aimbot.Enabled end
-        end)
-        local status = Elements.Label(section, "Off")
-        Elements.Label(section, "Excludes Map only from identified firing queries. Regular Aimbot can acquire covered enemies when its Use Experimental Wallbang setting is on.")
-        Elements.Label(section, "No server-accepted wall hits have been verified. Legit Aimbot suppresses this filter.")
-        Elements.Label(section, "Unlimited knife reach: unavailable; no current validated melee method was found.")
-        local nextStatus = 0
-        track(RunService.Heartbeat:Connect(function()
-            local now = os.clock()
-            if now < nextStatus then return end
-            nextStatus = now + 0.5
-            local state = RivalsAim.Wallbang
-            status.Text = not state.Enabled and (RivalsAim.MapRayAvailable and "Off" or "Unavailable: direct firing hook unsupported")
-                or RivalsAim.Legit.Enabled and "Paused while Legit Aimbot is enabled"
-                or ("Modified " .. state.Rays .. " firing queries | server hits unverified")
-        end))
-    end
-    do
-        local section = gameSection(BOARD_GAME_NAME, AimTab.Right, "Instant Hit")
-        Elements.Label(section, "Unavailable: no verified physical-projectile firing hook is identified.")
-        Elements.Label(section, "The existing ray adapter corrects ray-based shots immediately. It does not remove physical projectile travel, server latency, range limits, or damage falloff.")
-        local status = Elements.Label(section, "Equipped weapon metadata has not been inspected.")
-        local scanning = false
-        Elements.Button(section, "Inspect All Weapons", function()
-            if scanning then return end
-            scanning = true
-            status.Text = "Scanning all client weapon definitions..."
-            local ok, data, err = pcall(inspectProjectileWeapon, false, game:GetService("ReplicatedStorage"))
-            scanning = false
-            if not ok or not data then status.Text = "Scan failed: " .. tostring(err or data) return end
-            status.Text = "Inspected " .. data.Inspected .. "/" .. data.Total .. " definitions; "
-                .. data.Matched .. " contain projectile/range fields."
-            local write = ENV.writefile or writefile
-            if type(write) == "function" then
-                local saved, saveError = pcall(function()
-                    write("Rift-Arsenal-All-Projectile-Fields.json", HttpService:JSONEncode(data))
-                end)
-                status.Text = status.Text .. (saved and " | report saved" or " | save failed: " .. tostring(saveError):sub(1,60))
-            else status.Text = status.Text .. " | report export unavailable" end
-        end)
-        Elements.Button(section, "Inspect Equipped Weapon", function()
-            local data, err = inspectProjectileWeapon(LocalPlayer, game:GetService("ReplicatedStorage"))
-            if not data then status.Text = tostring(err) return end
-            local fields = {}
-            for i, field in ipairs(data.Fields) do
-                if i > 10 then break end
-                table.insert(fields, field.Name .. "=" .. tostring(field.Value))
-            end
-            status.Text = data.Weapon .. ": " .. (#fields > 0 and table.concat(fields, ", ") or "no projectile/range fields found")
-            local write = ENV.writefile or writefile
-            if type(write) == "function" then
-                local ok = pcall(write, "Rift-Arsenal-Projectile-Fields.json", HttpService:JSONEncode(data))
-                if ok then status.Text = status.Text .. " | saved projectile field report" end
-            end
-        end)
-    end
+    local section = gameSection(BOARD_GAME_NAME, AimTab.Right, "Wallbang")
+    local hitboxes = makeArsenalHitboxes({Player=LocalPlayer,Players=Players,Vector=Vector3})
+    Elements.Toggle(section, "Wallbang", false, function(on)
+        RivalsAim.Wallbang.Enabled = on == true
+        local ray = ENV.RiftArsenalDirectAimRay
+        if ray then ray.Active = on or RivalsAim.Enabled or RivalsAim.Aimbot.Enabled end
+        if not on then hitboxes.Close() end
+    end)
+    Elements.Slider(section, "Wall Penetration Distance", 1, 100, 20, "studs", function(value) RivalsAim.Wallbang.Distance = value end)
+    Elements.Slider(section, "Hitbox Size", 1, 30, 8, "studs", function(value) RivalsAim.Wallbang.HitboxSize = value end)
+    local nextUpdate = 0
+    track(RunService.Heartbeat:Connect(function()
+        if os.clock() < nextUpdate then return end
+        nextUpdate = os.clock() + 0.25
+        hitboxes.Tick(RivalsAim.Wallbang.Enabled, RivalsAim.Wallbang.HitboxSize, RivalsAim.MaxDistance or 1000)
+    end))
+    track({Disconnect=hitboxes.Close})
 end
 
     end
@@ -14158,6 +13966,10 @@ do
     end
 end
 if detectedGame then
+    for index = #ConfigControls, 1, -1 do
+        local title = ConfigControls[index].Key:match("^[^/]+/[^/]+/([^/]+)/")
+        if Settings.IsRetiredSection(title) then table.remove(ConfigControls, index) end
+    end
     Persistence.Restore(detectedGame, menuKeyControl)
     Persistence.Start()
     track(LocalPlayer.OnTeleport:Connect(function(state)

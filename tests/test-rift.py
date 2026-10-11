@@ -120,6 +120,26 @@ def main():
         for path in [ROOT / 'arsenal-rivals.lua', imported_path]:
             subprocess.run([str(compiler), '--null', str(path)], check=True)
         assert 'IS_GENERIC and "Arsenal" or "Rivals"' in imported_inner
+        ui_prefix = (ROOT / 'tests' / 'rivals-spec.luau').read_text(encoding='utf-8').split('-- INSERT_RIVALS_PRODUCTION', 1)[0]
+        imported_ui_parts = [
+            between(imported_inner, 'local RivalsAim = {', '\nlocal function new('),
+            between(imported_inner, 'function Settings.IsRetiredSection(', 'function Settings.MakeMenuDraggable('),
+            between(imported_inner, 'function Elements.Label(', '\nfunction Elements.Line'),
+            between(imported_inner, 'local Binds = {}', '\nfunction Elements.ColorPicker'),
+            between(imported_inner, 'function BedWars.BuildUI(boardGame)', '\nif game.PlaceId == 6872265039'),
+            between(imported_inner, 'function RivalsAim.BuildUI()', '\nif IS_GENERIC or game.PlaceId == 17625359962'),
+            between(imported_inner, 'local CharacterCollision', '\nlocal MapFloorY'),
+            between(imported_inner, 'local function arsenalWallbangWithinDistance(', '\nlocal function makeArsenalHitboxes('),
+            between(imported_inner, 'local function makeArsenalHitboxes(', '\nlocal function arsenalWallbangFilter('),
+            between(imported_inner, 'local function canFire(', '\n    local aimGameFocused'),
+            between(imported_inner, '    local function autoFire(', '\nlocal function silentRayDirection('),
+        ]
+        imported_ui_spec = (ROOT / 'tests' / 'arsenal-ui-spec.luau').read_text(encoding='utf-8')
+        imported_ui_source = ui_prefix + '\n' + imported_ui_spec.replace('-- INSERT_IMPORTED_UI', '\n'.join(imported_ui_parts))
+        imported_ui_path = temp / 'arsenal-ui-spec.luau'
+        imported_ui_path.write_text(imported_ui_source, encoding='utf-8')
+        subprocess.run([str(runtime), str(imported_ui_path)], check=True)
+
         loader_spec = loader_spec.replace('-- INSERT_LOADER_PRODUCTION', loader_source)
         loader_path = temp / 'loader-spec.luau'
         loader_path.write_text(loader_spec, encoding='utf-8')
@@ -299,6 +319,7 @@ def main():
             between(inner, 'function Settings.SetupColdWarCarNoclip()', '\nfunction Settings.SetupColdWarCarFly()')), encoding='utf-8')
         subprocess.run([str(runtime), str(noclip_path)], check=True)
         rivals_chunks = [
+            between(inner, "function Settings.IsRetiredSection(", "function Settings.MakeMenuDraggable("),
             'atmosphereColorControls = (function()\n' + between(inner, 'local atmosphereEnabled, atmospherePreset', '\ndo\n    local atmosphere = makeSection(VisualsTab.Right, "Atmosphere Changer")') + '\nreturn atmosphereColorControls end)()\n',
             between(inner, 'function Settings.SessionNumber(', '\nSettings.StartupStage("Preparing game runtime...")'),
             between(inner, 'function Settings.StartupStage(', '\nSettings.StartupStage("Loading menu controls...")'),
