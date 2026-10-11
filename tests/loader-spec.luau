@@ -1,6 +1,7 @@
 -- INSERT_CURRENT_RELEASE
 -- INSERT_UNIVERSAL_RELEASE
 -- INSERT_IMPORTED_RELEASE
+-- INSERT_BLOX_RELEASE
 local suppliedSource, downloadFailure, compileFailure
 local executions, requests, compilations = 0, 0, 0
 local environment = {}
@@ -9,7 +10,8 @@ function game:HttpGet(url)
     requests += 1
     local imported = game.PlaceId == 286090429 or game.PlaceId == 17625359962 or game.GameId == 6035872082
         or game.PlaceId == 107535308163741
-    local expectedFile = imported and "arsenal%-rivals%.lua" or "alua"
+    local blox = game.PlaceId == 2753915549 or game.GameId == 994732206
+    local expectedFile = blox and "blox%-fruits%.lua" or imported and "arsenal%-rivals%.lua" or "alua"
     assert(url:match("/[%da-f]+/" .. expectedFile .. "$") and not url:find("/main/"), "release URL is not pinned")
     if downloadFailure then error("offline") end
     return suppliedSource
@@ -71,4 +73,13 @@ for _, place in ipairs({13687899540,7336302630}) do
     local before=executions
     run()
     assert(executions==before+1 and environment.SunsetLoaderUrl:match("/alua$"),"existing game route changed")
+end
+for _, location in ipairs({{2753915549, nil}, {999999, 994732206}}) do
+    game.PlaceId,game.GameId=location[1],location[2]
+    suppliedSource=bloxReleaseSource
+    local before=executions
+    run()
+    assert(executions==before+1 and environment.SunsetLoaderUrl:match("/blox%-fruits%.lua$"), "Blox Fruits route missing")
+    suppliedSource=importedReleaseSource
+    assert(not pcall(run), "other client accepted for Blox Fruits")
 end

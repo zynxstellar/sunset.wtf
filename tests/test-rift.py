@@ -115,6 +115,17 @@ def main():
         imported_build = re.search(r'local SUNSET_BUILD = "[^"]+"', imported_inner).group(0)
         loader_spec = loader_spec.replace('-- INSERT_IMPORTED_RELEASE',
             'local importedReleaseSource = [====[' + imported_build + ']====]')
+        blox_source = (ROOT / 'blox-fruits.lua').read_text(encoding='utf-8')
+        blox_build = re.search(r'local SUNSET_BUILD = "[^"]+"', blox_source).group(0)
+        loader_spec = loader_spec.replace('-- INSERT_BLOX_RELEASE',
+            'local bloxReleaseSource = [====[' + blox_build + ']====]')
+        subprocess.run([str(compiler), '--null', str(ROOT / 'blox-fruits.lua')], check=True)
+        assert re.findall(r'^makeRow\("([^"]+)"', blox_source, re.M) == ['Fly', 'Speed']
+        blox_spec = (ROOT / 'tests' / 'blox-movement-spec.luau').read_text(encoding='utf-8')
+        blox_path = temp / 'blox-movement-spec.luau'
+        blox_path.write_text(blox_spec.replace('-- INSERT_MOVEMENT', between(blox_source,
+            'local function makeMovement(', '\nlocal function new(')), encoding='utf-8')
+        subprocess.run([str(runtime), str(blox_path)], check=True)
         imported_path = temp / 'arsenal-rivals-inner.lua'
         imported_path.write_text(imported_inner, encoding='utf-8')
         for path in [ROOT / 'arsenal-rivals.lua', imported_path]:
