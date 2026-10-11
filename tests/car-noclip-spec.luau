@@ -40,6 +40,8 @@ end
 local workspace=node("Workspace")
 local character=node("Model",workspace)
 local humanoid=node("Humanoid",character) humanoid.Health=100
+local driverBody=node("BasePart",character)
+local driverAccessory=node("BasePart",character) driverAccessory.CanCollide=false
 local LocalPlayer={Character=character}
 local car=node("Model",workspace) car.NetId=1
 local chassis=node("BasePart",car)
@@ -55,21 +57,24 @@ Settings.SetupColdWarCarNoclip()
 local options=Settings.ColdWarCarNoclip
 options.Step() assert(chassis.CanCollide)
 controls["Car Noclip"](true) options.Step()
-assert(not chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide)
+assert(not chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide and not driverBody.CanCollide)
 chassis.CanCollide=true options.Step() assert(not chassis.CanCollide)
 Settings.ColdWarCarFly.ContactFlingEnabled=true
 Settings.ColdWarCarFly.ContactCollisionActive=true
 options.Step()
-assert(options.Enabled and chassis.CanCollide and not wheel.CanCollide,"contact did not restore original collisions")
+assert(options.Enabled and not chassis.CanCollide and not wheel.CanCollide and not driverBody.CanCollide,"contact re-enabled collisions during noclip")
 Settings.ColdWarCarFly.ContactCollisionActive=false
 options.Step() assert(not chassis.CanCollide,"contact ending did not resume noclip")
+driverBody.CanCollide=true options.Step() assert(not driverBody.CanCollide)
+local driverAdded=node("BasePart",character)
+character.DescendantAdded:Fire(driverAdded) assert(not driverAdded.CanCollide)
 local added=node("BasePart",car) car.DescendantAdded:Fire(added) assert(not added.CanCollide)
 car.DescendantRemoving:Fire(added) assert(added.CanCollide)
 added.Parent=workspace
 controls["Car Noclip"](false)
-assert(chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide)
+assert(chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide and driverBody.CanCollide and driverAdded.CanCollide and not driverAccessory.CanCollide)
 controls["Car Noclip"](true) options.Step()
-activeSeat=nil options.Step() assert(chassis.CanCollide)
+activeSeat=nil options.Step() assert(chassis.CanCollide and driverBody.CanCollide)
 activeSeat=seat options.Step()
 humanoid.Health=0 options.Step() assert(chassis.CanCollide)
 humanoid.Health=100 options.Step()

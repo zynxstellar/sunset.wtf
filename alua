@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-underground-route-k357"
+local SUNSET_BUILD = "20261010-rift-car-full-noclip-k358"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12595,7 +12595,7 @@ end
 function Settings.SetupColdWarCarNoclip()
     local options = { Enabled = false, Destroyed = false }
     Settings.ColdWarCarNoclip = options
-    local model, added, removing
+    local model, activeCharacter, added, removing, characterAdded, characterRemoving
     local saved = {}
     local function restorePart(part)
         local original = saved[part]
@@ -12607,19 +12607,24 @@ function Settings.SetupColdWarCarNoclip()
     local function restore()
         if added then added:Disconnect() added = nil end
         if removing then removing:Disconnect() removing = nil end
+        if characterAdded then characterAdded:Disconnect() characterAdded = nil end
+        if characterRemoving then characterRemoving:Disconnect() characterRemoving = nil end
         for part in pairs(saved) do restorePart(part) end
-        model = nil
+        model, activeCharacter = nil, nil
     end
     local function include(part)
-        if not part:IsA("BasePart") or not model or not part:IsDescendantOf(model) then return end
-        local ancestor = part.Parent
-        while ancestor and ancestor ~= model do
-            if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return end
-            ancestor = ancestor.Parent
+        if not part:IsA("BasePart") or not model then return end
+        local ownCharacter = activeCharacter and part:IsDescendantOf(activeCharacter)
+        if not ownCharacter then
+            if not part:IsDescendantOf(model) then return end
+            local ancestor = part.Parent
+            while ancestor and ancestor ~= model do
+                if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then return end
+                ancestor = ancestor.Parent
+            end
         end
         if saved[part] == nil then saved[part] = part.CanCollide end
-        local fly = Settings.ColdWarCarFly
-        part.CanCollide = fly and fly.ContactCollisionActive and saved[part] or false
+        part.CanCollide = false
     end
     function options.Step()
         local character = LocalPlayer.Character
@@ -12638,16 +12643,19 @@ function Settings.SetupColdWarCarNoclip()
             ancestor = ancestor.Parent
         end
         if not vehicle or vehicle == character then restore() return end
-        if vehicle ~= model then
+        if vehicle ~= model or character ~= activeCharacter then
             restore()
-            model = vehicle
+            model, activeCharacter = vehicle, character
             for _, part in ipairs(model:GetDescendants()) do include(part) end
             added = model.DescendantAdded:Connect(include)
             removing = model.DescendantRemoving:Connect(restorePart)
+            for _, part in ipairs(character:GetDescendants()) do include(part) end
+            characterAdded = character.DescendantAdded:Connect(include)
+            characterRemoving = character.DescendantRemoving:Connect(restorePart)
         end
         for part in pairs(saved) do
-            if part.Parent and part:IsDescendantOf(model) then
-                part.CanCollide = fly and fly.ContactCollisionActive and saved[part] or false
+            if part.Parent and (part:IsDescendantOf(model) or part:IsDescendantOf(activeCharacter)) then
+                part.CanCollide = false
             else restorePart(part) end
         end
     end
