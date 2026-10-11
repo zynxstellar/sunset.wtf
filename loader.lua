@@ -14,8 +14,8 @@ if not imported and not dedicated and not blox then
     warn("[RIFT] This game is unsupported. No client was downloaded or started.")
     return
 end
-local expectedBuild = blox and "20261011-rift-blox-movement-k376" or (imported and "20261011-rift-huss-speed-limit-k372" or "20261011-rift-car-fall-platform-k375")
-local sourceUrl = blox and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/40f8de3e97f369711db3c52ecf2aff68b06cffcf/blox-fruits.lua" or imported
+local expectedBuild = blox and "20261011-rift-blox-shared-ui-k377" or (imported and "20261011-rift-huss-speed-limit-k372" or "20261011-rift-car-fall-platform-k375")
+local sourceUrl = blox and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/8b1d977f68ad262e1a83c740ce0914c96db7372d/blox-fruits.lua" or imported
     and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/1268640d350078276fdd56bb49e05b928ef7ea27/arsenal-rivals.lua"
     or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/42f3ec5279ad53bd6ed9391b71f96696aa3f5abf/alua"
 
