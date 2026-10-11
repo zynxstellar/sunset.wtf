@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-floating-categories-k353"
+local SUNSET_BUILD = "20261010-rift-compact-instant-actions-k354"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12464,7 +12464,6 @@ function Settings.SetupColdWarInstantActions()
     track({ Disconnect = function() options.Destroyed = true restore() end })
     local section = gameSection("Cold War", PlayerTab.Left, "Instant Actions")
     toggle = Elements.Toggle(section, "Instant Actions", false, options.SetEnabled)
-    Elements.Label(section, "Skips local vehicle ceremonies; server entry/exit approval still applies.")
 end
 
 function Settings.SetupColdWarCarKillAll()
@@ -12511,7 +12510,7 @@ function Settings.SetupColdWarCarKillAll()
         if anyMenuVisible() or UIS:GetFocusedTextBox() then return Vector3.zero end
         local now = os.clock()
         local target, character = targetRoot(ram.Target)
-        if not target or character ~= ram.TargetCharacter or now - targetStarted >= 3 then
+        if not target or character ~= ram.TargetCharacter or now - targetStarted >= 10 then
             previousTarget = ram.Target or previousTarget
             reset()
             if now < nextScan then return Vector3.zero end
@@ -12560,7 +12559,7 @@ function Settings.SetupColdWarCarKillAll()
     end)
     Elements.Toggle(section, "Team Check", true, function(on) ram.TeamCheck = on reset() end)
     Elements.Slider(section, "Ram Speed", 50, 250, 150, "studs/s", function(value) ram.Speed = value end)
-    Elements.Label(section, "Driver only. Skips seated players; switches after 3 seconds. Damage is unverified.")
+    Elements.Label(section, "Driver only. Skips seated players; switches after 10 seconds. Damage is unverified.")
 end
 
 function Settings.SetupColdWarCarNoclip()

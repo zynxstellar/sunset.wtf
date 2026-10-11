@@ -59,7 +59,9 @@ roster={LocalPlayer,ally,foe,foe2}
 now+=1 fly.AutoRamControl(car)
 assert(ram.Target==foe2,"seated former target was immediately reselected")
 now+=3.1 fly.AutoRamControl(car)
-assert(ram.Target==foe,"three-second timeout did not switch to another player")
+assert(ram.Target==foe2,"target abandoned before ten seconds")
+now+=7 fly.AutoRamControl(car)
+assert(ram.Target==foe,"ten-second timeout did not switch to another player")
 roster={LocalPlayer,ally,foe}
 local firstTarget=ram.Target
 now+=0.1 fly.AutoRamControl(car) assert(ram.Target==firstTarget,"living target changed")
