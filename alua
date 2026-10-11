@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-ram-path-k356"
+local SUNSET_BUILD = "20261010-rift-car-underground-route-k357"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12467,15 +12467,17 @@ function Settings.SetupColdWarInstantActions()
 end
 
 function Settings.SetupColdWarCarKillAll()
-    local ram = { Enabled = false, Speed = 150, TeamCheck = true, Target = nil,
+    local ram = { Enabled = false, Speed = 100 / (3.6 * 0.28), TeamCheck = true, Target = nil,
         TargetCharacter = nil, Active = false, Destroyed = false }
     Settings.ColdWarCarKillAll = ram
     local fly = Settings.ColdWarCarFly
     local nextScan, targetStarted = 0, 0
-    local previousTarget, passDirection
+    local previousTarget, passDirection, travelPhase, travelY
+    local enabledNoclip = false
     local function reset()
         ram.Target, ram.TargetCharacter, ram.Active = nil, nil, false
-        passDirection = nil
+        passDirection, travelPhase, travelY = nil, nil, nil
+        ram.Contact = false
     end
     local function targetRoot(player)
         if not player or player == LocalPlayer or player.Parent ~= Players then return end
@@ -12505,7 +12507,7 @@ function Settings.SetupColdWarCarKillAll()
         return root, character
     end
     function ram.Control(root)
-        ram.Active = false
+        ram.Active, ram.Contact = false, false
         if ram.Destroyed or not ram.Enabled or Settings.SelectedGame ~= "Cold War" then reset() return end
         if anyMenuVisible() or UIS:GetFocusedTextBox() then return Vector3.zero end
         local now = os.clock()
@@ -12515,12 +12517,19 @@ function Settings.SetupColdWarCarKillAll()
             reset()
             if now < nextScan then return Vector3.zero end
             nextScan = now + 0.5
-            local candidates = {}
+            local nearest, distance = nil, math.huge
             for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= previousTarget and targetRoot(player) then table.insert(candidates, player) end
+                if player ~= previousTarget then
+                    local candidate = targetRoot(player)
+                    if candidate then
+                        local candidateDistance = (candidate.Position - root.Position).Magnitude
+                        if candidateDistance < distance then nearest, distance = player, candidateDistance end
+                    end
+                end
             end
-            if #candidates == 0 then return Vector3.zero end
-            ram.Target = candidates[math.random(1, #candidates)]
+            if not nearest then return Vector3.zero end
+            ram.Target = nearest
+            travelPhase = "Descend"
             targetStarted = now
             target, ram.TargetCharacter = targetRoot(ram.Target)
             if not target then reset() return Vector3.zero end
@@ -12537,8 +12546,17 @@ function Settings.SetupColdWarCarKillAll()
         local passed = fromTarget.X * passDirection.X + fromTarget.Z * passDirection.Z
         if passed >= 6 then passDirection = passDirection * -1 end
         local desired = center + passDirection * 8
+        travelY = travelY or math.min(root.Position.Y, center.Y) - 12
+        local horizontal = Vector3.new(center.X - root.Position.X, 0, center.Z - root.Position.Z)
+        if travelPhase == "Descend" and root.Position.Y <= travelY + 1 then travelPhase = "Cruise" end
+        if travelPhase == "Cruise" and horizontal.Magnitude <= 12 then travelPhase = "Rise" end
+        if travelPhase == "Rise" and math.abs(root.Position.Y - center.Y) <= 2 then travelPhase = "Ram" end
+        if travelPhase == "Descend" then desired = Vector3.new(root.Position.X, travelY, root.Position.Z)
+        elseif travelPhase == "Cruise" then desired = Vector3.new(center.X, travelY, center.Z)
+        elseif travelPhase == "Rise" then desired = center end
         local delta = desired - root.Position
-        local speed = math.clamp(ram.Speed, 50, 250)
+        local speed = ram.Speed
+        ram.Contact = travelPhase == "Ram" and (root.Position - center).Magnitude <= 12
         local velocity = delta.Magnitude > 0.01 and delta.Unit * math.min(speed, delta.Magnitude * 25) or Vector3.zero
         ram.Active = true
         local heading = Vector3.new(delta.X, 0, delta.Z)
@@ -12549,19 +12567,28 @@ function Settings.SetupColdWarCarKillAll()
     track({ Disconnect = function()
         ram.Destroyed, ram.Enabled = true, false
         reset()
+        if enabledNoclip and Settings.ColdWarCarNoclip then Settings.ColdWarCarNoclip.SetEnabled(false) end
         if fly.AutoRamControl == ram.Control then fly.AutoRamControl = nil fly.OnVehicleLost = nil end
     end })
     local section = gameSection("Cold War", AimTab.Left, "Car Kill All")
     Elements.Toggle(section, "Car Kill All", false, function(on)
         ram.Enabled = on
         reset()
+        local noclip = Settings.ColdWarCarNoclip
+        if on and noclip and not noclip.Enabled then
+            enabledNoclip = true
+            noclip.SetEnabled(true)
+        elseif not on and enabledNoclip and noclip then
+            enabledNoclip = false
+            noclip.SetEnabled(false)
+        end
         if on then
             fly.Enabled = true
             if fly.FlightToggle then fly.FlightToggle.Set(true) end
         end
     end)
     Elements.Toggle(section, "Team Check", true, function(on) ram.TeamCheck = on reset() end)
-    Elements.Slider(section, "Ram Speed", 50, 250, 150, "studs/s", function(value) ram.Speed = value end)
+    Elements.Label(section, "Travel speed: 100 km/h")
     Elements.Label(section, "Driver only. Skips seated players; switches after 10 seconds. Damage is unverified.")
 end
 
@@ -12822,7 +12849,7 @@ function Settings.SetupColdWarCarFly()
         local contact = fly.ContactFlingEnabled and not anyMenuVisible() and not UIS:GetFocusedTextBox()
             and movement.Magnitude > 0.01 and contactVehicle(root)
         local autoRam = Settings.ColdWarCarKillAll
-        fly.ContactCollisionActive = contact == true or (autoRam and autoRam.Active == true) or false
+        fly.ContactCollisionActive = contact == true or (autoRam and autoRam.Active == true and autoRam.Contact == true) or false
         local speed = contact and math.clamp(fly.RamSpeed, 50, 250) or fly.Speed
         velocity.VectorVelocity = autoVelocity or movement * speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
         orientation.Enabled = true

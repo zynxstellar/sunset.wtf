@@ -21,7 +21,9 @@ local Elements={Label=function() end,Toggle=function(_,n,_,f) controls[n]=f end,
     Slider=function(_,n,_,_,_,_,f) controls[n]=f end}
 local AimTab={Left={}}
 local fly={Enabled=false}
-local Settings={SelectedGame="Cold War",ColdWarCarFly=fly}
+local noclip={Enabled=false}
+function noclip.SetEnabled(on) noclip.Enabled=on end
+local Settings={SelectedGame="Cold War",ColdWarCarFly=fly,ColdWarCarNoclip=noclip}
 local Players={}
 local LocalPlayer={Parent=Players,Team=1}
 local roster={LocalPlayer}
@@ -37,7 +39,8 @@ local function player(team,x)
 end
 local ally=player(1,10)
 local foe,hum,target,limbHealth=player(2,100)
-roster={LocalPlayer,ally,foe}
+local far=player(2,500)
+roster={LocalPlayer,ally,far,foe}
 local car=setmetatable({Position=Vector3.zero},{__newindex=function(_,key)
     error("Auto ram must not reposition the car: "..key)
 end})
@@ -46,10 +49,15 @@ Settings.SetupColdWarCarKillAll()
 local ram=Settings.ColdWarCarKillAll
 assert(fly.AutoRamControl(car)==nil and not fly.Enabled)
 controls["Car Kill All"](true)
-assert(ram.Enabled and fly.Enabled)
+assert(ram.Enabled and fly.Enabled and noclip.Enabled)
 local velocity=fly.AutoRamControl(car)
-assert(ram.Target==foe and ram.Active and car.Position==Vector3.zero and velocity.X>0)
-assert(velocity.Magnitude<=150)
+assert(ram.Target==foe and ram.Active and car.Position==Vector3.zero and velocity.Y<0 and not ram.Contact)
+assert(velocity.Magnitude<=100/(3.6*0.28))
+car.Position=Vector3.new(0,-12,0)
+local cruise=fly.AutoRamControl(car)
+assert(cruise.X>0 and not ram.Contact,"underground cruise did not approach nearest enemy")
+car.Position=Vector3.new(95,-12,0)
+assert(fly.AutoRamControl(car).Y>0,"did not rise near enemy")
 car.Position=Vector3.new(95,10,0)
 now+=0.3
 local approaching=fly.AutoRamControl(car)
@@ -61,6 +69,7 @@ car.Position=Vector3.new(107,10,0)
 now+=0.1
 assert(fly.AutoRamControl(car).X<0,"ram did not reverse after passing target")
 car.Position=Vector3.zero
+roster={LocalPlayer,ally,foe}
 target.GetJoints=function() return {{Part1=target,Part0={Name="PassengerSeat",IsDescendantOf=function() return false end,IsA=function(_,kind) return kind=="Seat" end}}} end
 now+=0.1 fly.AutoRamControl(car) assert(ram.Target==nil,"custom vehicle passenger retained")
 target.GetJoints=function() return {} end
@@ -88,7 +97,7 @@ limbHealth.Value=100 now+=1 fly.AutoRamControl(car)
 foe.Parent=nil now+=1 fly.AutoRamControl(car) assert(ram.Target==nil,"departed player retained")
 foe.Parent=Players now+=1 fly.AutoRamControl(car)
 fly.OnVehicleLost() assert(ram.Target==nil and not ram.Active)
-controls["Car Kill All"](false) assert(fly.AutoRamControl(car)==nil)
+controls["Car Kill All"](false) assert(fly.AutoRamControl(car)==nil and not noclip.Enabled)
 controls["Car Kill All"](true) now+=1 fly.AutoRamControl(car)
 connections[#connections].Disconnect()
 assert(not ram.Enabled and not ram.Active and fly.AutoRamControl==nil and ram.Target==nil)
