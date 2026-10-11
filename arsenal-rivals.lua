@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-compact-ui-k366"
+local SUNSET_BUILD = "20261011-rift-imported-compact-ui-k367"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -8912,7 +8912,7 @@ function BedWars.BuildUI(boardGame)
             local column = columns[name]
             local height = 540
             if columnLayout and not column.OpenHolder and not column.KitOptionsVisible then
-                height = math.clamp(44 + column.VisibleCount * 32 + (name == "KIT" and 94 or 0), 100, 540)
+                height = math.clamp(44 + column.VisibleCount * 32 + (name == "KIT" and 94 or 0), 32, 540)
             end
             column.Frame.Size = UDim2.fromOffset(columnLayout and columnWidth or 666,
                 (column.Collapsed or column.VisibleCount == 0) and (columnLayout and 32 or 44) or height)

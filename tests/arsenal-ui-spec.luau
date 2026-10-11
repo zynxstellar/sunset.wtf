@@ -57,6 +57,7 @@ for _, gameName in ipairs({"Arsenal","Rivals"}) do
     local layer = board:FindFirstChild("CategoryLayer")
     assert(layer:FindFirstChild("Misc").Size.Y.Offset == 32, "empty category is not header only")
     if IS_GENERIC then assert(layer:FindFirstChild("Fun").Size.Y.Offset == 32, "empty Arsenal Fun is not header only") end
+    assert(layer:FindFirstChild("Player").Size.Y.Offset == 76, "single module category has excess bottom space")
     local movement = layer:FindFirstChild("Movement")
     assert(movement.Size.Y.Offset >= 38 + 3 * 32, "movement list clips module rows")
     assert(not cards["Third Person"] and not cards["Zoom Unlocker"] and not cards["Player Outlines"])
