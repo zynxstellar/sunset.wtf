@@ -87,10 +87,10 @@ for _, gameName in ipairs({"Arsenal","Rivals","Huss Valley"}) do
         assert(cards["Speed Modifier"] and not cards.Speed,"native speed modifier missing")
         local foundSpeed, foundFly = false, false
         for _, option in ipairs(ConfigControls) do
-            if option.Key == "Movement/Huss Valley/Speed Modifier/Speed Multiplier" then
-                option.Set(2.5);assert(RivalsSpeed.Multiplier==2.5);foundSpeed=true
+            if option.Key == "Movement/Huss Valley/Speed Modifier/Speed Limit" then
+                option.Set(30);assert(RivalsSpeed.Limit==30);foundSpeed=true
             elseif option.Key == "Movement/Huss Valley/Fly/Fly Speed" then
-                option.Set(123);assert(Settings.FlySpeed==123);foundFly=true
+                option.Set(123);assert(Settings.FlySpeed<=33.6);foundFly=true
             end
         end
         assert(foundSpeed and foundFly,"Huss movement sliders missing")

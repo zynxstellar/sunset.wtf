@@ -69,7 +69,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-huss-movement-k371"
+local SUNSET_BUILD = "20261011-rift-huss-speed-limit-k372"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -1653,7 +1653,8 @@ do
             if nowMoving then
                 hover.Enabled = false
                 velocity.Enabled = true
-                local command = dir.Unit * math.clamp(tonumber(Settings.FlySpeed) or 50, 1, 1000)
+                local command = dir.Unit * math.clamp(tonumber(Settings.FlySpeed) or 50, 1,
+                    BOARD_GAME_NAME == "Huss Valley" and 33.6 or 1000)
                 velocity.VectorVelocity = command
                 root.AssemblyLinearVelocity = command
             else
@@ -11609,35 +11610,67 @@ function RivalsView.Setup()
         restore()
     end })
 end
-function Settings.MakeHussSpeedModifier(player)
+function Settings.MakeHussSpeedModifier(player, profileSpeed)
     local active, original, applied = false, nil, nil
     local adapter = {}
-    function adapter.Tick(enabled, multiplier)
+    function adapter.Tick(enabled, limit)
         local current = player:GetAttribute("TrollSpeed")
         if not enabled then
             if active and current == applied then player:SetAttribute("TrollSpeed", original) end
             active, original, applied = false, nil, nil
-            return
+            return true
+        end
+        local ok, base = pcall(profileSpeed, current)
+        if not ok or type(base) ~= "number" or base ~= base or base <= 0 or base == math.huge then
+            adapter.Tick(false)
+            return false, "Movement profile unavailable"
+        end
+        local value = tonumber(limit) or 33.6
+        if value ~= value then value = 33.6 end
+        value = math.clamp(value, 1, 33.6)
+        -- The native getter rounds multipliers to hundredths. Round down so
+        -- role, crossing and equipment bonuses cannot round above the limit.
+        local multiplier = math.floor(math.min(1, value / base) * 100 + 1e-9) / 100
+        if multiplier < 0.5 then
+            adapter.Tick(false)
+            return false, "Requested limit is below the native profile minimum"
         end
         if not active or current ~= applied then original = current end
         active = true
-        local value = tonumber(multiplier) or 1
-        if value ~= value then value = 1 end
-        applied = math.clamp(value, 0.5, 3)
+        applied = multiplier
         if current ~= applied then player:SetAttribute("TrollSpeed", applied) end
+        return true
     end
     function adapter.Close() adapter.Tick(false) end
     return adapter
 end
 function RivalsSpeed.Setup()
     if BOARD_GAME_NAME == "Huss Valley" then
-        local modifier = Settings.MakeHussSpeedModifier(LocalPlayer)
-        RivalsSpeed.Multiplier = 1
+        local profiles
+        local modifier = Settings.MakeHussSpeedModifier(LocalPlayer, function(current)
+            if not profiles then
+                local package = game:GetService("ReplicatedStorage"):FindFirstChild("ChickenOrHero")
+                local movement = package and package:FindFirstChild("Movement")
+                local module = movement and movement:FindFirstChild("MovementProfiles")
+                if not module then return nil end
+                profiles = require(module)
+            end
+            local profile = profiles.get(LocalPlayer:GetAttribute("GameRole"), LocalPlayer)
+            local factor = type(current) == "number" and current == current
+                and math.floor(math.clamp(current, 0.5, 3) * 100 + 0.5) / 100 or 1
+            return profile.MaxSpeed / factor
+        end)
+        RivalsSpeed.Limit = 33.6
         function RivalsSpeed.Apply()
             local character = LocalPlayer.Character
             local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            modifier.Tick(RivalsSpeed.Enabled and Settings.SelectedGame == BOARD_GAME_NAME
-                and humanoid ~= nil and humanoid.Health > 0, RivalsSpeed.Multiplier)
+            local ok, reason = modifier.Tick(RivalsSpeed.Enabled and Settings.SelectedGame == BOARD_GAME_NAME
+                and humanoid ~= nil and humanoid.Health > 0, RivalsSpeed.Limit)
+            if not ok then
+                RivalsSpeed.Enabled = false
+                if RivalsSpeed.Toggle then RivalsSpeed.Toggle.Set(false) end
+                warn("[Rift] Speed Modifier stopped: " .. tostring(reason))
+            end
         end
         track(RunService.PreSimulation:Connect(RivalsSpeed.Apply))
         track({Disconnect=function() RivalsSpeed.Enabled=false;modifier.Close() end})
@@ -11841,10 +11874,10 @@ function RivalsAim.BuildUI()
         RivalsSpeed.Apply()
     end)
     if BOARD_GAME_NAME == "Huss Valley" then
-    Elements.Slider(speed, "Speed Multiplier", 0.5, 3, 1, "x", function(value)
-        RivalsSpeed.Multiplier = value
+    Elements.Slider(speed, "Speed Limit", 20, 33.6, 33.6, "studs/s", function(value)
+        RivalsSpeed.Limit = math.clamp(value, 20, 33.6)
         RivalsSpeed.Apply()
-    end, 0.05)
+    end, 0.1)
     else
     Elements.Slider(speed, "Walk Speed", 0, 300, 16, "studs/s", function(value)
         RivalsSpeed.Value = value
@@ -11873,9 +11906,10 @@ function RivalsAim.BuildUI()
         Settings.FlyEnabled = on
         if on then Fly.Start() else Fly.Stop() end
     end, nil, true)
-    Elements.Slider(flight, "Fly Speed", 1, 1000, 50, "studs/s", function(value)
-        Settings.FlySpeed = value
-    end)
+    Elements.Slider(flight, "Fly Speed", 1, BOARD_GAME_NAME == "Huss Valley" and 33.6 or 1000,
+        BOARD_GAME_NAME == "Huss Valley" and 30 or 50, "studs/s", function(value)
+        Settings.FlySpeed = math.clamp(value, 1, BOARD_GAME_NAME == "Huss Valley" and 33.6 or 1000)
+    end, BOARD_GAME_NAME == "Huss Valley" and 0.1 or 1)
     Elements.Label(flight, "Unanchored flight with hover braking, adjustable speed and noclip.")
     local noclip = gameSection(BOARD_GAME_NAME, MainTab.Left, "Noclip")
     Elements.Toggle(noclip, "Noclip", false, function(on)
