@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-arsenal-rivals-import-k362"
+local SUNSET_BUILD = "20261011-rift-imported-readable-ui-k363"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -853,12 +853,14 @@ local function keyName(key)
 end
 
 function Elements.Toggle(parent, text, default, callback, defaultKey)
-    local row = new("TextButton", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, parent)
+    local row = new("TextButton", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, parent)
     local box = new("Frame", { Size = UDim2.fromOffset(11, 11), Position = UDim2.fromOffset(0, 2), BackgroundColor3 = T.element, BorderSizePixel = 0 }, row)
     border(box, T.border)
     local l = label(row, text)
     l.Position = UDim2.fromOffset(18, 0)
     l.Size = UDim2.new(1, -60, 1, 0)
+    l.TextWrapped = true
+    l.TextTruncate = Enum.TextTruncate.None
 
     local bindBtn = new("TextButton", {
         Size = UDim2.fromOffset(40, 14), Position = UDim2.new(1, -40, 0, 1),
@@ -1078,24 +1080,26 @@ local function sliderNumber(raw, low, high, previous, step)
     return math.clamp(tonumber(string.format("%.4f", rounded)), low, high)
 end
 function Elements.Slider(parent, text, min, max, default, suffix, callback, step, unlimitedInput)
-    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 52), BackgroundTransparency = 1 }, parent)
+    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 84), BackgroundTransparency = 1 }, parent)
     local value = sliderNumber(default or min, min, max, min, step)
-    local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
+    local top = new("Frame", { Size = UDim2.new(1, 0, 0, 54), BackgroundTransparency = 1 }, holder)
     local title = label(top, text .. ((suffix and suffix ~= "") and (" (" .. suffix:match("^%s*(.-)%s*$") .. ")") or ""), 12)
-    title.Size = UDim2.new(1, -98, 1, 0)
-    title.TextTruncate = Enum.TextTruncate.AtEnd
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.TextWrapped = true
+    title.TextYAlignment = Enum.TextYAlignment.Top
+    title.TextTruncate = Enum.TextTruncate.None
     local number = new("TextBox", {
-        Size = UDim2.fromOffset(66, 20), Position = UDim2.new(1, -96, 0, 0),
+        Size = UDim2.fromOffset(66, 20), Position = UDim2.new(1, -96, 0, 32),
         BackgroundColor3 = T.element, BorderSizePixel = 0, Font = T.font,
         TextSize = 13, TextColor3 = T.text, ClearTextOnFocus = false,
         Text = tostring(value), PlaceholderText = tostring(min) .. "-" .. tostring(max),
     }, top)
     border(number, T.border)
-    local plus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -26, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
-    local minus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -12, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local plus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -26, 0, 32), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local minus = new("TextButton", { Size = UDim2.fromOffset(12, 20), Position = UDim2.new(1, -12, 0, 32), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
     local hitArea = new("TextButton", {
         Name = "SliderDragArea", Size = UDim2.new(1, 0, 0, 30),
-        Position = UDim2.fromOffset(0, 22), BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(0, 54), BackgroundTransparency = 1,
         BorderSizePixel = 0, Text = "", AutoButtonColor = false,
     }, holder)
     local bar = new("Frame", {
@@ -1777,19 +1781,19 @@ end
 
 
 local Watermark = new("TextLabel", {
-    Position = UDim2.fromOffset(10, 10),
-    Size = UDim2.fromOffset(300, 20),
+    Position = UDim2.new(0.5, 0, 0, 24),
+    AnchorPoint = Vector2.new(0.5, 0),
+    Size = UDim2.fromOffset(380, 24),
     BackgroundColor3 = T.bg, BorderSizePixel = 0,
     Font = T.font, TextSize = 13, TextColor3 = T.text,
-    Text = "", TextXAlignment = Enum.TextXAlignment.Left,
+    Text = "", TextXAlignment = Enum.TextXAlignment.Center,
     AutomaticSize = Enum.AutomaticSize.X,
     Active = true,
 }, Gui)
 border(Watermark, T.outer)
 new("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) }, Watermark)
 new("Frame", { Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 1, 0), BackgroundColor3 = T.red, BorderSizePixel = 0 }, Watermark)
-makeDraggable(Watermark, Watermark)
-Persistence.HUDFrames.Watermark = Watermark
+-- Watermark is pinned; saved HUD positions cannot move it.
 
 task.spawn(function()
     local frames, last = 0, os.clock()
@@ -1823,7 +1827,7 @@ SettingsTab.Button.Text = BRAND
 do
     local s = makeSection(SettingsTab.Left, "Watermark")
     Elements.Toggle(s, "Enabled", true, function(on) Settings.WatermarkOn = on end)
-    Elements.Button(s, "Reset Position", function() Watermark.Position = UDim2.fromOffset(10, 10) end)
+    Elements.Button(s, "Reset Position", function() Watermark.Position = UDim2.new(0.5, 0, 0, 24) end)
 end
 do
     local s = makeSection(SettingsTab.Left, "Menu Blur")
@@ -8968,7 +8972,10 @@ function BedWars.BuildUI(boardGame)
                 if toggleName and bindButton and bindButton.Visible then
                     row.Size = UDim2.new(1, 0, 0, 22)
                     toggleName.Size = UDim2.new(1, -61, 0, 20)
-                    toggleName.TextTruncate = Enum.TextTruncate.AtEnd
+                    toggleName.TextTruncate = Enum.TextTruncate.None
+                    toggleName.TextWrapped = true
+                    row.Size = UDim2.new(1, 0, 0, 40)
+                    toggleName.Size = UDim2.new(toggleName.Size.X.Scale, toggleName.Size.X.Offset, 0, 40)
                     bindButton.Position = UDim2.new(1, -40, 0, 3)
                     bindButton.Size = UDim2.fromOffset(40, 16)
                     bindButton.TextScaled = false
@@ -8984,7 +8991,10 @@ function BedWars.BuildUI(boardGame)
                     toggleName.Position = UDim2.fromOffset(18, 0)
                     toggleName.Size = UDim2.new(1,
                         bindButton and bindButton.Visible and -61 or -18, 1, 0)
-                    toggleName.TextTruncate = Enum.TextTruncate.AtEnd
+                    toggleName.TextTruncate = Enum.TextTruncate.None
+                    toggleName.TextWrapped = true
+                    row.Size = UDim2.new(1, 0, 0, 40)
+                    toggleName.Size = UDim2.new(toggleName.Size.X.Scale, toggleName.Size.X.Offset, 0, 40)
                     toggleName.TextYAlignment = Enum.TextYAlignment.Center
                 end
                 if isRivalsMode(boardGame) and bindButton and bindButton.Visible then
@@ -9420,7 +9430,7 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             local card = new("TextButton", {
-                Name = name, Size = UDim2.new(1, -3, 0, 35),
+                Name = name, Size = UDim2.new(1, -3, 0, 46),
                 BackgroundColor3 = columnColor, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
@@ -9452,7 +9462,9 @@ function BedWars.BuildUI(boardGame)
             nameLabel.Font = Enum.Font.GothamMedium
             nameLabel.Position = UDim2.fromOffset(10, 7)
             nameLabel.Size = UDim2.new(1, hasSettings and -45 or -20, 0, 21)
-            nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLabel.TextTruncate = Enum.TextTruncate.None
+            nameLabel.TextWrapped = true
+            nameLabel.Size = UDim2.new(nameLabel.Size.X.Scale, nameLabel.Size.X.Offset, 0, 36)
             local options = new("TextButton", {
                 Position = UDim2.new(1, -31, 0, 4),
                 Size = UDim2.fromOffset(27, 27),
@@ -14121,9 +14133,9 @@ do
         if detectedGame == "BedWars" or isRivalsMode(detectedGame) then
             Watermark.BackgroundTransparency = 1
             Watermark.Size = UDim2.fromOffset(380, 24)
-            Watermark.Position = UDim2.new(1, -15, 0, 8)
-            Watermark.AnchorPoint = Vector2.new(1, 0)
-            Watermark.TextXAlignment = Enum.TextXAlignment.Right
+            Watermark.Position = UDim2.new(0.5, 0, 0, 24)
+            Watermark.AnchorPoint = Vector2.new(0.5, 0)
+            Watermark.TextXAlignment = Enum.TextXAlignment.Center
             Watermark.Font = Enum.Font.GothamMedium
             Watermark.TextSize = 15
             Watermark.TextColor3 = T.gold

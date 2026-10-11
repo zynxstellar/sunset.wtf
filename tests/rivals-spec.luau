@@ -696,7 +696,7 @@ Camera.ViewportSize = Vector2.new(1920, 1080)
 Camera.signals.ViewportSize:Fire()
 assert(menuScale.Scale == 1, "menu did not resize after viewport replacement")
 end
-assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==30)
+assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==46)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
 assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")
@@ -1076,7 +1076,7 @@ cards.aim.MouseButton2Click:Fire()
 local aimControl
 for _,c in ipairs(ConfigControls) do if c.Key=="Combat/Rivals/Silent Aim/Silent Aim" then aimControl=c end end
 local row=aimControl.Row
-assert(row.Size.Y.Offset==22)
+assert(row.Size.Y.Offset==40)
 assert(cards.aim.Parent:FindFirstChild("Silent AimSettings").Visible, "module settings did not expand in the column")
 assert(row:FindFirstChildOfClass("Frame").Position.Y.Scale==0.5)
 assert(row:FindFirstChildOfClass("TextButton").Position.Y.Scale==0.5)

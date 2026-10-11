@@ -12,7 +12,7 @@ local function signal()
     }
 end
 local Enum = { UserInputType = { MouseButton1 = "left", MouseButton2 = "right",
-    MouseMovement = "move", Touch = "touch" }, TextTruncate = { AtEnd = "end" } }
+    MouseMovement = "move", Touch = "touch" }, TextTruncate = { AtEnd = "end", None = "none" }, TextYAlignment = { Top = "top" } }
 local UDim = { new = function(scale, offset) return { Scale = scale, Offset = offset } end }
 local UDim2 = { new = function(xs, xo, ys, yo)
     return { X = UDim.new(xs, xo), Y = UDim.new(ys, yo) }
@@ -53,6 +53,9 @@ local area = holder.children[2]
 local bar = area.children[1]
 local top = holder.children[1]
 local number, plus, minus = top.children[2], top.children[3], top.children[4]
+assert(top.children[1].TextWrapped and top.children[1].TextTruncate == Enum.TextTruncate.None)
+assert(top.children[1].Size.X.Scale == 1 and top.children[1].Size.X.Offset == 0, "slider name must use full width")
+assert(number.Position.Y.Offset >= top.children[1].Size.Y.Offset, "value controls overlap slider name")
 local function input(kind, x) return { UserInputType = kind, Position = Vector2.new(x, 90) } end
 local function expect(value, message) assert(last == value, message .. ": " .. tostring(last)) end
 expect(775, "initial callback")

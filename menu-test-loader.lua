@@ -973,12 +973,14 @@ local function keyName(key)
 end
 
 function Elements.Toggle(parent, text, default, callback, defaultKey)
-    local row = new("TextButton", { Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, parent)
+    local row = new("TextButton", { Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, parent)
     local box = new("Frame", { Size = UDim2.fromOffset(11, 11), Position = UDim2.fromOffset(0, 2), BackgroundColor3 = T.element, BorderSizePixel = 0 }, row)
     border(box, T.border)
     local l = label(row, text)
     l.Position = UDim2.fromOffset(18, 0)
     l.Size = UDim2.new(1, -60, 1, 0)
+    l.TextWrapped = true
+    l.TextTruncate = Enum.TextTruncate.None
 
     local bindBtn = new("TextButton", {
         Size = UDim2.fromOffset(40, 14), Position = UDim2.new(1, -40, 0, 1),
@@ -1191,24 +1193,26 @@ local function sliderNumber(raw, low, high, previous, step)
     return math.clamp(tonumber(string.format("%.4f", rounded)), low, high)
 end
 function Elements.Slider(parent, text, min, max, default, suffix, callback, step, unlimitedInput)
-    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 52), BackgroundTransparency = 1 }, parent)
+    local holder = new("Frame", { Size = UDim2.new(1, 0, 0, 84), BackgroundTransparency = 1 }, parent)
     local value = sliderNumber(default or min, min, max, min, step)
-    local top = new("Frame", { Size = UDim2.new(1, 0, 0, 22), BackgroundTransparency = 1 }, holder)
+    local top = new("Frame", { Size = UDim2.new(1, 0, 0, 54), BackgroundTransparency = 1 }, holder)
     local title = label(top, text .. ((suffix and suffix ~= "") and (" (" .. suffix:match("^%s*(.-)%s*$") .. ")") or ""), 12)
-    title.Size = UDim2.new(1, -126, 1, 0)
-    title.TextTruncate = Enum.TextTruncate.AtEnd
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.TextWrapped = true
+    title.TextYAlignment = Enum.TextYAlignment.Top
+    title.TextTruncate = Enum.TextTruncate.None
     local number = new("TextBox", {
-        Size = UDim2.fromOffset(76, 22), Position = UDim2.new(1, -124, 0, 0),
+        Size = UDim2.fromOffset(76, 22), Position = UDim2.new(1, -124, 0, 32),
         BackgroundColor3 = T.element, BorderSizePixel = 0, Font = T.font,
         TextSize = 13, TextColor3 = T.text, ClearTextOnFocus = false,
         Text = tostring(value), PlaceholderText = tostring(min) .. "-" .. tostring(max),
     }, top)
     border(number, T.border)
-    local plus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -46, 0, 0), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
-    local minus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -22, 0, 0), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local plus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -46, 0, 32), BackgroundTransparency = 1, Text = "+", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
+    local minus = new("TextButton", { Size = UDim2.fromOffset(22, 22), Position = UDim2.new(1, -22, 0, 32), BackgroundTransparency = 1, Text = "-", Font = T.font, TextSize = 13, TextColor3 = T.text }, top)
     local hitArea = new("TextButton", {
         Name = "SliderDragArea", Size = UDim2.new(1, 0, 0, 30),
-        Position = UDim2.fromOffset(0, 22), BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(0, 54), BackgroundTransparency = 1,
         BorderSizePixel = 0, Text = "", AutoButtonColor = false,
     }, holder)
     local bar = new("Frame", {
