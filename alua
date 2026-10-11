@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-wheel-follow-lift-k350"
+local SUNSET_BUILD = "20261010-rift-vehicle-actions-auto-ram-k351"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9186,6 +9186,9 @@ function BedWars.BuildUI(boardGame)
             { "Movement", "Car Lift", "Movement", "Cold War", "Car Lift", "Car Lift" },
             { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
             { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling", "Car Fling" },
+            { "Player", "Instant Actions", "Player", "Cold War", "Instant Actions", "Instant Actions" },
+            { "Combat", "Hitboxes", "Combat", "Cold War", "Hitboxes", "Hitboxes" },
+            { "Combat", "Car Kill All", "Combat", "Cold War", "Car Kill All", "Car Kill All" },
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
             { "Combat", "Auto Reload", "Combat", "Cold War", "Auto Reload", "Auto Reload" },
@@ -12337,6 +12340,283 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarHitboxes()
+    local options = { Enabled = false, Size = 20, TeamCheck = true, Destroyed = false,
+        Parts = { Head = true } }
+    Settings.ColdWarHitboxes = options
+    local groups = {
+        { "Head", "Head" }, { "Torso", "Torso", "UpperTorso", "LowerTorso" },
+        { "Left Arm", "Left Arm", "LeftUpperArm", "LeftLowerArm", "LeftHand" },
+        { "Right Arm", "Right Arm", "RightUpperArm", "RightLowerArm", "RightHand" },
+        { "Left Leg", "Left Leg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" },
+        { "Right Leg", "Right Leg", "RightUpperLeg", "RightLowerLeg", "RightFoot" },
+    }
+    local saved = {}
+    local function restore(part)
+        local original = saved[part]
+        if not original then return end
+        saved[part] = nil
+        pcall(function()
+            part.Size, part.CanCollide, part.Massless, part.Transparency =
+                original.Size, original.CanCollide, original.Massless, original.Transparency
+        end)
+    end
+    function options.Apply()
+        local seen = {}
+        if options.Enabled and not options.Destroyed and Settings.SelectedGame == "Cold War" then
+            for _, player in ipairs(Players:GetPlayers()) do
+                local character = player.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if player ~= LocalPlayer and character and character.Parent and humanoid and humanoid.Health > 0
+                    and not (options.TeamCheck and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team) then
+                    for _, group in ipairs(groups) do
+                        if options.Parts[group[1]] then
+                            for index = 2, #group do
+                                local part = character:FindFirstChild(group[index])
+                                if part and part:IsA("BasePart") then
+                                    seen[part] = true
+                                    if not saved[part] then
+                                        saved[part] = { Size = part.Size, CanCollide = part.CanCollide,
+                                            Massless = part.Massless, Transparency = part.Transparency }
+                                    end
+                                    local size = math.clamp(options.Size, 2, 50)
+                                    part.Size = Vector3.new(size, size, size)
+                                    part.CanCollide, part.Massless, part.Transparency = false, true, 0.75
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for part in pairs(saved) do if not seen[part] then restore(part) end end
+    end
+    local toggle
+    local function apply()
+        local ok, err = pcall(options.Apply)
+        if not ok then
+            options.Enabled = false
+            for part in pairs(saved) do restore(part) end
+            if toggle then toggle.Set(false) end
+            Settings.Notify("Hitboxes disabled", tostring(err), "error")
+        end
+    end
+    local elapsed = 0
+    track(RunService.Heartbeat:Connect(function(dt)
+        if not options.Enabled and next(saved) == nil then return end
+        elapsed += dt
+        if elapsed < 0.25 then return end
+        elapsed = 0
+        apply()
+    end))
+    track({ Disconnect = function()
+        options.Destroyed, options.Enabled = true, false
+        for part in pairs(saved) do restore(part) end
+    end })
+    local section = gameSection("Cold War", AimTab.Left, "Hitboxes")
+    toggle = Elements.Toggle(section, "Hitboxes", false, function(on) options.Enabled = on apply() end)
+    Elements.Slider(section, "Size", 2, 50, 20, "studs", function(value) options.Size = value apply() end)
+    Elements.Toggle(section, "Team Check", true, function(on) options.TeamCheck = on apply() end)
+    Elements.Label(section, "Select multiple body parts:")
+    for _, group in ipairs(groups) do
+        local name = group[1]
+        Elements.Toggle(section, name, options.Parts[name] == true, function(on)
+            options.Parts[name] = on
+            apply()
+        end)
+    end
+    Elements.Label(section, "Local resizing; server hit registration is unverified.")
+end
+
+function Settings.SetupColdWarInstantActions()
+    local options = { Enabled = false, Destroyed = false }
+    Settings.ColdWarInstantActions = options
+    local patches, caches = {}, {}
+    local toggle
+    local function restore()
+        options.Enabled = false
+        for _, patch in ipairs(patches) do
+            if patch.Object[patch.Key] == patch.Wrapper then patch.Object[patch.Key] = patch.Original end
+        end
+        table.clear(patches)
+        for controller, cache in pairs(caches) do
+            if controller._seatTracks == cache.Filtered then controller._seatTracks = cache.Original end
+        end
+        table.clear(caches)
+    end
+    local function localController(controller)
+        return options.Enabled and Settings.SelectedGame == "Cold War"
+            and controller.character == LocalPlayer.Character
+    end
+    local function withoutCeremony(tracks)
+        if type(tracks) ~= "table" then return tracks end
+        local copy = table.clone(tracks)
+        copy.enter, copy.exit = nil, nil
+        return copy
+    end
+    function options.Install(controller, doors)
+        assert(type(controller.GetSeatTracks) == "function" and type(controller._poolTrack) == "function"
+            and type(controller._beginExit) == "function" and type(doors.waitForDoorOpen) == "function",
+            "Vehicle controller version is unsupported")
+        local function patch(object, key, make)
+            local original = object[key]
+            local wrapper = make(original)
+            table.insert(patches, { Object = object, Key = key, Original = original, Wrapper = wrapper })
+            object[key] = wrapper
+        end
+        patch(controller, "GetSeatTracks", function(original)
+            return function(self, ...)
+                local tracks = original(self, ...)
+                return localController(self) and withoutCeremony(tracks) or tracks
+            end
+        end)
+        patch(controller, "_poolTrack", function(original)
+            return function(self, seat, phase, ...)
+                if localController(self) and (phase == "Enter" or phase == "Exit") then return nil end
+                return original(self, seat, phase, ...)
+            end
+        end)
+        patch(controller, "_beginExit", function(original)
+            return function(self, ...)
+                if localController(self) and type(self._seatTracks) == "table" then
+                    local cache = caches[self]
+                    local tracks = cache and self._seatTracks == cache.Filtered and cache.Original or self._seatTracks
+                    local filtered = withoutCeremony(tracks)
+                    caches[self] = { Original = tracks, Filtered = filtered }
+                    self._seatTracks = filtered
+                end
+                return original(self, ...)
+            end
+        end)
+        patch(doors, "waitForDoorOpen", function(original)
+            return function(vehicle, ...)
+                local character = LocalPlayer.Character
+                local root = character and character:FindFirstChild("HumanoidRootPart")
+                if options.Enabled and Settings.SelectedGame == "Cold War" and root and vehicle then
+                    for _, joint in ipairs(root:GetJoints()) do
+                        local other = joint.Part1 == root and joint.Part0 or joint.Part0 == root and joint.Part1
+                        if other and other:IsDescendantOf(vehicle) then return true end
+                    end
+                end
+                return original(vehicle, ...)
+            end
+        end)
+    end
+    local function nativeRequire(module)
+        local getId, setId = getthreadidentity or getidentity, setthreadidentity or setidentity
+        local identity = type(getId) == "function" and type(setId) == "function" and getId() or nil
+        if identity then setId(2) end
+        local result = table.pack(pcall(require, module))
+        if identity then setId(identity) end
+        if not result[1] then error(result[2], 0) end
+        return result[2]
+    end
+    function options.SetEnabled(on)
+        if not on or options.Destroyed then restore() return end
+        if options.Enabled then return end
+        local ok, err = pcall(function()
+            local shared = game:GetService("ReplicatedStorage"):FindFirstChild("Shared")
+            local vehicle = shared and shared:FindFirstChild("Vehicle")
+            local controller = vehicle and vehicle:FindFirstChild("VehicleController")
+            local doors = vehicle and vehicle:FindFirstChild("VehicleDoorAnimations")
+            assert(controller and doors, "Native vehicle modules are unavailable")
+            options.Install(nativeRequire(controller), nativeRequire(doors))
+            options.Enabled = true
+        end)
+        if not ok then
+            restore()
+            if toggle then toggle.Set(false) end
+            Settings.Notify("Instant Actions unavailable", tostring(err), "error")
+        end
+    end
+    options.Restore = restore
+    track({ Disconnect = function() options.Destroyed = true restore() end })
+    local section = gameSection("Cold War", PlayerTab.Left, "Instant Actions")
+    toggle = Elements.Toggle(section, "Instant Actions", false, options.SetEnabled)
+    Elements.Label(section, "Skips local vehicle ceremonies; server entry/exit approval still applies.")
+end
+
+function Settings.SetupColdWarCarKillAll()
+    local ram = { Enabled = false, Speed = 150, TeamCheck = true, Target = nil,
+        TargetCharacter = nil, Active = false, Destroyed = false, LastTeleport = -math.huge }
+    Settings.ColdWarCarKillAll = ram
+    local fly = Settings.ColdWarCarFly
+    local nextScan = 0
+    local function reset()
+        ram.Target, ram.TargetCharacter, ram.Active = nil, nil, false
+        ram.LastTeleport = -math.huge
+    end
+    local function targetRoot(player)
+        if not player or player == LocalPlayer or player.Parent ~= Players then return end
+        if ram.TeamCheck and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then return end
+        local character = player.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not character or not character.Parent or not humanoid or humanoid.Health <= 0
+            or not root or root.Anchored then return end
+        for _, name in ipairs({ "Head", "Torso" }) do
+            local limb = character:FindFirstChild(name)
+            local health = limb and limb:FindFirstChild("Health")
+            if health and health:IsA("NumberValue") and health.Value <= 0 then return end
+        end
+        return root, character
+    end
+    function ram.Control(root)
+        ram.Active = false
+        if ram.Destroyed or not ram.Enabled or Settings.SelectedGame ~= "Cold War" then reset() return end
+        if anyMenuVisible() or UIS:GetFocusedTextBox() then return Vector3.zero end
+        local now = os.clock()
+        local target, character = targetRoot(ram.Target)
+        if not target or character ~= ram.TargetCharacter then
+            reset()
+            if now < nextScan then return Vector3.zero end
+            nextScan = now + 0.5
+            local candidates = {}
+            for _, player in ipairs(Players:GetPlayers()) do
+                if targetRoot(player) then table.insert(candidates, player) end
+            end
+            if #candidates == 0 then return Vector3.zero end
+            ram.Target = candidates[math.random(1, #candidates)]
+            target, ram.TargetCharacter = targetRoot(ram.Target)
+            if not target then reset() return Vector3.zero end
+        end
+        local forward = Vector3.new(target.CFrame.LookVector.X, 0, target.CFrame.LookVector.Z)
+        if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) else forward = forward.Unit end
+        local under = target.Position + Vector3.new(0, -2.5, 0)
+        if now - ram.LastTeleport >= 0.75 and (root.Position - under).Magnitude > 16 then
+            root.CFrame = CFrame.lookAt(under - forward * 4, under)
+            ram.LastTeleport = now
+        end
+        -- Alternate short approaches beneath the same target, without rotating the car.
+        local side = math.floor(now / 0.2) % 2 == 0 and -1 or 1
+        local desired = under + forward * (side * 4)
+        local delta = desired - root.Position
+        local speed = math.clamp(ram.Speed, 50, 250)
+        local velocity = delta.Magnitude > 0.01 and delta.Unit * math.min(speed, delta.Magnitude * 25) or Vector3.zero
+        ram.Active = true
+        return velocity, forward
+    end
+    fly.AutoRamControl = ram.Control
+    fly.OnVehicleLost = reset
+    track({ Disconnect = function()
+        ram.Destroyed, ram.Enabled = true, false
+        reset()
+        if fly.AutoRamControl == ram.Control then fly.AutoRamControl = nil fly.OnVehicleLost = nil end
+    end })
+    local section = gameSection("Cold War", AimTab.Left, "Car Kill All")
+    Elements.Toggle(section, "Car Kill All", false, function(on)
+        ram.Enabled = on
+        reset()
+        if on then
+            fly.Enabled = true
+            if fly.FlightToggle then fly.FlightToggle.Set(true) end
+        end
+    end)
+    Elements.Toggle(section, "Team Check", true, function(on) ram.TeamCheck = on reset() end)
+    Elements.Slider(section, "Ram Speed", 50, 250, 150, "studs/s", function(value) ram.Speed = value end)
+    Elements.Label(section, "Driver only. Repeats on a living player; vehicle damage is not guaranteed.")
+end
+
 function Settings.SetupColdWarCarNoclip()
     local options = { Enabled = false, Destroyed = false }
     Settings.ColdWarCarNoclip = options
@@ -12504,6 +12784,7 @@ function Settings.SetupColdWarCarFly()
         clearFlight()
         clearPlatform()
         vehicleRoot = nil
+        if fly.OnVehicleLost then fly.OnVehicleLost() end
     end
     local function driverSeat(character, humanoid)
         local seat = humanoid.SeatPart
@@ -12527,6 +12808,8 @@ function Settings.SetupColdWarCarFly()
         local root = seat and seat.AssemblyRootPart
         if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then clear() return end
         if root ~= vehicleRoot then clear() vehicleRoot = root end
+        local autoVelocity, autoForward
+        if fly.AutoRamControl then autoVelocity, autoForward = fly.AutoRamControl(root) end
         if fly.LiftEnabled then
             if not platform or not platform.Parent then
                 clearPlatform()
@@ -12590,11 +12873,12 @@ function Settings.SetupColdWarCarFly()
         if movement.Magnitude > 1 then movement = movement.Unit end
         local contact = fly.ContactFlingEnabled and not anyMenuVisible() and not UIS:GetFocusedTextBox()
             and movement.Magnitude > 0.01 and contactVehicle(root)
-        fly.ContactCollisionActive = contact == true
+        local autoRam = Settings.ColdWarCarKillAll
+        fly.ContactCollisionActive = contact == true or (autoRam and autoRam.Active == true) or false
         local speed = contact and math.clamp(fly.RamSpeed, 50, 250) or fly.Speed
-        velocity.VectorVelocity = movement * speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
+        velocity.VectorVelocity = autoVelocity or movement * speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
         orientation.Enabled = true
-        if fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
+        if autoForward or fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, autoForward or forward) end
     end
     track(RunService.PreSimulation:Connect(function(dt)
         local ok, err = pcall(fly.Step, dt)
@@ -12619,6 +12903,7 @@ function Settings.SetupColdWarCarFly()
             clearFlight()
         end
     end)
+    fly.FlightToggle = flightToggle
     Elements.Slider(section, "Speed", 5, 150, 45, "studs/s", function(value) fly.Speed = value end)
     Elements.Slider(section, "Vertical Speed", 5, 100, 25, "studs/s", function(value) fly.VerticalSpeed = value end)
     Elements.Toggle(section, "Face Camera", true, function(on) fly.FaceCamera = on end)
@@ -12795,6 +13080,9 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarCarFly()
     Settings.SetupColdWarCarNoclip()
+    Settings.SetupColdWarHitboxes()
+    Settings.SetupColdWarInstantActions()
+    Settings.SetupColdWarCarKillAll()
     Settings.SetupColdWarWeaponTuning()
     Settings.SetupColdWarVisibility()
     local atmosphere = gameSection("Cold War", VisualsTab.Left, "Atmosphere")
