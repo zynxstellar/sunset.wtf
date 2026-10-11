@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-native-shots-k368"
+local SUNSET_BUILD = "20261011-rift-imported-kill-all-k369"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -163,6 +163,12 @@ RivalsAim.AutoShoot.AutoFire = true
 RivalsAim.AutoShoot.AutomaticSnap = true
 RivalsAim.AutoShoot.HoldMouse = false
 RivalsAim.AutoShoot.Strength = 8
+RivalsAim.KillAll = table.clone(RivalsAim.AutoShoot)
+RivalsAim.KillAll.Enabled, RivalsAim.KillAll.IgnoreFOV = false, true
+RivalsAim.KillAll.TeamCheck, RivalsAim.KillAll.WallCheck, RivalsAim.KillAll.VisibleOnly = true, true, true
+RivalsAim.KillAll.AimPart, RivalsAim.KillAll.RedirectChance, RivalsAim.KillAll.HeadshotChance = "Head", 100, 0
+RivalsAim.KillAll.MaxDistance, RivalsAim.KillAll.FireCPS, RivalsAim.KillAll.RetryTime = 1000, 20, 2
+RivalsAim.KillAll.CameraSpeed = 45
 RivalsAim.Legit.AutoFire = false
 RivalsAim.Aimbot.AutoFire = false
 local RivalsVisuals = { BoxesOn = false, OutlinesOn = false,
@@ -9867,6 +9873,41 @@ local rivalsModuleLoaded=makeRivalsModuleCache({Env=ENV,Global=getloadedmodules,
 RivalsAim.Wallbang = { Enabled = false, Rays = 0, Distance = 20, HitboxSize = 8 }
 
 -- Arsenal's supplied client uses GeneralFunctions.cast(Ray, hitlist).
+function Settings.MakeArsenalKillCycle(deps)
+    local mod={Enabled=false,Target=nil,Closed=false}
+    local visited, started = {}, 0
+    function mod.Set(on)
+        if mod.Closed then return end
+        mod.Enabled=on==true
+        mod.Target=nil;table.clear(visited)
+        if mod.Enabled then deps.OpenView() else deps.CloseView(); deps.StopFire() end
+    end
+    function mod.Tick()
+        if not mod.Enabled or mod.Closed then return end
+        local candidates, now=deps.Candidates(),deps.Now()
+        local valid
+        for _,candidate in ipairs(candidates) do
+            if mod.Target and candidate.Player==mod.Target.Player and candidate.Part==mod.Target.Part then valid=candidate;break end
+        end
+        if valid and now-started>=deps.Timeout() then visited[valid.Player]=true;valid=nil end
+        if not valid then
+            if mod.Target then visited[mod.Target.Player]=true end
+            for pass=1,2 do
+                for _,candidate in ipairs(candidates) do
+                    if not visited[candidate.Player] then valid=candidate;break end
+                end
+                if valid then break end
+                table.clear(visited)
+            end
+            started=now
+        end
+        if (valid and valid.Player) ~= (mod.Target and mod.Target.Player) then deps.StopFire() end
+        mod.Target=valid
+        if valid then deps.MoveBehind(valid) else deps.StopFire() end
+    end
+    function mod.Close() mod.Set(false);mod.Closed=true end
+    return mod
+end
 function Settings.MakeArsenalCastAdapter(deps)
     local adapter = {Closed=false, Calls=0, Redirects=0}
     local api, previous, wrapper
@@ -10393,6 +10434,94 @@ local function closestBodyPart(entity, camera, radius, visible)
 end
 
 -- One probability decision per eligible firing query. A miss leaves the native shot intact.
+    if IS_GENERIC then
+        local mode=RivalsAim.KillAll
+        local view, freeFrame, pitch, yaw
+        local function closeView()
+            if not view then return end
+            local camera=view.Camera
+            if camera and camera.Parent then
+                camera.CameraType, camera.CameraSubject = view.Type, view.Subject
+                camera.CFrame, camera.Focus = view.Frame, view.Focus
+            end
+            view=nil
+        end
+        local cycle=Settings.MakeArsenalKillCycle({Now=os.clock, Timeout=function() return mode.RetryTime end,
+            OpenView=function()
+                local camera=workspace.CurrentCamera
+                if not camera then return end
+                view={Camera=camera,Type=savedCamType or camera.CameraType,Subject=camera.CameraSubject,Frame=camera.CFrame,Focus=camera.Focus}
+                freeFrame=camera.CFrame
+                pitch,yaw=freeFrame:ToOrientation()
+                camera.CameraType=Enum.CameraType.Scriptable
+            end,
+            CloseView=closeView,
+            StopFire=function() if RivalsAim.StopAutoFire then RivalsAim.StopAutoFire() end end,
+            Candidates=function()
+                local character=LocalPlayer.Character
+                local own=character and character:FindFirstChild("HumanoidRootPart")
+                local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+                if not own or not humanoid or humanoid.Health<=0 or not controller then return {} end
+                local values=RivalsAim.ResolveArsenalModule("State")
+                local weapon=values and values.gun
+                if not weapon or weapon:FindFirstChild("Projectile") or weapon:FindFirstChild("Melee") then return {} end
+                local candidates={}
+                for _,player in ipairs(Players:GetPlayers()) do
+                    local entity=enemyEntity(player,controller.LocalFighter,false,mode)
+                    local root=entity and entity.Model:FindFirstChild("HumanoidRootPart")
+                    local part=entity and targetPart(entity,mode.AimPart)
+                    if root and part and not entity.Model:FindFirstChildOfClass("ForceField") then
+                        table.insert(candidates,{Player=player,Root=root,Part=part,Distance=(root.Position-own.Position).Magnitude})
+                    end
+                end
+                table.sort(candidates,function(a,b) return a.Distance<b.Distance end)
+                return candidates
+            end,
+            MoveBehind=function(target)
+                local character=LocalPlayer.Character
+                local own=character and character:FindFirstChild("HumanoidRootPart")
+                if own and target.Root.Parent then
+                    local position=(target.Root.CFrame*CFrame.new(0,0,3)).Position
+                    own.CFrame=CFrame.lookAt(position,target.Part.Position)
+                    own.AssemblyLinearVelocity, own.AssemblyAngularVelocity = Vector3.zero,Vector3.zero
+                end
+            end,
+        })
+        mode.Controller=cycle
+        function RivalsAim.SetKillAll(on)
+            if on and (not loadApi() or not RivalsAim.StartArsenalShotAdapter()) then
+                warn("[Rift] Kill All could not start: " .. tostring(RivalsAim.LoadError))
+                if mode.Toggle then mode.Toggle.Set(false) end
+                return
+            end
+            mode.Enabled=on==true
+            cycle.Set(mode.Enabled)
+            if ENV.RiftArsenalDirectAimRay then
+                ENV.RiftArsenalDirectAimRay.Active=mode.Enabled or RivalsAim.Enabled or RivalsAim.Aimbot.Enabled or RivalsAim.Wallbang.Enabled
+            end
+        end
+        RunService:BindToRenderStep("RiftArsenalDetachedView",Enum.RenderPriority.Last.Value+4,function(delta)
+            if not mode.Enabled or not view then return end
+            if workspace.CurrentCamera~=view.Camera then RivalsAim.SetKillAll(false);return end
+            if not anyMenuVisible() and not UIS:GetFocusedTextBox() then
+                if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                    local mouse=UIS:GetMouseDelta()
+                    pitch=math.clamp(pitch-mouse.Y*0.003,-math.rad(89),math.rad(89));yaw-=mouse.X*0.003
+                end
+                local function down(key) return UIS:IsKeyDown(key) and 1 or 0 end
+                local movement=Vector3.new(down(Enum.KeyCode.D)-down(Enum.KeyCode.A),
+                    down(Enum.KeyCode.E)-down(Enum.KeyCode.Q),down(Enum.KeyCode.S)-down(Enum.KeyCode.W))
+                freeFrame=CFrame.new(freeFrame.Position)*CFrame.fromOrientation(pitch,yaw,0)
+                if movement.Magnitude>0 then freeFrame=freeFrame*CFrame.new(movement.Unit*mode.CameraSpeed*math.min(delta,0.1)) end
+            end
+            view.Camera.CameraType=Enum.CameraType.Scriptable
+            view.Camera.CFrame=freeFrame
+            view.Camera.Focus=freeFrame*CFrame.new(0,0,-10)
+        end)
+        track({Disconnect=function()
+            mode.Enabled=false;cycle.Close();RunService:UnbindFromRenderStep("RiftArsenalDetachedView")
+        end})
+    end
 local silentShotOptions=function(options,roll)
     roll=roll or math.random
     local chance=math.clamp(tonumber(options.RedirectChance)or 100,0,100)
@@ -10407,6 +10536,10 @@ end
 
     local function closestTarget(localFighter, options)
         options = options or RivalsAim
+        if options==RivalsAim.KillAll then
+            local candidate=options.Controller and options.Controller.Target
+            return candidate and candidate.Part,candidate and candidate.Player
+        end
         local camera = workspace.CurrentCamera
         if not camera then return end
         local center = camera.ViewportSize * 0.5
@@ -10582,6 +10715,7 @@ end
         return installed
     end
     function state.Restore()
+        if RivalsAim.SetKillAll then RivalsAim.SetKillAll(false) end
         state.Active = false
         state.Restored = true
         RivalsAim.Wallbang.Enabled = false
@@ -10614,7 +10748,7 @@ end
         state.Active = false
         RivalsAim.Enabled = on == true and installShot() or false
         state.Active = RivalsAim.Enabled
-        if ENV.RiftArsenalDirectAimRay then ENV.RiftArsenalDirectAimRay.Active=state.Active end
+        if ENV.RiftArsenalDirectAimRay then ENV.RiftArsenalDirectAimRay.Active=state.Active or RivalsAim.KillAll.Enabled end
         if state.Active and RivalsAim.ArsenalSilentAvailable then
             RivalsAim.StopAutoFire()
             for _, name in ipairs({ "Assist", "Legit", "Aimbot" }) do
@@ -10741,16 +10875,26 @@ end
     track(LocalPlayer.CharacterRemoving:Connect(stopAutoFire))
     local function autoFire(options, fighter, part, camera)
         -- Manual firing owns the mouse button; aim never clicks/releases it.
-        if not RivalsAim.AutoShoot.Enabled then stopAutoFire() return end
+        local shoot=RivalsAim.KillAll.Enabled and RivalsAim.KillAll or RivalsAim.AutoShoot
+        if not shoot.Enabled then stopAutoFire() return end
         local wanted = false
-        local silent = RivalsAim.Enabled == true
+        local silent = RivalsAim.Enabled == true or RivalsAim.KillAll.Enabled
         if silent then
-            options = RivalsAim
+            options = RivalsAim.KillAll.Enabled and RivalsAim.KillAll or RivalsAim
             part = closestTarget(fighter, options)
         end
         if part then
-            local visible = not options.VisibleOnly or aimUnobstructed(fighter, part, camera.CFrame.Position, options)
-            local direction = part.Position - camera.CFrame.Position
+            local origin=camera.CFrame.Position
+            if RivalsAim.KillAll.Enabled then
+                local character=LocalPlayer.Character
+                local head=character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
+                if not head then stopAutoFire();return end
+                origin=head.Position
+                local values=RivalsAim.ResolveArsenalModule("State")
+                if not values or not values.gun or values.gun:FindFirstChild("Projectile") or values.gun:FindFirstChild("Melee") then stopAutoFire();return end
+            end
+            local visible = not options.VisibleOnly or aimUnobstructed(fighter, part, origin, options)
+            local direction = part.Position - origin
             local aligned = false
             if direction.Magnitude > 0.001 then
                 if silent then
@@ -10762,17 +10906,16 @@ end
                     aligned = hit ~= nil and model ~= nil and hit.Instance:IsDescendantOf(model)
                 end
             end
-            local shoot = RivalsAim.AutoShoot
             wanted = canFire(shoot, part:IsDescendantOf(workspace), visible, aligned, focusedGame())
-                and (part.Position - camera.CFrame.Position).Magnitude <= shoot.MaxDistance
+                and direction.Magnitude <= shoot.MaxDistance
 
         end
         if game:GetService("GuiService").MenuIsOpen or anyMenuVisible() or UIS:GetFocusedTextBox() then wanted = false end
-        local ok, err = pcall(firing.Update, wanted, RivalsAim.AutoShoot.FireMode or "Hold", RivalsAim.AutoShoot.FireCPS, os.clock())
+        local ok, err = pcall(firing.Update, wanted, shoot.FireMode or "Hold", shoot.FireCPS, os.clock())
         if not ok then
             stopAutoFire()
-            RivalsAim.AutoShoot.Enabled = false
-            if RivalsAim.AutoShoot.Toggle then RivalsAim.AutoShoot.Toggle.Set(false) end
+            shoot.Enabled = false
+            if shoot.Toggle then shoot.Toggle.Set(false) end
             aimStatus(options, "Auto Fire unavailable; manual fire remains available")
             warn("[Rift] Auto Fire input failed: " .. tostring(err))
         end
@@ -10826,6 +10969,7 @@ function RivalsAim.MakeArsenalHitboxes(deps)
         if part.Parent then
             part.Size, part.CanCollide, part.CanTouch = original.Size, original.Collide, original.Touch
             part.Massless, part.Transparency = original.Massless, original.Transparency
+            part.CanQuery, part.LocalTransparencyModifier = original.Query, original.LocalTransparency
         end
         saved[part] = nil
     end
@@ -10844,10 +10988,11 @@ function RivalsAim.MakeArsenalHitboxes(deps)
                     and (head.Position - ownRoot.Position).Magnitude <= maxRange then
                     keep[head] = true
                     if not saved[head] then
-                        saved[head] = {Size=head.Size,Collide=head.CanCollide,Touch=head.CanTouch,Massless=head.Massless,Transparency=head.Transparency}
+                        saved[head] = {Size=head.Size,Collide=head.CanCollide,Touch=head.CanTouch,Massless=head.Massless,Transparency=head.Transparency,Query=head.CanQuery,LocalTransparency=head.LocalTransparencyModifier}
                     end
                     head.Size = deps.Vector.new(size,size,size)
-                    head.CanCollide, head.CanTouch, head.Massless, head.Transparency = false, false, true, 1
+                    head.CanCollide, head.CanTouch, head.Massless, head.Transparency = false, false, true, 0
+                    head.CanQuery, head.LocalTransparencyModifier = true, 1
                 end
             end
         end
@@ -10914,8 +11059,17 @@ end
                     local params=RaycastParams.new()
                     params.FilterType, params.IgnoreWater = Enum.RaycastFilterType.Exclude, true
                     params.FilterDescendantsInstances=ignored
-                    local direction, filtered=rayState.Transform(ray.Origin,ray.Direction,params)
-                    if direction then return Ray.new(ray.Origin,direction), filtered and filtered.FilterDescendantsInstances or ignored end
+                    local origin=ray.Origin
+                    if RivalsAim.KillAll.Enabled then
+                        local target=RivalsAim.KillAll.Controller.Target
+                        local character=LocalPlayer.Character
+                        local head=character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
+                        if not target or not head then return end
+                        origin=head.Position
+                        workspace.CurrentCamera.CFrame=CFrame.lookAt(origin,target.Part.Position)
+                    end
+                    local direction, filtered=rayState.Transform(origin,ray.Direction,params)
+                    if direction then return Ray.new(origin,direction), filtered and filtered.FilterDescendantsInstances or ignored end
                 end,
                 OnShot=function(origin, destination)
                     local trails=RivalsAim.BulletTracers
@@ -10948,15 +11102,16 @@ end
             rayState.Transform = function(origin, direction, params)
                 if state.Restored or not isRivalsMode(Settings.SelectedGame) or not focusedGame()
                     or anyMenuVisible() or UIS:GetFocusedTextBox() or game:GetService("GuiService").MenuIsOpen then return end
-                if state.Active then
+                if state.Active or RivalsAim.KillAll.Enabled then
                     local fighter = controller and controller.LocalFighter
                     if not fighter then status("Waiting for character") return end
-                    local shotOptions=silentShotOptions(RivalsAim)
+                    local options=RivalsAim.KillAll.Enabled and RivalsAim.KillAll or RivalsAim
+                    local shotOptions=silentShotOptions(options)
                     if not shotOptions then status("Chance roll kept native shot")return end
                     local part, player = closestTarget(fighter,shotOptions)
                     if not part then status("No eligible target in FOV") return end
                     -- Recheck from the actual query origin, not just the camera.
-                    if RivalsAim.WallCheck and not unobstructed(fighter, part, origin, true) then
+                    if options.WallCheck and not unobstructed(fighter, part, origin, true) then
                         status("Target behind cover")
                         return
                     end
@@ -11001,7 +11156,7 @@ end
                 return corrected, preserved
             end
             track(RunService.Heartbeat:Connect(function()
-                rayState.Active = not state.Restored and (state.Active
+                rayState.Active = not state.Restored and (state.Active or RivalsAim.KillAll.Enabled
                     or RivalsAim.Aimbot.Enabled or RivalsAim.Wallbang.Enabled)
                 if not state.Active then status("Off") end
             end))
@@ -11023,7 +11178,7 @@ end
             RivalsAim.ShotAdapterReady=installShot()
         end
         if game.PlaceId == 286090429 and ENV.RiftArsenalDirectAimRay then
-            ENV.RiftArsenalDirectAimRay.Active = not state.Restored and (state.Active or RivalsAim.Aimbot.Enabled or RivalsAim.Wallbang.Enabled)
+            ENV.RiftArsenalDirectAimRay.Active = not state.Restored and (state.Active or RivalsAim.KillAll.Enabled or RivalsAim.Aimbot.Enabled or RivalsAim.Wallbang.Enabled)
         end
         aimStatus(options, options.Enabled and "Ready" or "Off")
         if on and not options.Enabled then
@@ -11058,7 +11213,12 @@ end
             end
             return true
         end
-        local options = active(RivalsAim.Legit) and RivalsAim.Legit
+        if RivalsAim.KillAll.Enabled and RivalsAim.KillAll.Controller and focusedGame() then
+            local ok,err=pcall(RivalsAim.KillAll.Controller.Tick)
+            if not ok then RivalsAim.SetKillAll(false);warn("[Rift] Kill All stopped: " .. tostring(err));return end
+        end
+        local options = active(RivalsAim.KillAll) and RivalsAim.KillAll
+            or active(RivalsAim.Legit) and RivalsAim.Legit
             or active(RivalsAim.Aimbot) and RivalsAim.Aimbot
             or active(RivalsAim.Assist) and RivalsAim.Assist
             or active(RivalsAim.AutoShoot) and RivalsAim.AutoShoot
@@ -11106,7 +11266,7 @@ end
             if (part.Position - camera.CFrame.Position).Magnitude < 0.001 then stopAutoFire() return end
             aimStatus(options, "Tracking " .. tostring(state.CameraTargetPlayer and state.CameraTargetPlayer.Name or "target"))
             local goal = CFrame.lookAt(camera.CFrame.Position, part.Position)
-            if options == RivalsAim.AutoShoot then
+            if options == RivalsAim.AutoShoot or options == RivalsAim.KillAll then
                 -- Trigger module observes the crosshair without moving the camera.
             elseif options == RivalsAim.Aimbot and not options.LegitMode then
                 camera.CFrame = goal
@@ -11678,6 +11838,12 @@ function RivalsAim.BuildUI()
         Settings.NoclipEnabled = on
         CharacterCollision.SetManual(on)
     end)
+    if IS_GENERIC then
+        local kill=gameSection(BOARD_GAME_NAME,AimTab.Left,"Kill All")
+        RivalsAim.KillAll.Toggle=Elements.Toggle(kill,"Kill All",false,function(on) RivalsAim.SetKillAll(on) end)
+        Elements.Slider(kill,"Switch Target After",0.25,5,2,"seconds",function(value) RivalsAim.KillAll.RetryTime=value end,0.25)
+        Elements.Slider(kill,"Camera Move Speed",5,150,45,"studs/s",function(value) RivalsAim.KillAll.CameraSpeed=value end)
+    end
     local shoot = gameSection(BOARD_GAME_NAME, AimTab.Left, "Auto Shoot")
     RivalsAim.AutoShoot.Toggle = Elements.Toggle(shoot, "Auto Shoot", false, function(on)
         RivalsAim.AutoShoot.Enabled = on
@@ -12098,13 +12264,10 @@ end
                     setting.Set(value == "Quick" and 10 or value == "Relaxed" and 100 or 0)
                 end)
             elseif key == "InfiniteAmmo" then
-                Elements.Slider(section, "Client Ammo", 1, 300, 99, "", function(value)
+                Elements.Slider(section, "Ammo Amount", 1, 300, 99, "", function(value)
                     guns.Ammo = value
                 end)
-                local setting = ConfigControls[#ConfigControls]
-                Elements.Dropdown(section, "Ammo Preset", { "Standard", "Extended", "Maximum" }, "Extended", function(value)
-                    setting.Set(value == "Standard" and 30 or value == "Maximum" and 300 or 99)
-                end)
+
             end
         end
         local statusAt = 0
@@ -13264,7 +13427,7 @@ local makeProfileRuntime = function(deps)
         -- Numeric gun settings are applied before enable/disable actions.
         for _,spec in ipairs({{"Rapid Fire","Requested Fire Rate",config.GunRate},
             {"Fast Reload","Reload Delay",config.ReloadMs},{"Fast Equip","Equip Delay",config.EquipMs},
-            {"Infinite Ammo","Client Ammo",config.Ammo}})do sync(spec[1],spec[2],spec[3],true)end
+            {"Infinite Ammo","Ammo Amount",config.Ammo}})do sync(spec[1],spec[2],spec[3],true)end
         for _,spec in ipairs({{"Rapid Fire","Timing Mode",config.FireTiming or "Requested Rate"},
             {"Fast Reload","Timing Mode",config.ReloadTiming or "Requested Delay"},
             {"Rapid Fire","Fire Speed Boost",config.FireBoost or 0},
@@ -13924,19 +14087,28 @@ end
 if game.PlaceId == 286090429 then
     local section = gameSection(BOARD_GAME_NAME, AimTab.Right, "Wallbang")
     local hitboxes = RivalsAim.MakeArsenalHitboxes({Player=LocalPlayer,Players=Players,Vector=Vector3})
-    Elements.Toggle(section, "Wallbang", false, function(on)
+    local wallbangToggle
+    local function updateHitboxes()
+        hitboxes.Tick(RivalsAim.Wallbang.Enabled, RivalsAim.Wallbang.HitboxSize, RivalsAim.MaxDistance or 1000)
+    end
+    wallbangToggle=Elements.Toggle(section, "Wallbang", false, function(on)
+        if on and not RivalsAim.StartArsenalShotAdapter() then
+            warn("[Rift] " .. tostring(RivalsAim.LoadError))
+            if wallbangToggle then wallbangToggle.Set(false) end
+            return
+        end
         RivalsAim.Wallbang.Enabled = on == true
         local ray = ENV.RiftArsenalDirectAimRay
-        if ray then ray.Active = on or RivalsAim.Enabled or RivalsAim.Aimbot.Enabled end
-        if not on then hitboxes.Close() end
+        if ray then ray.Active = on or RivalsAim.Enabled or RivalsAim.KillAll.Enabled or RivalsAim.Aimbot.Enabled end
+        if not on then hitboxes.Close() else updateHitboxes() end
     end)
     Elements.Slider(section, "Wall Penetration Distance", 1, 100, 20, "studs", function(value) RivalsAim.Wallbang.Distance = value end)
-    Elements.Slider(section, "Hitbox Size", 1, 30, 8, "studs", function(value) RivalsAim.Wallbang.HitboxSize = value end)
+    Elements.Slider(section, "Hitbox Size", 1, 30, 8, "studs", function(value) RivalsAim.Wallbang.HitboxSize = value; updateHitboxes() end)
     local nextUpdate = 0
     track(RunService.Heartbeat:Connect(function()
         if os.clock() < nextUpdate then return end
-        nextUpdate = os.clock() + 0.25
-        hitboxes.Tick(RivalsAim.Wallbang.Enabled, RivalsAim.Wallbang.HitboxSize, RivalsAim.MaxDistance or 1000)
+        nextUpdate = os.clock() + 0.05
+        updateHitboxes()
     end))
     track({Disconnect=hitboxes.Close})
 end

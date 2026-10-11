@@ -140,6 +140,26 @@ def main():
         arsenal_native_path = temp / 'arsenal-native-spec.luau'
         arsenal_native_path.write_text(arsenal_native_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(arsenal_native_path)], check=True)
+        arsenal_cycle_spec = (ROOT / 'tests' / 'arsenal-kill-cycle-spec.luau').read_text(encoding='utf-8')
+        arsenal_cycle_spec = arsenal_cycle_spec.replace('-- INSERT_KILL_CYCLE', between(imported_inner, 'function Settings.MakeArsenalKillCycle(', '\nfunction Settings.MakeArsenalCastAdapter('))
+        arsenal_cycle_path = temp / 'arsenal-kill-cycle-spec.luau'
+        arsenal_cycle_path.write_text(arsenal_cycle_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(arsenal_cycle_path)], check=True)
+        wallbang_spec = (ROOT / 'tests' / 'arsenal-wallbang-toggle-spec.luau').read_text(encoding='utf-8')
+        wallbang_spec = wallbang_spec.replace('-- INSERT_WALLBANG_TOGGLE', between(imported_inner, 'if game.PlaceId == 286090429 then\n    local section = gameSection(BOARD_GAME_NAME, AimTab.Right, "Wallbang")', '\n\n    end\n    if IS_GENERIC then'))
+        wallbang_path = temp / 'arsenal-wallbang-toggle-spec.luau'
+        wallbang_path.write_text(wallbang_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(wallbang_path)], check=True)
+        view_spec = (ROOT / 'tests' / 'arsenal-detached-view-spec.luau').read_text(encoding='utf-8')
+        view_spec = view_spec.replace('-- INSERT_KILL_CYCLE', between(imported_inner, 'function Settings.MakeArsenalKillCycle(', '\nfunction Settings.MakeArsenalCastAdapter('))
+        view_spec = view_spec.replace('-- INSERT_DETACHED_VIEW', between(imported_inner, '    if IS_GENERIC then\n        local mode=RivalsAim.KillAll', '\nlocal silentShotOptions='))
+        view_spec = view_spec.replace('-- INSERT_ENEMY_ELIGIBILITY', between(imported_inner, '    local function enemyEntity(', '\nlocal function closestBodyPart('))
+        view_spec = view_spec.replace('-- INSERT_SHOT_FRAME', between(imported_inner, 'Transform=function(ray, ignored)', '\n                OnShot=function').rstrip().removesuffix(',').replace('Transform=', 'local shotTransform = ', 1))
+        view_path=temp / 'arsenal-detached-view-spec.luau'
+        view_path.write_text(view_spec, encoding='utf-8')
+        subprocess.run([str(runtime),str(view_path)],check=True)
+        assert '"Ammo Preset"' not in imported_inner and '"Client Ammo"' not in imported_inner
+        assert 'Elements.Slider(section, "Ammo Amount"' in imported_inner
         imported_ui_spec = (ROOT / 'tests' / 'arsenal-ui-spec.luau').read_text(encoding='utf-8')
         imported_ui_source = ui_prefix + '\n' + imported_ui_spec.replace('-- INSERT_IMPORTED_UI', '\n'.join(imported_ui_parts))
         imported_ui_path = temp / 'arsenal-ui-spec.luau'

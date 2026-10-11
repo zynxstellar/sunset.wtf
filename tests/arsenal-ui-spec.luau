@@ -33,6 +33,7 @@ local silentTarget
 local function closestTarget() return silentTarget end
 -- INSERT_IMPORTED_UI
 RivalsAim.ArsenalSilentAvailable = true
+RivalsAim.SetKillAll=function(on) RivalsAim.KillAll.Enabled=on end
 RivalsAim.StopAutoFire = function() end
 RivalsAim.SetEnabled = function(on) RivalsAim.Enabled = on end
 RivalsAim.SetCameraEnabled = function(name,on) RivalsAim[name].Enabled = on end
@@ -73,6 +74,12 @@ for _, gameName in ipairs({"Arsenal","Rivals"}) do
         key ..= "/"..gameName.."/"..section.."/"..name
         for _, option in ipairs(ConfigControls) do if option.Key == key then return option end end
         error("missing "..key)
+    end
+    if IS_GENERIC then
+        assert(cards["Kill All"],"Kill All card missing")
+        control("Kill All","Kill All").Set(true)
+        assert(RivalsAim.KillAll.Enabled and not RivalsAim.AutoShoot.Enabled,"Kill All changed the Auto Shoot toggle")
+        control("Kill All","Kill All").Set(false)
     end
     control("Aimbot","Aimbot").Set(true)
     assert(RivalsAim.Aimbot.Enabled and not RivalsAim.AutoShoot.Enabled,"aimbot enabled auto firing")
@@ -128,7 +135,7 @@ end
 print("PASS imported movement: independent Fly/Noclip and collision held until hover after respawn")
 do
     local originalSize = Vector3.new(2,1,1)
-    local head = {Parent=true,Position=Vector3.new(2,0,0),Size=originalSize,CanCollide=true,CanTouch=true,Massless=false,Transparency=0,
+    local head = {Parent=true,Position=Vector3.new(2,0,0),Size=originalSize,CanCollide=true,CanTouch=true,Massless=false,Transparency=0,CanQuery=false,LocalTransparencyModifier=0,
         IsA=function(_,name) return name=="BasePart" end}
     local hum = {Health=100}
     local enemy = {Neutral=false,Team=2,Character={FindFirstChild=function() return head end,FindFirstChildOfClass=function() return hum end}}
@@ -136,10 +143,10 @@ do
     local fakePlayers = {GetPlayers=function() return {owner,enemy} end}
     local hitboxes = RivalsAim.MakeArsenalHitboxes({Player=owner,Players=fakePlayers,Vector=Vector3})
     hitboxes.Tick(true,12,100)
-    assert(head.Size.X==12 and not head.CanCollide and not head.CanTouch and head.Transparency==1)
+    assert(head.Size.X==12 and not head.CanCollide and not head.CanTouch and head.Transparency==0 and head.CanQuery and head.LocalTransparencyModifier==1)
     hum.Health=0
     hitboxes.Tick(true,12,100)
-    assert(head.Size==originalSize and head.CanCollide and head.CanTouch and not head.Massless and head.Transparency==0)
+    assert(head.Size==originalSize and head.CanCollide and head.CanTouch and not head.Massless and head.Transparency==0 and not head.CanQuery and head.LocalTransparencyModifier==0)
     hum.Health=100
     hitboxes.Tick(true,12,100)
     hitboxes.Close()
