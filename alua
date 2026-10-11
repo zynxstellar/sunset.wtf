@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-car-spin-camera-k374"
+local SUNSET_BUILD = "20261011-rift-car-fall-platform-k375"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9233,7 +9233,6 @@ function BedWars.BuildUI(boardGame)
             { "Movement", "Car Fly", "Movement", "Cold War", "Car Fly", "Car Fly" },
             { "Movement", "Car Lift", "Movement", "Cold War", "Car Lift", "Car Lift" },
             { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
-            { "Movement", "Car Anti Aim", "Movement", "Cold War", "Car Anti Aim", "Car Anti Aim" },
             { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling", "Car Fling" },
             { "Player", "Instant Actions", "Player", "Cold War", "Instant Actions", "Instant Actions" },
             { "Combat", "Car Kill All", "Combat", "Cold War", "Car Kill All", "Car Kill All" },
@@ -12393,89 +12392,6 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
-function Settings.SetupColdWarCarAntiAim()
-    local options = { Enabled = false, Speed = 45, Destroyed = false }
-    Settings.ColdWarCarAntiAim = options
-    local root, attachment, angular
-    local cameraState
-    local cameraBinding = "RiftColdWarCarSpinCamera"
-    local toggle
-    local function releaseCamera()
-        if not cameraState then return end
-        local camera = cameraState.Camera
-        if camera and camera.Parent then
-            camera.CameraType, camera.CameraSubject = cameraState.Type, cameraState.Subject
-        end
-        cameraState = nil
-    end
-    local function captureCamera()
-        local camera = workspace.CurrentCamera
-        if cameraState and cameraState.Camera == camera then return end
-        releaseCamera()
-        if not camera then return end
-        cameraState = { Camera = camera, Type = savedCamType or camera.CameraType, Subject = camera.CameraSubject,
-            Offset = camera.CFrame.Position - root.Position, Rotation = camera.CFrame.Rotation,
-            FocusOffset = camera.Focus.Position - root.Position, FocusRotation = camera.Focus.Rotation }
-        camera.CameraType = Enum.CameraType.Scriptable
-    end
-    local function clear()
-        releaseCamera()
-        if angular then angular:Destroy() angular = nil end
-        if attachment then attachment:Destroy() attachment = nil end
-        if root and root.Parent then root.AssemblyAngularVelocity = Vector3.zero end
-        root = nil
-    end
-    function options.Step()
-        local character = LocalPlayer.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        local fly = Settings.ColdWarCarFly
-        local seat = options.Enabled and not options.Destroyed and Settings.SelectedGame == "Cold War"
-            and humanoid and humanoid.Health > 0 and fly and fly.DriverSeat(character, humanoid)
-        local vehicleRoot = seat and seat.AssemblyRootPart
-        if not vehicleRoot or not vehicleRoot.Parent or vehicleRoot.Anchored
-            or vehicleRoot:IsDescendantOf(character) then clear() return end
-        if vehicleRoot ~= root then clear() root = vehicleRoot end
-        captureCamera()
-        if not angular then
-            attachment = new("Attachment", { Name = "RiftCarAntiAimAttachment" }, root)
-            angular = new("AngularVelocity", { Name = "RiftCarAntiAimAngular", Attachment0 = attachment,
-                RelativeTo = Enum.ActuatorRelativeTo.World, AngularVelocity = Vector3.zero,
-                MaxTorque = math.max(root.AssemblyMass * workspace.Gravity * 1000, 10000) }, root)
-        end
-        local t, speed = os.clock(), math.clamp(options.Speed, 1, 120)
-        angular.AngularVelocity = Vector3.new(math.cos(t * 0.7), 0.75, math.sin(t * 0.9)).Unit * speed
-    end
-    RunService:BindToRenderStep(cameraBinding, Enum.RenderPriority.Last.Value + 4, function()
-        if not options.Enabled or not root or not root.Parent then releaseCamera() return end
-        captureCamera()
-        if not cameraState then return end
-        local camera = cameraState.Camera
-        camera.CameraType = Enum.CameraType.Scriptable
-        camera.CFrame = CFrame.new(root.Position + cameraState.Offset) * cameraState.Rotation
-        camera.Focus = CFrame.new(root.Position + cameraState.FocusOffset) * cameraState.FocusRotation
-    end)
-    track(RunService.PreSimulation:Connect(function()
-        local ok, err = pcall(options.Step)
-        if not ok then
-            options.Enabled = false
-            clear()
-            if toggle then toggle.Set(false) end
-            Settings.Notify("Car Anti Aim paused", tostring(err), "error")
-        end
-    end))
-    track({ Disconnect = function()
-        options.Destroyed, options.Enabled = true, false
-        clear()
-        RunService:UnbindFromRenderStep(cameraBinding)
-    end })
-    local section = gameSection("Cold War", MainTab.Left, "Car Anti Aim")
-    toggle = Elements.Toggle(section, "Car Anti Aim", false, function(on)
-        options.Enabled = on
-        if not on then clear() end
-    end)
-    Elements.Slider(section, "Spin Speed", 1, 120, 45, "rad/s", function(value) options.Speed = value end)
-end
-
 function Settings.SetupColdWarInstantActions()
     local options = { Enabled = false, Destroyed = false }
     Settings.ColdWarInstantActions = options
@@ -12853,6 +12769,7 @@ function Settings.SetupColdWarCarFly()
     Settings.ColdWarCarFly = fly
     local vehicleRoot, attachment, velocity, orientation
     local platform, platformTop, platformClearance
+    local catchPending = false
     local wheelParts = {}
     local wheelAdded, wheelRemoving
     local lastError = -math.huge
@@ -12937,6 +12854,7 @@ function Settings.SetupColdWarCarFly()
     local function clear()
         clearFlight()
         clearPlatform()
+        catchPending = false
         vehicleRoot = nil
         if fly.OnVehicleLost then fly.OnVehicleLost() end
     end
@@ -12956,7 +12874,7 @@ function Settings.SetupColdWarCarFly()
     function fly.Step(dt)
         local character = LocalPlayer.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if fly.Destroyed or (not fly.Enabled and not fly.LiftEnabled) or Settings.SelectedGame ~= "Cold War"
+        if fly.Destroyed or (not fly.Enabled and not fly.LiftEnabled and not catchPending and not platform) or Settings.SelectedGame ~= "Cold War"
             or not humanoid or humanoid.Health <= 0 then clear() return end
         local seat = driverSeat(character, humanoid)
         local root = seat and seat.AssemblyRootPart
@@ -12964,7 +12882,22 @@ function Settings.SetupColdWarCarFly()
         if root ~= vehicleRoot then clear() vehicleRoot = root end
         local autoVelocity, autoForward
         if fly.AutoRamControl then autoVelocity, autoForward = fly.AutoRamControl(root) end
-        if fly.Enabled or fly.LiftEnabled then
+        if fly.Enabled then
+            catchPending = true
+            if platform then clearPlatform() end
+        end
+        local falling = not fly.Enabled and (fly.LiftEnabled or catchPending)
+            and root.AssemblyLinearVelocity.Y < -1
+        if falling and not platform then
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = { character, root:FindFirstAncestorOfClass("Model") or root }
+            params.IgnoreWater = true
+            params.RespectCanCollide = true
+            local ground = workspace:Raycast(root.Position, Vector3.new(0, -(root.Size.Y / 2 + 3), 0), params)
+            falling = ground == nil
+        end
+        if not fly.Enabled and (platform or falling) then
             if not platform or not platform.Parent then
                 clearPlatform()
                 local model = root:FindFirstAncestorOfClass("Model")
@@ -12989,10 +12922,10 @@ function Settings.SetupColdWarCarFly()
                     Color = Color3.fromRGB(65, 145, 255), Material = Enum.Material.SmoothPlastic,
                     Size = Vector3.new(math.clamp(math.max(size.X, size.Z) + 4, 8, 60), 1, math.clamp(math.max(size.X, size.Z) + 4, 8, 60)),
                     CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z) }, workspace)
+                catchPending = false
             end
             platform.CanCollide = not (Settings.ColdWarCarKillAll and Settings.ColdWarCarKillAll.Enabled)
-            platformTop = wheelBottom(root)
-            -- Keep support directly below the wheels during flight, driving and falling.
+            -- Hold the catch height so the falling wheels can land on the platform.
             platform.CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z)
         elseif platform then clearPlatform() end
         if not fly.Enabled then clearFlight() return end
@@ -13037,7 +12970,7 @@ function Settings.SetupColdWarCarFly()
             local intended = velocity.VectorVelocity
             velocity.VectorVelocity = Vector3.new(intended.X, math.max(intended.Y, fly.VerticalSpeed), intended.Z)
         end
-        orientation.Enabled = not (Settings.ColdWarCarAntiAim and Settings.ColdWarCarAntiAim.Enabled)
+        orientation.Enabled = true
         if autoForward or fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, autoForward or forward) end
     end
     track(RunService.PreSimulation:Connect(function(dt)
@@ -13056,12 +12989,13 @@ function Settings.SetupColdWarCarFly()
     track({ Disconnect = function() fly.Destroyed = true fly.Enabled = false fly.LiftEnabled = false fly.ContactFlingEnabled = false clear() end })
     local section = gameSection("Cold War", MainTab.Left, "Car Fly")
     flightToggle = Elements.Toggle(section, "Car Fly", false, function(on)
+        if not on and fly.Enabled then catchPending = true end
         fly.Enabled = on
+        if on then clearPlatform() end
         if not on then
             fly.ContactFlingEnabled = false
             if flingToggle then flingToggle.Set(false) end
             clearFlight()
-            if not fly.LiftEnabled then clearPlatform() end
         end
     end)
     fly.FlightToggle = flightToggle
@@ -13072,9 +13006,9 @@ function Settings.SetupColdWarCarFly()
     local liftSection = gameSection("Cold War", MainTab.Left, "Car Lift")
     liftToggle = Elements.Toggle(liftSection, "Car Lift", false, function(on)
         fly.LiftEnabled = on
-        if not on and not fly.Enabled then clearPlatform() end
+        if not on then catchPending = false; clearPlatform() end
     end)
-    Elements.Label(liftSection, "Platform follows directly beneath your wheels.")
+    Elements.Label(liftSection, "Catches an airborne car falling after flight stops.")
     local flingSection = gameSection("Cold War", MainTab.Left, "Car Fling")
     flingToggle = Elements.Toggle(flingSection, "Car Fling", false, function(on)
         fly.ContactFlingEnabled = on
@@ -13244,7 +13178,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarCarFly()
     Settings.SetupColdWarCarNoclip()
-    Settings.SetupColdWarCarAntiAim()
     Settings.SetupColdWarInstantActions()
     Settings.SetupColdWarCarKillAll()
     Settings.SetupColdWarWeaponTuning()

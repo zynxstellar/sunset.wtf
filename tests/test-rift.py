@@ -35,6 +35,7 @@ def main():
     assert 'rift-logo-transparent.png' not in board_ui and 'trash.png' not in board_ui
     assert 'riftTrashFallback(' not in board_ui, 'Removed trash icon is still rendered'
     assert 'Dev Tools' not in inner and 'SunsetExplorer' not in inner and 'WaterSpeedOn' not in inner
+    assert 'ColdWarCarAntiAim' not in inner and 'Car Anti Aim' not in inner and 'RiftColdWarCarSpinCamera' not in inner
     assert 'searchRing' not in board_ui and 'search.png' not in board_ui
     startup_guard = inner.split('local ENV =', 1)[0]
     assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
@@ -68,7 +69,6 @@ def main():
         for name, marker, production in [
             ('coldwar-penetration', '-- INSERT_PENETRATION', between(inner, 'function Settings.ColdWarPenetrationTrace(', '\nfunction Settings.SetupColdWarAim(')),
             ('config-confirm', '-- INSERT_CONFIG_CONFIRM', 'do\n' + between(inner, '    local s = makeSection(SettingsTab.Right, "Configs")', '\ndo\n    local s = makeSection(SettingsTab.Left, "Arena Travel")')),
-            ('car-anti-aim', '-- INSERT_CAR_ANTI_AIM', between(inner, 'function Settings.SetupColdWarCarAntiAim()', '\nfunction Settings.SetupColdWarInstantActions()')),
             ('instant-actions', '-- INSERT_INSTANT_ACTIONS', between(inner, 'function Settings.SetupColdWarInstantActions()', '\nfunction Settings.SetupColdWarCarKillAll()')),
             ('car-kill-all', '-- INSERT_CAR_KILL_ALL', between(inner, 'function Settings.SetupColdWarCarKillAll()', '\nfunction Settings.SetupColdWarCarNoclip()')),
             ('music-timeline', '-- INSERT_MUSIC_STEP', between(inner, '    function BedWars.SpotifyStep()', '\n    task.spawn(function()')),

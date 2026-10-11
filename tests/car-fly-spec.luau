@@ -10,6 +10,7 @@ function vectors.__index(a,k)
 end
 local Color3={fromRGB=function(...) return {...} end}
 local CFrame={new=function(x,y,z) return {Position=Vector3.new(x,y,z)} end,lookAt=function(_,v) return {LookVector=v} end}
+local RaycastParams={new=function() return {} end}
 local Enum=setmetatable({}, {__index=function(t,k) local v=setmetatable({}, {__index=function(_,key) return key end}) rawset(t,k,v) return v end})
 local RunService={PreSimulation={Connect=function(_,fn) return {Disconnect=function() end} end}}
 local now=10
@@ -33,7 +34,7 @@ local function new(kind,props,parent)
     if kind=="Part" then platforms[#platforms+1]=obj else objects[#objects+1]=obj end
     return obj
 end
-local chassis={Position=Vector3.new(0,10,0),Size=Vector3.new(6,4,10),FindFirstAncestorOfClass=function() return nil end,Parent=true,Anchored=false,AssemblyMass=100,CFrame={Position=Vector3.new(0,10,0),Rotation="upright",LookVector=Vector3.new(0,0,-1)},IsDescendantOf=function() return false end}
+local chassis={Position=Vector3.new(0,10,0),Size=Vector3.new(6,4,10),FindFirstAncestorOfClass=function() return nil end,Parent=true,Anchored=false,AssemblyMass=100,AssemblyLinearVelocity=Vector3.zero,CFrame={Position=Vector3.new(0,10,0),Rotation="upright",LookVector=Vector3.new(0,0,-1)},IsDescendantOf=function() return false end}
 local seat={Name="DriverSeat",AssemblyRootPart=chassis,IsA=function(_,kind) return kind=="BasePart" or kind=="VehicleSeat" end,IsDescendantOf=function() return false end}
 local joints={}
 local root={GetJoints=function() return joints end}
@@ -44,6 +45,8 @@ local LocalPlayer={Character=character}
 local OverlapParams={new=function() return {} end}
 local nearby={}
 local workspace={Gravity=196.2,CurrentCamera={CFrame={LookVector=Vector3.new(0,0,-1)}}}
+local grounded=false
+function workspace:Raycast() return grounded and {} or nil end
 function workspace:FindFirstChild() return self.Vehicles end
 function workspace:GetPartBoundsInRadius(_,_,params)
     assert(params.MaxParts==64 and params.FilterDescendantsInstances[1]==self.Vehicles)
@@ -57,10 +60,7 @@ controls["Car Fly"](true)
 keys.W=true keys.D=true keys.Space=true
 fly.Step(1/60)
 assert(#objects==3 and math.abs(objects[2].VectorVelocity.Magnitude-math.sqrt(45*45+25*25))<0.001)
-local flightPlate=platforms[#platforms]
-assert(flightPlate and flightPlate.CanCollide,"Car Fly alone did not create support")
-controls["Car Lift"](false)
-assert(not flightPlate.Destroyed,"turning lift off removed support during flight")
+assert(#platforms==0,"platform appeared during active flight")
 assert(objects[2].VectorVelocity.Y==25)
 for _=1,100 do fly.Step(1/60) end assert(#objects==3,"constraints recreated each frame")
 workspace.FallenPartsDestroyHeight=-500
@@ -74,7 +74,7 @@ keys.LeftControl=false
 menu=true fly.Step(1/60) assert(objects[2].VectorVelocity.Magnitude==0)
 menu=false typing=true fly.Step(1/60) assert(objects[2].VectorVelocity.Magnitude==0)
 typing=false
-humanoid.SeatPart=nil fly.Step(1/60) assert(objects[1].Destroyed and objects[3].Destroyed and flightPlate.Destroyed)
+humanoid.SeatPart=nil fly.Step(1/60) assert(objects[1].Destroyed and objects[3].Destroyed)
 joints={{Part0=seat,Part1=root}}
 fly.Step(1/60) assert(#objects==6,"custom Motor6D driver seat unsupported")
 seat.Name="PassengerSeat" seat.IsA=function(_,kind) return kind=="BasePart" end
@@ -89,68 +89,55 @@ connections[#connections].Disconnect() assert(objects[13].Destroyed)
 fly.Step(1/60) assert(#objects==15)
 Settings.SetupColdWarCarFly()
 fly=Settings.ColdWarCarFly
-controls["Car Lift"](true)
-fly.Step(1/60)
-local plate=platforms[#platforms]
-assert(plate.ClassName=="Part" and plate.Anchored and plate.CanCollide)
-assert(plate.CFrame.Position.Y+0.5==8,"plate started above underside")
-local firstY=plate.CFrame.Position.Y
-fly.Step(1/60) assert(plate.CFrame.Position.Y==firstY,"idle platform rose")
+joints={{Part0=seat,Part1=root}}
+local countPlatforms=#platforms
 controls["Car Fly"](true)
 fly.Step(1/60)
-assert(not plate.Destroyed,"flight destroyed catch platform")
-chassis.Position=Vector3.new(10,20,20)
-fly.Step(1/60)
-assert(plate.CFrame.Position.Y>firstY,"platform did not follow flight height")
-local flightHeight=plate.CFrame.Position.Y
+assert(#platforms==countPlatforms,"platform appeared in flight")
 controls["Car Fly"](false)
-assert(not plate.Destroyed,"flight disable destroyed catch platform")
-chassis.Position=Vector3.new(20,18,30)
+chassis.AssemblyLinearVelocity=Vector3.new(0,5,0)
 fly.Step(1/60)
-assert(plate.CFrame.Position.Y==flightHeight-2,"platform did not follow falling car downward")
-assert(plate.CFrame.Position.X==20 and plate.CFrame.Position.Z==30,"platform did not follow driving horizontally")
-for _=1,200 do fly.Step(1/60) end
-assert(plate.CFrame.Position.Y==flightHeight-2,"platform height drifted below the wheels")
-menu=true local paused=plate.CFrame.Position.Y
-fly.Step(1/60) assert(plate.CFrame.Position.Y==paused)
-menu=false
-controls["Car Lift"](false) assert(plate.Destroyed)
-controls["Car Lift"](true) fly.Step(1/60)
+assert(#platforms==countPlatforms,"platform appeared while rising")
+chassis.AssemblyLinearVelocity=Vector3.new(0,-10,0)
+grounded=true
+fly.Step(1/60)
+assert(#platforms==countPlatforms,"platform appeared on the ground")
+grounded=false
+fly.Step(1/60)
+local plate=platforms[#platforms]
+assert(#platforms==countPlatforms+1 and plate.Anchored and plate.CanCollide,"fall after flight did not create catch platform")
+local height=plate.CFrame.Position.Y
+chassis.Position=Vector3.new(20,18,30)
+chassis.AssemblyLinearVelocity=Vector3.zero
+fly.Step(1/60)
+assert(plate.CFrame.Position.Y==height and plate.CFrame.Position.X==20,"catch platform followed falling height or failed horizontal follow")
+for _=1,100 do fly.Step(1/60) end
+assert(#platforms==countPlatforms+1,"catch platform recreated each frame")
+controls["Car Fly"](true)
+assert(plate.Destroyed,"resuming flight left platform")
+fly.Step(1/60)
+controls["Car Fly"](false)
+chassis.AssemblyLinearVelocity=Vector3.new(0,-5,0)
+fly.Step(1/60)
 local replacement=platforms[#platforms]
-joints={} fly.Step(1/60) assert(replacement.Destroyed,"seat exit left lift behind")
+joints={} fly.Step(1/60)
+assert(replacement.Destroyed,"seat exit left catch platform")
 connections[#connections].Disconnect()
 Settings.SetupColdWarCarFly()
 fly=Settings.ColdWarCarFly
 joints={{Part0=seat,Part1=root}}
-do
-local function event()
-    local fn
-    return {Connect=function(_,callback) fn=callback return {Disconnect=function() fn=nil end} end,
-        Fire=function(_,part) if fn then fn(part) end end}
-end
-local model={Name="Car",Parent=workspace,DescendantAdded=event(),DescendantRemoving=event(),
-    IsA=function(_,kind) return kind=="Model" end,GetAttribute=function() return 1 end,
-    FindFirstChildOfClass=function() end,GetBoundingBox=function() return chassis.CFrame,chassis.Size end}
-local wheel={Name="Tire",Parent=model,Position=Vector3.new(20,17,30),Size=Vector3.new(2,4,2),
-    CFrame={RightVector=Vector3.new(0,1,0),UpVector=Vector3.new(1,0,0),LookVector=Vector3.new(0,0,1)},
-    IsA=function(_,kind) return kind=="BasePart" end}
-model.GetDescendants=function() return {wheel} end
-chassis.FindFirstAncestorOfClass=function() return model end
-seat.Parent=model
-controls["Car Lift"](true) fly.Step(1/60)
-local wheelPlate=platforms[#platforms]
-assert(wheelPlate.CFrame.Position.Y+0.5==16,"rotated wheel bounds were ignored")
-wheel.Position=Vector3.new(20,19,30) fly.Step(1/60)
-assert(wheelPlate.CFrame.Position.Y+0.5==18,"suspension movement did not move support")
-local second={Name="WheelRear",Parent=model,Position=Vector3.new(20,14,30),Size=wheel.Size,CFrame=wheel.CFrame,IsA=wheel.IsA}
-model.DescendantAdded:Fire(second) fly.Step(1/60)
-assert(wheelPlate.CFrame.Position.Y+0.5==13,"new wheel was not tracked")
-model.DescendantRemoving:Fire(second) second.Parent=nil fly.Step(1/60)
-assert(wheelPlate.CFrame.Position.Y+0.5==18,"removed wheel kept support too low")
-controls["Car Lift"](false) assert(wheelPlate.Destroyed)
-chassis.FindFirstAncestorOfClass=function() return nil end
-seat.Parent=nil
-end
+controls["Car Lift"](true)
+chassis.AssemblyLinearVelocity=Vector3.zero
+countPlatforms=#platforms
+fly.Step(1/60)
+assert(#platforms==countPlatforms,"Car Lift created platform while stationary")
+chassis.AssemblyLinearVelocity=Vector3.new(0,-10,0)
+fly.Step(1/60)
+local manualPlate=platforms[#platforms]
+assert(#platforms==countPlatforms+1)
+controls["Car Lift"](false)
+assert(manualPlate.Destroyed)
+chassis.AssemblyLinearVelocity=Vector3.zero
 Settings.ColdWarCarNoclip={Enabled=true}
 controls["Car Fling"](true)
 assert(fly.Enabled and fly.ContactFlingEnabled and Settings.ColdWarCarNoclip.Enabled)
@@ -169,10 +156,6 @@ assert(Settings.ColdWarCarNoclip.Enabled,"contact boost disabled noclip")
 controls["Ram Speed"](200) fly.Step(1/60)
 assert(objects[#objects-1].VectorVelocity.Magnitude==200)
 local count=#objects
-Settings.ColdWarCarAntiAim={Enabled=true}
-fly.Step(1/60) assert(not objects[#objects].Enabled,"Car Fly fought anti aim rotation")
-Settings.ColdWarCarAntiAim.Enabled=false
-fly.Step(1/60) assert(objects[#objects].Enabled,"Car Fly did not resume upright hold")
 for _=1,100 do fly.Step(1/60) end assert(#objects==count)
 for _,object in ipairs(objects) do assert(object.ClassName~="AngularVelocity","ram mode created spin") end
 menu=true fly.Step(1/60)
@@ -185,7 +168,7 @@ assert(not fly.ContactCollisionActive and fly.Enabled)
 controls["Car Fling"](true) fly.Step(1/60)
 controls["Car Fly"](false)
 assert(not fly.ContactCollisionActive and not fly.ContactFlingEnabled)
-assert(platforms[#platforms].Destroyed,"flight-only platform survived disable")
+assert(platforms[#platforms].Destroyed,"platform appeared before falling after disable")
 controls["Car Fling"](true) fly.Step(1/60)
 joints={} fly.Step(1/60) assert(not fly.ContactCollisionActive)
 connections[#connections].Disconnect()
