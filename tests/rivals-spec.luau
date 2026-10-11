@@ -662,7 +662,7 @@ RivalsAim.Setup()
 state=ENV.SunsetRivalsAimHook
 RivalsAim.BuildUI()
 assert(RivalsUI and not BedWarsUI and RivalsUI.Name=="RiftRivalsBoard")
-assert(RivalsUI.Size.X.Offset==880 and RivalsUI.Size.Y.Offset==640)
+assert(RivalsUI.Size.X.Offset>880 and RivalsUI.Size.Y.Offset==640)
 assert(Persistence.HUDFrames.RivalsMenu==RivalsUI and Persistence.HUDFrames.ModuleList)
 local cards,columns={},{}
 for _,o in ipairs(RivalsUI:GetDescendants()) do
@@ -676,10 +676,10 @@ for _,o in ipairs(RivalsUI:GetDescendants()) do
     if o:IsA("TextButton") and o.Name=="Spinbot" then cards.spin=o end
     if o:IsA("TextButton") and o.Name=="FOV" then cards.cameraFOV=o end
     if o:IsA("TextButton") and o.Name=="Kill Chat" then cards.killChat=o end
-    if o.Parent==RivalsUI and o:IsA("Frame") and o.Name~="Frame" then columns[o.Name]=o end
+    if o.Parent==RivalsUI:FindFirstChild("CategoryColumns") and o:IsA("Frame") then columns[o.Name]=o end
 end
 assert(columns.Combat and columns.Visuals and columns.Sunset and not columns.KIT)
-assert(columns.Combat.Visible and not columns.Visuals.Visible, "multiple categories overlap at startup")
+assert(columns.Combat.Visible and columns.Visuals.Visible and columns.Combat.Position.X.Offset~=columns.Visuals.Position.X.Offset, "columns overlap at startup")
 do
 local visualsTab
 for _, object in ipairs(RivalsUI:GetDescendants()) do
@@ -687,16 +687,16 @@ for _, object in ipairs(RivalsUI:GetDescendants()) do
 end
 assert(visualsTab, "category navigation is missing")
 visualsTab.MouseButton1Click:Fire()
-assert(columns.Visuals.Visible and not columns.Combat.Visible, "category selection does not switch content")
+assert(columns.Visuals.Visible and columns.Combat.Visible, "category selection hid another column")
 local menuScale = RivalsUI:FindFirstChildOfClass("UIScale")
 Camera.ViewportSize = Vector2.new(640, 480)
 Camera.signals.ViewportSize:Fire()
-assert(menuScale.Scale < 1 and menuScale.Scale * 880 <= 608, "compact menu exceeds the viewport")
+assert(menuScale.Scale < 1 and menuScale.Scale * RivalsUI.Size.X.Offset <= 608, "compact menu exceeds the viewport")
 Camera.ViewportSize = Vector2.new(1920, 1080)
 Camera.signals.ViewportSize:Fire()
 assert(menuScale.Scale == 1, "menu did not resize after viewport replacement")
 end
-assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==42)
+assert(cards.aim and cards.fov and cards.aim.Size.Y.Offset==30)
 assert(cards.fly,"Rivals Fly is missing from the Movement column")
 assert(cards.assist and cards.aimbot and cards.outlines and cards.boxes,"new Rivals modules are missing")
 assert(cards.spin and cards.cameraFOV,"Spinbot or camera FOV card missing")
@@ -1077,13 +1077,14 @@ local aimControl
 for _,c in ipairs(ConfigControls) do if c.Key=="Combat/Rivals/Silent Aim/Silent Aim" then aimControl=c end end
 local row=aimControl.Row
 assert(row.Size.Y.Offset==22)
+assert(cards.aim.Parent:FindFirstChild("Silent AimSettings").Visible, "module settings did not expand in the column")
 assert(row:FindFirstChildOfClass("Frame").Position.Y.Scale==0.5)
 assert(row:FindFirstChildOfClass("TextButton").Position.Y.Scale==0.5)
 assert(row:FindFirstChildOfClass("TextLabel").TextYAlignment==Enum.TextYAlignment.Center)
 Settings.ActiveSearchBox.Text="silent"
 Settings.ActiveSearchBox:GetPropertyChangedSignal("Text"):Fire()
 assert(cards.aim.Visible and not cards.fov.Visible,"shared search filtering failed")
-assert(columns.Combat.Visible and not columns.Visuals.Visible, "search left matching results in a hidden category")
+assert(columns.Combat.Visible and columns.Visuals.Visible, "search hid category columns")
 print("PASS Rivals board: shared BedWars layout/cards/search, game-specific controls, FOV slider")
 cards.outlines.MouseButton1Click:Fire()
 RunService.RenderStepped:Fire(1/60)
@@ -1099,15 +1100,48 @@ print("PASS Rivals unload: camera binding removed and visual instances destroyed
 BedWars.KitCatalog=function() return {},{} end
 Settings.SelectedGame="BedWars"
 BedWars.BuildUI()
-assert(BedWarsUI.Name=="RiftBedWarsBoard" and BedWarsUI.Size.X.Offset==880)
+assert(BedWarsUI.Name=="RiftBedWarsBoard")
 assert(Persistence.HUDFrames.BedWarsMenu==BedWarsUI)
-local kitColumn
-local bedwarsTitle=false
-for _,o in ipairs(BedWarsUI:GetDescendants()) do if o.Text=="RIFT | BEDWARS" then bedwarsTitle=true end end
-assert(bedwarsTitle)
-for _,o in ipairs(BedWarsUI:GetChildren()) do if o.Name=="KIT" then kitColumn=o end end
-assert(kitColumn,"shared renderer lost BedWars kit column")
-print("PASS compact board: category navigation, viewport resize, search selects results, BedWars kit controls retained")
+do
+local canvas=BedWarsUI:FindFirstChild("CategoryColumns")
+assert(canvas and canvas.ScrollingDirection==Enum.ScrollingDirection.X,
+    "BedWars columns need horizontal scrolling on small screens")
+local kitColumn=canvas:FindFirstChild("KIT")
+assert(kitColumn,"column renderer lost kit controls")
+local previousX=-1
+for _,name in ipairs({"Combat","Movement","Player","Visuals","Misc","Fun","KIT","Sunset"}) do
+    local col=canvas:FindFirstChild(name)
+    assert(col and col.Visible and col.Size.X.Offset==250,"category missing or hidden: "..name)
+    assert(col.Position.X.Offset>previousX,"columns overlap")
+    previousX=col.Position.X.Offset
+    assert(col:FindFirstChild("BlueHeader"),"flat header missing")
+end
+local combat=canvas:FindFirstChild("Combat")
+local collapse=combat:FindFirstChild("CollapseCategory")
+collapse.MouseButton1Click:Fire()
+assert(combat.Size.Y.Offset==32 and canvas:FindFirstChild("Visuals").Visible,
+    "collapsing one category hid other columns")
+collapse.MouseButton1Click:Fire()
+assert(combat.Size.Y.Offset>=100,"category did not reopen")
+Camera.ViewportSize=Vector2.new(960,720)
+Camera.signals.ViewportSize:Fire()
+local scale=BedWarsUI:FindFirstChildOfClass("UIScale").Scale
+assert(scale==1 and BedWarsUI.Size.X.Offset<=928,
+    "BedWars should scroll horizontally instead of shrinking readable text")
+assert(canvas.CanvasSize.X.Offset>BedWarsUI.Size.X.Offset)
+Camera.ViewportSize=Vector2.new(1920,1080)
+Camera.signals.ViewportSize:Fire()
+assert(BedWarsUI.Size.X.Offset>928,"BedWars did not expand on a larger screen")
+print("PASS BedWars columns: simultaneous categories, collapse/reopen, responsive scrolling and retained kits")
+Settings.SelectedGame="Project Delta"
+BedWars.BuildUI("Project Delta")
+local deltaCanvas=Settings.GameBoards["Project Delta"]:FindFirstChild("CategoryColumns")
+assert(deltaCanvas and deltaCanvas:FindFirstChild("Combat").Visible
+    and deltaCanvas:FindFirstChild("Visuals").Visible and not deltaCanvas:FindFirstChild("KIT"),
+    "Project Delta did not use its own categories in the shared column renderer")
+Settings.SelectedGame="BedWars"
+end
+
 do
 BedWars.PlayersOn=true
 BedWars.PlayerOutlineColor=outlineColor
@@ -1177,7 +1211,7 @@ end
             assert(object.AnchorPoint.X==0.5 and object.Position.X.Scale==0.5,"divider is not centered")
         end
         if object.Name=="SettingsButton" then
-            assert(object.AnchorPoint.Y==0.5 and object.Position.Y.Scale==0.5 and object.Text=="",
+            assert(object.AnchorPoint.Y==0.5 and object.Position.Y.Scale==0.5 and object.Text==">",
                 "settings icon still depends on a misaligned text glyph")
             for _,dot in ipairs(object:GetChildren()) do
                 if dot.Name=="Dot" then assert(dot.Position.Y.Scale==0.5 and dot.AnchorPoint.Y==0.5) end

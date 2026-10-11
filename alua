@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-contact-car-fling-k346"
+local SUNSET_BUILD = "20261010-rift-all-game-columns-k347"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -8525,6 +8525,7 @@ function BedWars.KitCatalog()
 end
 function BedWars.BuildUI(boardGame)
     boardGame = boardGame or "BedWars"
+    local columnLayout = true
     local isRivals = boardGame == "Rivals"
     local isColdWar = boardGame == "Cold War"
     local isProjectDelta = boardGame == "Project Delta"
@@ -8533,8 +8534,10 @@ function BedWars.BuildUI(boardGame)
         or (isRivals or isProjectDelta)
         and { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "Sunset" }
         or { "Combat", "Movement", "Player", "Visuals", "Misc", "Fun", "KIT", "Sunset" }
-    local boardWidth = 880
-    local accent = T.accent
+    local columnWidth, columnGap = 250, 8
+    local fullColumnWidth = #categoryOrder * (columnWidth + columnGap) - columnGap
+    local boardWidth = columnLayout and fullColumnWidth + 24 or 880
+    local accent = columnLayout and Color3.fromRGB(0, 135, 255) or T.accent
     local gold = T.gold
     local dark = T.bg
     local columnColor = T.panel
@@ -8545,10 +8548,10 @@ function BedWars.BuildUI(boardGame)
         Size = UDim2.fromOffset(boardWidth, 640),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = dark, BorderSizePixel = 0,
+        BackgroundColor3 = dark, BackgroundTransparency = columnLayout and 1 or 0, BorderSizePixel = 0,
     }, Gui)
     new("UICorner", { CornerRadius = UDim.new(0, 14) }, board)
-    border(board, T.border)
+    if not columnLayout then border(board, T.border) end
     Settings.GameBoards[boardGame] = board
     if isRivals then RivalsUI = board elseif boardGame == "BedWars" then BedWarsUI = board end
     Persistence.HUDFrames[boardGame .. "Menu"] = board
@@ -8557,6 +8560,13 @@ function BedWars.BuildUI(boardGame)
     local function fitBoard()
         local camera = workspace.CurrentCamera
         if not camera then return end
+        if columnLayout then
+            local scale = math.max(0.32, math.min(1, (camera.ViewportSize.Y - 32) / 640))
+            boardWidth = math.min(fullColumnWidth + 24, math.max(320, (camera.ViewportSize.X - 32) / scale))
+            board.Size = UDim2.fromOffset(boardWidth, 640)
+            boardScale.Scale = openingScale.Value * scale
+            return
+        end
         boardScale.Scale = openingScale.Value * math.max(0.32, math.min(1,
             (camera.ViewportSize.X - 32) / boardWidth,
             (camera.ViewportSize.Y - 32) / 640))
@@ -8591,7 +8601,7 @@ function BedWars.BuildUI(boardGame)
     subtitle.Position = UDim2.fromOffset(24, 38)
     subtitle.Size = UDim2.fromOffset(235, 17)
     local searchFrame = new("Frame", {
-        Position = UDim2.fromOffset(boardWidth - 400, 17),
+        Position = UDim2.new(1, -400, 0, 17),
         Size = UDim2.fromOffset(340, 36),
         BackgroundColor3 = columnColor, BorderSizePixel = 0,
     }, header)
@@ -8606,6 +8616,7 @@ function BedWars.BuildUI(boardGame)
         PlaceholderColor3 = muted, PlaceholderText = "Search modules or settings",
         ClearTextOnFocus = false, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
     }, searchFrame)
+    searchFrame.Visible = not columnLayout
     Settings.ActiveSearchBox = searchBox
     local closeButton = new("TextButton", {
         AnchorPoint = Vector2.new(0, 0.5),
@@ -8626,7 +8637,18 @@ function BedWars.BuildUI(boardGame)
         Position = UDim2.fromOffset(16, 84), Size = UDim2.fromOffset(166, 540),
         BackgroundTransparency = 1, BorderSizePixel = 0,
     }, board)
+    navigation.Visible = not columnLayout
     new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, navigation)
+    local columnCanvas
+    if columnLayout then
+        columnCanvas = new("ScrollingFrame", {
+            Name = "CategoryColumns", Position = UDim2.fromOffset(12, 76),
+            Size = UDim2.new(1, -24, 1, -76), BackgroundTransparency = 1,
+            BorderSizePixel = 0, CanvasSize = UDim2.fromOffset(fullColumnWidth, 0),
+            ScrollingDirection = Enum.ScrollingDirection.X, ScrollBarThickness = 5,
+            ScrollBarImageColor3 = accent,
+        }, board)
+    end
     for index, name in ipairs(categoryOrder) do
         local nav = new("TextButton", {
             Name = name .. "Tab", Text = name == "Sunset" and "Rift Settings" or name,
@@ -8638,20 +8660,25 @@ function BedWars.BuildUI(boardGame)
         new("UICorner", { CornerRadius = UDim.new(0, 8) }, nav)
         new("UIPadding", { PaddingLeft = UDim.new(0, 12) }, nav)
         local col = new("Frame", {
-            Name = name, Position = UDim2.fromOffset(198, 84), Visible = index == 1,
-            Size = UDim2.fromOffset(666, 540), Active = true,
+            Name = name, Position = columnLayout and UDim2.fromOffset((index - 1) * (columnWidth + columnGap), 0) or UDim2.fromOffset(198, 84),
+            Visible = columnLayout or index == 1,
+            Size = UDim2.fromOffset(columnLayout and columnWidth or 666, 540), Active = true,
             BackgroundColor3 = columnColor, BorderSizePixel = 0,
-        }, board)
-        new("UICorner", { CornerRadius = UDim.new(0, 10) }, col)
+        }, columnCanvas or board)
+        new("UICorner", { CornerRadius = UDim.new(0, columnLayout and 3 or 10) }, col)
         border(col, T.border)
-        local heading = label(col, string.upper(name == "Sunset" and "Rift Settings" or name), 14,
+        if columnLayout then
+            new("Frame", { Name = "BlueHeader", Size = UDim2.new(1, 0, 0, 32),
+                BackgroundColor3 = accent, BorderSizePixel = 0 }, col)
+        end
+        local heading = label(col, (columnLayout and "v  " or "") .. (name == "Sunset" and "Rift Settings" or name), 14,
             Color3.fromRGB(242, 244, 255))
         heading.Font = Enum.Font.GothamBold
-        heading.Position = UDim2.fromOffset(13, 12)
+        heading.Position = UDim2.fromOffset(13, columnLayout and 6 or 12)
         heading.Size = UDim2.new(1, -72, 0, 20)
         local count = new("TextButton", {
             Text = "0", Font = Enum.Font.GothamBold,
-            TextSize = 17, TextColor3 = gold,
+            TextSize = columnLayout and 12 or 17, TextColor3 = columnLayout and T.text or gold,
             TextXAlignment = Enum.TextXAlignment.Right,
             Position = UDim2.new(1, -48, 0, 8),
             Size = UDim2.fromOffset(34, 25),
@@ -8662,17 +8689,17 @@ function BedWars.BuildUI(boardGame)
             Name = "CategoryDivider", AnchorPoint = Vector2.new(0.5, 0),
             Position = UDim2.new(0.5, 0, 0, 39),
             Size = UDim2.new(1, -26, 0, 2),
-            BackgroundColor3 = accent, BorderSizePixel = 0,
+            BackgroundColor3 = accent, BorderSizePixel = 0, Visible = not columnLayout,
         }, col)
         local list = new("ScrollingFrame", {
-            Position = UDim2.fromOffset(9, 51),
-            Size = UDim2.new(1, -18, 1, -60),
+            Position = UDim2.fromOffset(columnLayout and 5 or 9, columnLayout and 38 or 51),
+            Size = UDim2.new(1, columnLayout and -10 or -18, 1, columnLayout and -44 or -60),
             BackgroundTransparency = 1, BorderSizePixel = 0,
             ScrollBarThickness = 2, ScrollBarImageColor3 = accent,
             CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
             ScrollingDirection = Enum.ScrollingDirection.Y,
         }, col)
-        new("UIListLayout", { Padding = UDim.new(0, 7),
+        new("UIListLayout", { Padding = UDim.new(0, columnLayout and 2 or 7),
             SortOrder = Enum.SortOrder.LayoutOrder }, list)
         new("UIPadding", { PaddingBottom = UDim.new(0, 4) }, list)
         columns[name] = { Frame = col, List = list, Count = count,
@@ -8680,10 +8707,15 @@ function BedWars.BuildUI(boardGame)
         nav.MouseButton1Click:Connect(function() columns.Select(name) end)
         local function reflow()
             local column = columns[name]
-            column.Frame.Size = UDim2.fromOffset(666, column.Collapsed and 44 or 540)
+            local height = 540
+            if columnLayout and not column.OpenHolder and not column.KitOptionsVisible then
+                height = math.clamp(44 + column.VisibleCount * 32 + (name == "KIT" and 94 or 0), 100, 540)
+            end
+            column.Frame.Size = UDim2.fromOffset(columnLayout and columnWidth or 666,
+                column.Collapsed and (columnLayout and 32 or 44) or height)
         end
         columns[name].Reflow = reflow
-        count.MouseButton1Click:Connect(function()
+        local function toggleColumn()
             local column = columns[name]
             column.Collapsed = not column.Collapsed
             column.List.Visible = not column.Collapsed
@@ -8697,8 +8729,17 @@ function BedWars.BuildUI(boardGame)
                         and column.VisibleCount == 0
                 end
             end
+            if columnLayout then heading.Text = (column.Collapsed and ">  " or "v  ") .. (name == "Sunset" and "Rift Settings" or name) end
             reflow()
-        end)
+        end
+        count.MouseButton1Click:Connect(toggleColumn)
+        if columnLayout then
+            local collapse = new("TextButton", { Name = "CollapseCategory",
+                Size = UDim2.new(1, -52, 0, 32), Text = "",
+                BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false,
+            }, col)
+            collapse.MouseButton1Click:Connect(toggleColumn)
+        end
     end
 
     local kitNames, kitIds = {}, {}
@@ -8758,6 +8799,8 @@ function BedWars.BuildUI(boardGame)
         end
         local function showKitOptions(show)
             kitOptions.Visible = show and not column.Collapsed
+            column.KitOptionsVisible = kitOptions.Visible
+            column.Reflow()
             column.List.Visible = not kitOptions.Visible and not column.Collapsed
             if column.KitEmpty then
                 column.KitEmpty.Visible = not kitOptions.Visible
@@ -8844,7 +8887,7 @@ function BedWars.BuildUI(boardGame)
         for _, category in ipairs(categoryOrder) do
             local column = columns[category]
             local selected = category == name
-            column.Frame.Visible = selected
+            column.Frame.Visible = columnLayout or selected
             column.Nav.BackgroundColor3 = selected and T.element or dark
             column.Nav.TextColor3 = selected and T.text or muted
         end
@@ -9319,11 +9362,22 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             local card = new("TextButton", {
-                Name = name, Size = UDim2.new(1, -3, 0, 42),
+                Name = name, Size = UDim2.new(1, -3, 0, columnLayout and 30 or 42),
                 BackgroundColor3 = T.inner, BorderSizePixel = 0,
                 Text = "", AutoButtonColor = false, LayoutOrder = index * 2,
             }, columns[category].List)
-            new("UICorner", { CornerRadius = UDim.new(0, 7) }, card)
+            new("UICorner", { CornerRadius = UDim.new(0, columnLayout and 2 or 7) }, card)
+            local indicator
+            if columnLayout and control then
+                indicator = new("TextLabel", {
+                    Name = "EnabledIndicator", Position = UDim2.fromOffset(6, 6),
+                    Size = UDim2.fromOffset(18, 18), BackgroundColor3 = cardColor,
+                    BorderSizePixel = 0, Text = "", Font = Enum.Font.GothamBold,
+                    TextSize = 13, TextColor3 = Color3.fromRGB(255, 255, 255),
+                }, card)
+                new("UICorner", { CornerRadius = UDim.new(0, 2) }, indicator)
+                border(indicator, T.border)
+            end
             local holder
             if hasSettings then
                 holder = new("Frame", {
@@ -9342,20 +9396,21 @@ function BedWars.BuildUI(boardGame)
             end
             local nameLabel = label(card, name, 14, Color3.fromRGB(242, 244, 255))
             nameLabel.Font = Enum.Font.GothamMedium
-            nameLabel.Position = UDim2.fromOffset(13, 10)
-            nameLabel.Size = UDim2.new(1, hasSettings and -45 or -20, 0, 21)
+            nameLabel.Position = UDim2.fromOffset(columnLayout and (control and 32 or 8) or 13, columnLayout and 4 or 10)
+            nameLabel.TextSize = columnLayout and 12 or 14
+            nameLabel.Size = UDim2.new(1, columnLayout and (hasSettings and -62 or -38) or (hasSettings and -45 or -20), 0, 21)
             nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
             local options = new("TextButton", {
                 Name = "SettingsButton", AnchorPoint = Vector2.new(1, 0.5),
                 Position = UDim2.new(1, -8, 0.5, 0),
                 Size = UDim2.fromOffset(28, 28),
                 BackgroundTransparency = 1,
-                BorderSizePixel = 0, Text = "",
+                BorderSizePixel = 0, Text = columnLayout and ">" or "",
                 Font = Enum.Font.GothamBold, TextSize = 15,
                 TextColor3 = muted, AutoButtonColor = false,
                 Visible = hasSettings,
             }, card)
-            for dot = -1, 1 do
+            for dot = -1, columnLayout and -2 or 1 do
                 local mark = new("Frame", {
                     Name = "Dot", AnchorPoint = Vector2.new(0.5, 0.5),
                     Position = UDim2.new(0.5, dot * 5, 0.5, 0),
@@ -9406,7 +9461,7 @@ function BedWars.BuildUI(boardGame)
                 end
             end
             table.insert(cards, { Category = category, Card = card, Control = control,
-                Name = nameLabel, Options = options, Holder = holder, Search = searchText,
+                Name = nameLabel, Options = options, Holder = holder, Search = searchText, Indicator = indicator,
                 Kit = category == "KIT" and (kitIds[spec[7]] or spec[8]) or nil,
                 Hovered = function() return hovered end })
         end
@@ -9504,7 +9559,11 @@ function BedWars.BuildUI(boardGame)
             if board.Visible then
                 for _, entry in ipairs(cards) do
                     local active = entry.Control and entry.Control.Get() or false
-                    local targetColor = active and Color3.fromRGB(28, 70, 114)
+                    if entry.Indicator then
+                        entry.Indicator.BackgroundColor3 = active and accent or cardColor
+                        entry.Indicator.Text = active and utf8.char(10003) or ""
+                    end
+                    local targetColor = active and (columnLayout and T.inner or Color3.fromRGB(28, 70, 114))
                         or (entry.Hovered() and cardColor or T.inner)
                     if entry.LastColor ~= targetColor then
                         entry.LastColor = targetColor
