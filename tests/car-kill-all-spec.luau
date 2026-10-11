@@ -38,7 +38,9 @@ end
 local ally=player(1,10)
 local foe,hum,target,limbHealth=player(2,100)
 roster={LocalPlayer,ally,foe}
-local car={Position=Vector3.zero}
+local car=setmetatable({Position=Vector3.zero},{__newindex=function(_,key)
+    error("Auto ram must not reposition the car: "..key)
+end})
 -- INSERT_CAR_KILL_ALL
 Settings.SetupColdWarCarKillAll()
 local ram=Settings.ColdWarCarKillAll
@@ -46,7 +48,7 @@ assert(fly.AutoRamControl(car)==nil and not fly.Enabled)
 controls["Car Kill All"](true)
 assert(ram.Enabled and fly.Enabled)
 local velocity=fly.AutoRamControl(car)
-assert(ram.Target==foe and ram.Active and car.CFrame.Position.X==100 and car.CFrame.Position.Y==7.5)
+assert(ram.Target==foe and ram.Active and car.Position==Vector3.zero and velocity.X>0)
 assert(velocity.Magnitude<=150)
 target.GetJoints=function() return {{Part1=target,Part0={Name="PassengerSeat",IsDescendantOf=function() return false end,IsA=function(_,kind) return kind=="Seat" end}}} end
 now+=0.1 fly.AutoRamControl(car) assert(ram.Target==nil,"custom vehicle passenger retained")
@@ -79,4 +81,4 @@ controls["Car Kill All"](false) assert(fly.AutoRamControl(car)==nil)
 controls["Car Kill All"](true) now+=1 fly.AutoRamControl(car)
 connections[#connections].Disconnect()
 assert(not ram.Enabled and not ram.Active and fly.AutoRamControl==nil and ram.Target==nil)
-print("PASS Car Kill All: player-only enemy targeting, bounded velocity, target retention/death/leave, menu/typing pause, seat-loss reset and unload")
+print("PASS Car Kill All: player-only enemy targeting, flight without position writes, bounded velocity, target retention/death/leave, menu/typing pause, seat-loss reset and unload")

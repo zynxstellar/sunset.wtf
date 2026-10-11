@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-compact-instant-actions-k354"
+local SUNSET_BUILD = "20261010-rift-car-target-flight-k355"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12468,14 +12468,13 @@ end
 
 function Settings.SetupColdWarCarKillAll()
     local ram = { Enabled = false, Speed = 150, TeamCheck = true, Target = nil,
-        TargetCharacter = nil, Active = false, Destroyed = false, LastTeleport = -math.huge }
+        TargetCharacter = nil, Active = false, Destroyed = false }
     Settings.ColdWarCarKillAll = ram
     local fly = Settings.ColdWarCarFly
     local nextScan, targetStarted = 0, 0
     local previousTarget
     local function reset()
         ram.Target, ram.TargetCharacter, ram.Active = nil, nil, false
-        ram.LastTeleport = -math.huge
     end
     local function targetRoot(player)
         if not player or player == LocalPlayer or player.Parent ~= Players then return end
@@ -12528,10 +12527,6 @@ function Settings.SetupColdWarCarKillAll()
         local forward = Vector3.new(target.CFrame.LookVector.X, 0, target.CFrame.LookVector.Z)
         if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) else forward = forward.Unit end
         local under = target.Position + Vector3.new(0, -2.5, 0)
-        if now - ram.LastTeleport >= 0.75 and (root.Position - under).Magnitude > 16 then
-            root.CFrame = CFrame.lookAt(under - forward * 4, under)
-            ram.LastTeleport = now
-        end
         -- Alternate short approaches beneath the same target, without rotating the car.
         local side = math.floor(now / 0.2) % 2 == 0 and -1 or 1
         local desired = under + forward * (side * 4)
@@ -12539,7 +12534,8 @@ function Settings.SetupColdWarCarKillAll()
         local speed = math.clamp(ram.Speed, 50, 250)
         local velocity = delta.Magnitude > 0.01 and delta.Unit * math.min(speed, delta.Magnitude * 25) or Vector3.zero
         ram.Active = true
-        return velocity, forward
+        local heading = Vector3.new(delta.X, 0, delta.Z)
+        return velocity, heading.Magnitude > 0.001 and heading.Unit or forward
     end
     fly.AutoRamControl = ram.Control
     fly.OnVehicleLost = reset
