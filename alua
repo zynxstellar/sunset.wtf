@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-ui-polish-k348"
+local SUNSET_BUILD = "20261010-rift-category-drag-car-ram-k349"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -633,8 +633,10 @@ local function makeDraggable(frame, handle)
 end
 
 local Tabs, currentTab = {}, nil
-function Settings.MakeMenuDraggable(frame)
+function Settings.MakeMenuDraggable(frame, menu)
     local pointer, startPoint, startPosition, destroyed
+    Settings.MenuDragRegions = Settings.MenuDragRegions or {}
+    if menu then Settings.MenuDragRegions[frame] = menu end
     local function inside(object, point)
         local position, size = object.AbsolutePosition, object.AbsoluteSize
         return point.X >= position.X and point.X <= position.X + size.X
@@ -651,13 +653,27 @@ function Settings.MakeMenuDraggable(frame)
         end
         return current == frame
     end
-    local function finish() pointer, startPoint, startPosition = nil, nil, nil end
+    local function finish()
+        pointer, startPoint, startPosition = nil, nil, nil
+        if Settings.MenuDragOwner == frame then Settings.MenuDragOwner = nil end
+    end
     track(UIS.InputBegan:Connect(function(input)
         local kind = input.UserInputType
-        if destroyed or pointer or not frame.Visible or not frame.Parent
+        if destroyed or pointer or Settings.MenuDragOwner or not frame.Visible or not frame.Parent
+            or (menu and not menu.Visible)
             or (kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch)
             or not inside(frame, input.Position) then return end
         local point = input.Position
+        if menu then
+            local ancestor = frame.Parent
+            while ancestor and ancestor ~= menu do
+                if ancestor:IsA("GuiObject") and ancestor.ClipsDescendants and not inside(ancestor, point) then return end
+                ancestor = ancestor.Parent
+            end
+        end
+        for region, owner in pairs(Settings.MenuDragRegions) do
+            if owner == frame and region.Visible and region.Parent and inside(region, point) then return end
+        end
         for _, object in ipairs(frame:GetDescendants()) do
             if object:IsA("GuiObject") and visibleAt(object, point) and inside(object, point) then
                 if object:IsA("GuiButton") or object:IsA("TextBox") then return end
@@ -669,14 +685,18 @@ function Settings.MakeMenuDraggable(frame)
                 end
             end
         end
+        Settings.MenuDragOwner = frame
         pointer, startPoint, startPosition = input, point, frame.Position
     end))
     track(UIS.InputChanged:Connect(function(input)
         if not pointer or destroyed then return end
-        if not frame.Visible or not frame.Parent then finish() return end
+        if not frame.Visible or not frame.Parent or (menu and not menu.Visible) then finish() return end
         local touch = pointer.UserInputType == Enum.UserInputType.Touch
         if (touch and input ~= pointer) or (not touch and input.UserInputType ~= Enum.UserInputType.MouseMovement) then return end
         local delta = input.Position - startPoint
+        local scaleOwner = menu or frame
+        local scale = scaleOwner.FindFirstChildOfClass and scaleOwner:FindFirstChildOfClass("UIScale")
+        if scale and scale.Scale > 0 then delta = delta * (1 / scale.Scale) end
         frame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
     end))
@@ -686,7 +706,13 @@ function Settings.MakeMenuDraggable(frame)
     end))
     track(UIS.WindowFocusReleased:Connect(finish))
     track(frame:GetPropertyChangedSignal("Visible"):Connect(function() if not frame.Visible then finish() end end))
-    track({ Disconnect = function() destroyed = true finish() end })
+    if menu then
+        track(menu:GetPropertyChangedSignal("Visible"):Connect(function() if not menu.Visible then finish() end end))
+    end
+    track({ Disconnect = function()
+        destroyed = true finish()
+        Settings.MenuDragRegions[frame] = nil
+    end })
 end
 local function makeTab(name)
     local btn = new("TextButton", {
@@ -8675,6 +8701,8 @@ function BedWars.BuildUI(boardGame)
         }, columnCanvas or board)
         new("UICorner", { CornerRadius = UDim.new(0, columnLayout and 3 or 10) }, col)
         border(col, T.border)
+        Settings.MakeMenuDraggable(col, board)
+        Persistence.HUDFrames[boardGame .. "Category" .. name] = col
         if columnLayout then
             new("Frame", { Name = "BlueHeader", Size = UDim2.new(1, 0, 0, 32),
                 BackgroundColor3 = accent, BorderSizePixel = 0 }, col)
@@ -9274,7 +9302,7 @@ function BedWars.BuildUI(boardGame)
         ["Auto Pearl"] = "Uses a pearl when the selected condition is met.",
         ["Anti Void"] = "Attempts recovery when you fall below safe ground.",
         ["Spider"] = "Climbs walls while moving into them from any direction.",
-        ["Car Fling"] = "Spins your flying car for physical contact with other vehicles.",
+        ["Car Fling"] = "Boosts your car near vehicles; temporarily restores collision while Car Noclip stays enabled.",
         ["Void Water"] = "Places water when void is detected beneath you.",
         ["Noclip"] = "Lets your character pass through local collision surfaces.",
         ["Auto Bed"] = "Targets nearby enemy beds with supported tools.",
@@ -12335,7 +12363,8 @@ function Settings.SetupColdWarCarNoclip()
             ancestor = ancestor.Parent
         end
         if saved[part] == nil then saved[part] = part.CanCollide end
-        part.CanCollide = false
+        local fly = Settings.ColdWarCarFly
+        part.CanCollide = fly and fly.ContactCollisionActive and saved[part] or false
     end
     function options.Step()
         local character = LocalPlayer.Character
@@ -12343,7 +12372,6 @@ function Settings.SetupColdWarCarNoclip()
         if options.Destroyed or not options.Enabled or Settings.SelectedGame ~= "Cold War"
             or not humanoid or humanoid.Health <= 0 then restore() return end
         local fly = Settings.ColdWarCarFly
-        if fly and fly.ContactFlingEnabled then options.SetEnabled(false) return end
         local seat = fly and fly.DriverSeat(character, humanoid)
         local root = seat and seat.AssemblyRootPart
         if not root or not root.Parent or root.Anchored or root:IsDescendantOf(character) then restore() return end
@@ -12363,7 +12391,9 @@ function Settings.SetupColdWarCarNoclip()
             removing = model.DescendantRemoving:Connect(restorePart)
         end
         for part in pairs(saved) do
-            if part.Parent and part:IsDescendantOf(model) then part.CanCollide = false else restorePart(part) end
+            if part.Parent and part:IsDescendantOf(model) then
+                part.CanCollide = fly and fly.ContactCollisionActive and saved[part] or false
+            else restorePart(part) end
         end
     end
     track(RunService.PreSimulation:Connect(function()
@@ -12385,21 +12415,53 @@ function Settings.SetupColdWarCarNoclip()
 end
 
 function Settings.SetupColdWarCarFly()
-    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, PlatformGap = 2, FollowFlight = true, ContactFlingEnabled = false, SpinSpeed = 30, Destroyed = false }
+    local fly = { Enabled = false, Speed = 45, VerticalSpeed = 25, FaceCamera = true, LiftEnabled = false, PlatformGap = 2, FollowFlight = true, ContactFlingEnabled = false, ContactCollisionActive = false, RamSpeed = 150, ContactRange = 8, Destroyed = false }
     Settings.ColdWarCarFly = fly
-    local vehicleRoot, attachment, velocity, orientation, angular
+    local vehicleRoot, attachment, velocity, orientation
     local platform, platformTop, platformClearance
     local lastError = -math.huge
+    local contactParams
     local flightToggle, liftToggle, flingToggle
-    local function clearSpin()
-        if angular then
-            angular:Destroy()
-            angular = nil
-            if vehicleRoot and vehicleRoot.Parent then vehicleRoot.AssemblyAngularVelocity = Vector3.zero end
+    local function clearContact()
+        fly.ContactCollisionActive = false
+    end
+    local function contactVehicle(root)
+        local folder = workspace:FindFirstChild("Vehicles")
+        if not folder then return false end
+        local ownModel = root:FindFirstAncestorOfClass("Model")
+        local ownAncestor = root.Parent
+        for _ = 1, 8 do
+            if not ownAncestor or ownAncestor == folder or ownAncestor == workspace then break end
+            if ownAncestor:IsA("Model") and ownAncestor:GetAttribute("VehicleNetId") ~= nil then ownModel = ownAncestor break end
+            ownAncestor = ownAncestor.Parent
         end
+        -- Query only vehicle geometry; never change another vehicle's parts or velocity.
+        if not contactParams then
+            contactParams = OverlapParams.new()
+            contactParams.FilterType = Enum.RaycastFilterType.Include
+            contactParams.MaxParts = 64
+        end
+        local params = contactParams
+        params.FilterDescendantsInstances = { folder }
+        local radius = math.clamp(root.Size.Magnitude / 2 + fly.ContactRange, 4, 35)
+        for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, radius, params)) do
+            local other = part.AssemblyRootPart
+            if other and other ~= root and not other.Anchored then
+                local ancestor = part.Parent
+                for _ = 1, 8 do
+                    if not ancestor or ancestor == folder then break end
+                    if ancestor:IsA("Model") and ancestor:GetAttribute("VehicleNetId") ~= nil then
+                        if ancestor ~= ownModel then return true end
+                        break
+                    end
+                    ancestor = ancestor.Parent
+                end
+            end
+        end
+        return false
     end
     local function clearFlight()
-        clearSpin()
+        clearContact()
         for _, object in pairs({ velocity, orientation, attachment }) do object:Destroy() end
         attachment, velocity, orientation = nil, nil, nil
     end
@@ -12492,21 +12554,13 @@ function Settings.SetupColdWarCarFly()
             if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then vertical -= 1 end
         end
         if movement.Magnitude > 1 then movement = movement.Unit end
-        velocity.VectorVelocity = movement * fly.Speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
-        local spinning = fly.ContactFlingEnabled and not anyMenuVisible() and not UIS:GetFocusedTextBox()
-        orientation.Enabled = not spinning
-        if spinning then
-            local noclip = Settings.ColdWarCarNoclip
-            if noclip and noclip.Enabled then noclip.SetEnabled(false) end
-            if not angular then
-                angular = new("AngularVelocity", { Name = "RiftCarContactSpin", Attachment0 = attachment,
-                    RelativeTo = Enum.ActuatorRelativeTo.World,
-                    MaxTorque = math.max(root.AssemblyMass * workspace.Gravity * 100, 10000),
-                    AngularVelocity = Vector3.zero }, root)
-            end
-            angular.AngularVelocity = Vector3.new(0, math.clamp(fly.SpinSpeed, 5, 60), 0)
-        else clearSpin() end
-        if fly.FaceCamera and not spinning then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
+        local contact = fly.ContactFlingEnabled and not anyMenuVisible() and not UIS:GetFocusedTextBox()
+            and movement.Magnitude > 0.01 and contactVehicle(root)
+        fly.ContactCollisionActive = contact == true
+        local speed = contact and math.clamp(fly.RamSpeed, 50, 250) or fly.Speed
+        velocity.VectorVelocity = movement * speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
+        orientation.Enabled = true
+        if fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, forward) end
     end
     track(RunService.PreSimulation:Connect(function(dt)
         local ok, err = pcall(fly.Step, dt)
@@ -12543,13 +12597,12 @@ function Settings.SetupColdWarCarFly()
     flingToggle = Elements.Toggle(flingSection, "Car Fling", false, function(on)
         fly.ContactFlingEnabled = on
         if on then
-            local noclip = Settings.ColdWarCarNoclip
-            if noclip and noclip.SetEnabled then noclip.SetEnabled(false) end
             fly.Enabled = true
             if flightToggle then flightToggle.Set(true) end
-        else clearSpin() end
+        else clearContact() end
     end)
-    Elements.Slider(flingSection, "Spin Speed", 5, 60, 30, "rad/s", function(value) fly.SpinSpeed = value end)
+    Elements.Slider(flingSection, "Ram Speed", 50, 250, 150, "studs/s", function(value) fly.RamSpeed = value end)
+    Elements.Slider(flingSection, "Contact Range", 3, 20, 8, "studs", function(value) fly.ContactRange = value end)
 
 end
 

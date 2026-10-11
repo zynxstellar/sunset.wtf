@@ -562,8 +562,10 @@ local function makeDraggable(frame, handle)
 end
 
 local Tabs, currentTab = {}, nil
-function Settings.MakeMenuDraggable(frame)
+function Settings.MakeMenuDraggable(frame, menu)
     local pointer, startPoint, startPosition, destroyed
+    Settings.MenuDragRegions = Settings.MenuDragRegions or {}
+    if menu then Settings.MenuDragRegions[frame] = menu end
     local function inside(object, point)
         local position, size = object.AbsolutePosition, object.AbsoluteSize
         return point.X >= position.X and point.X <= position.X + size.X
@@ -580,13 +582,27 @@ function Settings.MakeMenuDraggable(frame)
         end
         return current == frame
     end
-    local function finish() pointer, startPoint, startPosition = nil, nil, nil end
+    local function finish()
+        pointer, startPoint, startPosition = nil, nil, nil
+        if Settings.MenuDragOwner == frame then Settings.MenuDragOwner = nil end
+    end
     track(UIS.InputBegan:Connect(function(input)
         local kind = input.UserInputType
-        if destroyed or pointer or not frame.Visible or not frame.Parent
+        if destroyed or pointer or Settings.MenuDragOwner or not frame.Visible or not frame.Parent
+            or (menu and not menu.Visible)
             or (kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch)
             or not inside(frame, input.Position) then return end
         local point = input.Position
+        if menu then
+            local ancestor = frame.Parent
+            while ancestor and ancestor ~= menu do
+                if ancestor:IsA("GuiObject") and ancestor.ClipsDescendants and not inside(ancestor, point) then return end
+                ancestor = ancestor.Parent
+            end
+        end
+        for region, owner in pairs(Settings.MenuDragRegions) do
+            if owner == frame and region.Visible and region.Parent and inside(region, point) then return end
+        end
         for _, object in ipairs(frame:GetDescendants()) do
             if object:IsA("GuiObject") and visibleAt(object, point) and inside(object, point) then
                 if object:IsA("GuiButton") or object:IsA("TextBox") then return end
@@ -598,14 +614,18 @@ function Settings.MakeMenuDraggable(frame)
                 end
             end
         end
+        Settings.MenuDragOwner = frame
         pointer, startPoint, startPosition = input, point, frame.Position
     end))
     track(UIS.InputChanged:Connect(function(input)
         if not pointer or destroyed then return end
-        if not frame.Visible or not frame.Parent then finish() return end
+        if not frame.Visible or not frame.Parent or (menu and not menu.Visible) then finish() return end
         local touch = pointer.UserInputType == Enum.UserInputType.Touch
         if (touch and input ~= pointer) or (not touch and input.UserInputType ~= Enum.UserInputType.MouseMovement) then return end
         local delta = input.Position - startPoint
+        local scaleOwner = menu or frame
+        local scale = scaleOwner.FindFirstChildOfClass and scaleOwner:FindFirstChildOfClass("UIScale")
+        if scale and scale.Scale > 0 then delta = delta * (1 / scale.Scale) end
         frame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
     end))
@@ -615,7 +635,13 @@ function Settings.MakeMenuDraggable(frame)
     end))
     track(UIS.WindowFocusReleased:Connect(finish))
     track(frame:GetPropertyChangedSignal("Visible"):Connect(function() if not frame.Visible then finish() end end))
-    track({ Disconnect = function() destroyed = true finish() end })
+    if menu then
+        track(menu:GetPropertyChangedSignal("Visible"):Connect(function() if not menu.Visible then finish() end end))
+    end
+    track({ Disconnect = function()
+        destroyed = true finish()
+        Settings.MenuDragRegions[frame] = nil
+    end })
 end
 local function makeTab(name)
     local btn = new("TextButton", {

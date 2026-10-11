@@ -57,6 +57,12 @@ options.Step() assert(chassis.CanCollide)
 controls["Car Noclip"](true) options.Step()
 assert(not chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide)
 chassis.CanCollide=true options.Step() assert(not chassis.CanCollide)
+Settings.ColdWarCarFly.ContactFlingEnabled=true
+Settings.ColdWarCarFly.ContactCollisionActive=true
+options.Step()
+assert(options.Enabled and chassis.CanCollide and not wheel.CanCollide,"contact did not restore original collisions")
+Settings.ColdWarCarFly.ContactCollisionActive=false
+options.Step() assert(not chassis.CanCollide,"contact ending did not resume noclip")
 local added=node("BasePart",car) car.DescendantAdded:Fire(added) assert(not added.CanCollide)
 car.DescendantRemoving:Fire(added) assert(added.CanCollide)
 added.Parent=workspace

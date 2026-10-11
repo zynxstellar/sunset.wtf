@@ -39,7 +39,14 @@ local humanoid={Health=100,SeatPart=seat}
 seat.Occupant=humanoid
 local character={FindFirstChild=function() return root end,FindFirstChildOfClass=function() return humanoid end}
 local LocalPlayer={Character=character}
+local OverlapParams={new=function() return {} end}
+local nearby={}
 local workspace={Gravity=196.2,CurrentCamera={CFrame={LookVector=Vector3.new(0,0,-1)}}}
+function workspace:FindFirstChild() return self.Vehicles end
+function workspace:GetPartBoundsInRadius(_,_,params)
+    assert(params.MaxParts==64 and params.FilterDescendantsInstances[1]==self.Vehicles)
+    return nearby
+end
 -- INSERT_CAR_FLY
 Settings.SetupColdWarCarFly()
 local fly=Settings.ColdWarCarFly
@@ -101,31 +108,37 @@ connections[#connections].Disconnect()
 Settings.SetupColdWarCarFly()
 fly=Settings.ColdWarCarFly
 joints={{Part0=seat,Part1=root}}
-local noclipStops=0
-Settings.ColdWarCarNoclip={Enabled=true,SetEnabled=function(on)
-    assert(not on) noclipStops+=1 Settings.ColdWarCarNoclip.Enabled=false
-end}
+Settings.ColdWarCarNoclip={Enabled=true}
 controls["Car Fling"](true)
-assert(fly.Enabled and fly.ContactFlingEnabled and noclipStops==1)
+assert(fly.Enabled and fly.ContactFlingEnabled and Settings.ColdWarCarNoclip.Enabled)
+keys.W=true keys.D=false keys.Space=false
 fly.Step(1/60)
-local spin=objects[#objects]
-assert(spin.ClassName=="AngularVelocity" and spin.AngularVelocity.Y==30)
-assert(not objects[#objects-1].Enabled,"stabilizer opposed contact spin")
-controls["Spin Speed"](60) fly.Step(1/60) assert(spin.AngularVelocity.Y==60)
-local spinCount=#objects
-for _=1,100 do fly.Step(1/60) end assert(#objects==spinCount)
-menu=true fly.Step(1/60) assert(spin.Destroyed)
-menu=false fly.Step(1/60)
-spin=objects[#objects]
+assert(not fly.ContactCollisionActive and objects[#objects-1].VectorVelocity.Magnitude==45)
+workspace.Vehicles={}
+chassis.Parent=workspace
+local other={Anchored=false}
+local otherModel={Parent=workspace.Vehicles,IsA=function(_,k) return k=="Model" end,GetAttribute=function() return 2 end}
+nearby={{AssemblyRootPart=other,Parent=otherModel}}
+fly.Step(1/60)
+assert(fly.ContactCollisionActive and objects[#objects-1].VectorVelocity.Magnitude==150)
+assert(objects[#objects].ClassName=="AlignOrientation" and objects[#objects].Enabled)
+assert(Settings.ColdWarCarNoclip.Enabled,"contact boost disabled noclip")
+controls["Ram Speed"](200) fly.Step(1/60)
+assert(objects[#objects-1].VectorVelocity.Magnitude==200)
+local count=#objects
+for _=1,100 do fly.Step(1/60) end assert(#objects==count)
+for _,object in ipairs(objects) do assert(object.ClassName~="AngularVelocity","ram mode created spin") end
+menu=true fly.Step(1/60)
+assert(not fly.ContactCollisionActive and objects[#objects-1].VectorVelocity.Magnitude==0)
+menu=false keys.W=false fly.Step(1/60) assert(not fly.ContactCollisionActive)
+keys.W=true other.Anchored=true fly.Step(1/60) assert(not fly.ContactCollisionActive)
+other.Anchored=false fly.Step(1/60)
 controls["Car Fling"](false)
-assert(spin.Destroyed and fly.Enabled and not fly.ContactFlingEnabled)
-assert(chassis.AssemblyAngularVelocity.Magnitude==0)
+assert(not fly.ContactCollisionActive and fly.Enabled)
 controls["Car Fling"](true) fly.Step(1/60)
-spin=objects[#objects]
 controls["Car Fly"](false)
-assert(spin.Destroyed and not fly.ContactFlingEnabled)
+assert(not fly.ContactCollisionActive and not fly.ContactFlingEnabled)
 controls["Car Fling"](true) fly.Step(1/60)
-spin=objects[#objects]
-joints={} fly.Step(1/60) assert(spin.Destroyed)
+joints={} fly.Step(1/60) assert(not fly.ContactCollisionActive)
 connections[#connections].Disconnect()
 print("PASS Car Fly: camera movement, normalized diagonals, custom/native driver seats, passenger/death/anchor filters, bounded constraints, menu/input pause, unload")

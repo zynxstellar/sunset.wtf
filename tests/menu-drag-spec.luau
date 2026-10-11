@@ -59,6 +59,20 @@ touch.Position=Vector.new(400,400) UIS.InputChanged:Fire(touch)
 assert(frame.Position.X.Offset==30,"lost focus left dragging active")
 click(110,190) frame.Visible=false frame.Visibility:Fire() frame.Visible=true move(500,500)
 assert(frame.Position.X.Offset==30,"menu reopening resumed an old drag")
+local category=child("Frame",450,120,100,110)
+category.Position=UDim2.new(0,350,0,20)
+category.Visibility=signal()
+function category:GetDescendants() return {} end
+function category:GetPropertyChangedSignal() return self.Visibility end
+Settings.MakeMenuDraggable(category,frame)
+local menuX=frame.Position.X.Offset
+click(470,140) move(490,170) release()
+assert(category.Position.X.Offset==370 and category.Position.Y.Offset==50,
+    "category did not drag independently")
+assert(frame.Position.X.Offset==menuX,"dragging a category also moved the whole menu")
+click(470,140)
+frame.Visible=false frame.Visibility:Fire() frame.Visible=true move(550,300)
+assert(category.Position.X.Offset==370,"closing menu left category drag active")
 for _,c in ipairs(connections) do c:Disconnect() end
 click(110,190) move(500,500)
 assert(frame.Position.X.Offset==30,"unloaded drag handler still moved the window")
