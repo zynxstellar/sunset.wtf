@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-vehicle-actions-auto-ram-k351"
+local SUNSET_BUILD = "20261010-rift-remove-hitboxes-k352"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9187,7 +9187,6 @@ function BedWars.BuildUI(boardGame)
             { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
             { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling", "Car Fling" },
             { "Player", "Instant Actions", "Player", "Cold War", "Instant Actions", "Instant Actions" },
-            { "Combat", "Hitboxes", "Combat", "Cold War", "Hitboxes", "Hitboxes" },
             { "Combat", "Car Kill All", "Combat", "Cold War", "Car Kill All", "Car Kill All" },
             { "Combat", "Silent Aim", "Combat", "Cold War", "Silent Aim", "Silent Aim" },
             { "Combat", "Auto Shoot", "Combat", "Cold War", "Auto Shoot", "Auto Shoot" },
@@ -12340,94 +12339,6 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
-function Settings.SetupColdWarHitboxes()
-    local options = { Enabled = false, Size = 20, TeamCheck = true, Destroyed = false,
-        Parts = { Head = true } }
-    Settings.ColdWarHitboxes = options
-    local groups = {
-        { "Head", "Head" }, { "Torso", "Torso", "UpperTorso", "LowerTorso" },
-        { "Left Arm", "Left Arm", "LeftUpperArm", "LeftLowerArm", "LeftHand" },
-        { "Right Arm", "Right Arm", "RightUpperArm", "RightLowerArm", "RightHand" },
-        { "Left Leg", "Left Leg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot" },
-        { "Right Leg", "Right Leg", "RightUpperLeg", "RightLowerLeg", "RightFoot" },
-    }
-    local saved = {}
-    local function restore(part)
-        local original = saved[part]
-        if not original then return end
-        saved[part] = nil
-        pcall(function()
-            part.Size, part.CanCollide, part.Massless, part.Transparency =
-                original.Size, original.CanCollide, original.Massless, original.Transparency
-        end)
-    end
-    function options.Apply()
-        local seen = {}
-        if options.Enabled and not options.Destroyed and Settings.SelectedGame == "Cold War" then
-            for _, player in ipairs(Players:GetPlayers()) do
-                local character = player.Character
-                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                if player ~= LocalPlayer and character and character.Parent and humanoid and humanoid.Health > 0
-                    and not (options.TeamCheck and LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team) then
-                    for _, group in ipairs(groups) do
-                        if options.Parts[group[1]] then
-                            for index = 2, #group do
-                                local part = character:FindFirstChild(group[index])
-                                if part and part:IsA("BasePart") then
-                                    seen[part] = true
-                                    if not saved[part] then
-                                        saved[part] = { Size = part.Size, CanCollide = part.CanCollide,
-                                            Massless = part.Massless, Transparency = part.Transparency }
-                                    end
-                                    local size = math.clamp(options.Size, 2, 50)
-                                    part.Size = Vector3.new(size, size, size)
-                                    part.CanCollide, part.Massless, part.Transparency = false, true, 0.75
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        for part in pairs(saved) do if not seen[part] then restore(part) end end
-    end
-    local toggle
-    local function apply()
-        local ok, err = pcall(options.Apply)
-        if not ok then
-            options.Enabled = false
-            for part in pairs(saved) do restore(part) end
-            if toggle then toggle.Set(false) end
-            Settings.Notify("Hitboxes disabled", tostring(err), "error")
-        end
-    end
-    local elapsed = 0
-    track(RunService.Heartbeat:Connect(function(dt)
-        if not options.Enabled and next(saved) == nil then return end
-        elapsed += dt
-        if elapsed < 0.25 then return end
-        elapsed = 0
-        apply()
-    end))
-    track({ Disconnect = function()
-        options.Destroyed, options.Enabled = true, false
-        for part in pairs(saved) do restore(part) end
-    end })
-    local section = gameSection("Cold War", AimTab.Left, "Hitboxes")
-    toggle = Elements.Toggle(section, "Hitboxes", false, function(on) options.Enabled = on apply() end)
-    Elements.Slider(section, "Size", 2, 50, 20, "studs", function(value) options.Size = value apply() end)
-    Elements.Toggle(section, "Team Check", true, function(on) options.TeamCheck = on apply() end)
-    Elements.Label(section, "Select multiple body parts:")
-    for _, group in ipairs(groups) do
-        local name = group[1]
-        Elements.Toggle(section, name, options.Parts[name] == true, function(on)
-            options.Parts[name] = on
-            apply()
-        end)
-    end
-    Elements.Label(section, "Local resizing; server hit registration is unverified.")
-end
-
 function Settings.SetupColdWarInstantActions()
     local options = { Enabled = false, Destroyed = false }
     Settings.ColdWarInstantActions = options
@@ -13080,7 +12991,6 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarCarFly()
     Settings.SetupColdWarCarNoclip()
-    Settings.SetupColdWarHitboxes()
     Settings.SetupColdWarInstantActions()
     Settings.SetupColdWarCarKillAll()
     Settings.SetupColdWarWeaponTuning()

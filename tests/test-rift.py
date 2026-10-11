@@ -39,6 +39,7 @@ def main():
     startup_guard = inner.split('local ENV =', 1)[0]
     assert 'game.PlaceId ~= 7336302630 and game.GameId ~= 2862098693' in startup_guard, \
         'Project Delta is supported but the startup guard returns before building its UI'
+    assert 'SetupColdWarHitboxes' not in inner and 'ColdWarHitboxes' not in inner, 'Removed Hitboxes module remains active'
     chunks = [
         between(inner, 'function Persistence.SavedHUDPositions()', '\ndo\n    local lastSavedJSON'),
         between(inner, 'function Settings.SetupNotifications()', '\nSettings.SetupNotifications()') + '\nSettings.SetupNotifications()\n',
@@ -67,7 +68,6 @@ def main():
         for name, marker, production in [
             ('coldwar-penetration', '-- INSERT_PENETRATION', between(inner, 'function Settings.ColdWarPenetrationTrace(', '\nfunction Settings.SetupColdWarAim(')),
             ('config-confirm', '-- INSERT_CONFIG_CONFIRM', 'do\n' + between(inner, '    local s = makeSection(SettingsTab.Right, "Configs")', '\ndo\n    local s = makeSection(SettingsTab.Left, "Arena Travel")')),
-            ('hitboxes', '-- INSERT_HITBOXES', between(inner, 'function Settings.SetupColdWarHitboxes()', '\nfunction Settings.SetupColdWarInstantActions()')),
             ('instant-actions', '-- INSERT_INSTANT_ACTIONS', between(inner, 'function Settings.SetupColdWarInstantActions()', '\nfunction Settings.SetupColdWarCarKillAll()')),
             ('car-kill-all', '-- INSERT_CAR_KILL_ALL', between(inner, 'function Settings.SetupColdWarCarKillAll()', '\nfunction Settings.SetupColdWarCarNoclip()')),
             ('music-timeline', '-- INSERT_MUSIC_STEP', between(inner, '    function BedWars.SpotifyStep()', '\n    task.spawn(function()')),
