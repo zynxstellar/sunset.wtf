@@ -50,6 +50,17 @@ assert(ram.Enabled and fly.Enabled)
 local velocity=fly.AutoRamControl(car)
 assert(ram.Target==foe and ram.Active and car.Position==Vector3.zero and velocity.X>0)
 assert(velocity.Magnitude<=150)
+car.Position=Vector3.new(95,10,0)
+now+=0.3
+local approaching=fly.AutoRamControl(car)
+assert(approaching.X>0 and math.abs(approaching.Y)<0.001,"ram did not aim through player height")
+car.Position=Vector3.new(102,10,0)
+now+=0.3
+assert(fly.AutoRamControl(car).X>0,"ram reversed before completing contact pass")
+car.Position=Vector3.new(107,10,0)
+now+=0.1
+assert(fly.AutoRamControl(car).X<0,"ram did not reverse after passing target")
+car.Position=Vector3.zero
 target.GetJoints=function() return {{Part1=target,Part0={Name="PassengerSeat",IsDescendantOf=function() return false end,IsA=function(_,kind) return kind=="Seat" end}}} end
 now+=0.1 fly.AutoRamControl(car) assert(ram.Target==nil,"custom vehicle passenger retained")
 target.GetJoints=function() return {} end

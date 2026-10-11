@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-target-flight-k355"
+local SUNSET_BUILD = "20261010-rift-car-ram-path-k356"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12472,9 +12472,10 @@ function Settings.SetupColdWarCarKillAll()
     Settings.ColdWarCarKillAll = ram
     local fly = Settings.ColdWarCarFly
     local nextScan, targetStarted = 0, 0
-    local previousTarget
+    local previousTarget, passDirection
     local function reset()
         ram.Target, ram.TargetCharacter, ram.Active = nil, nil, false
+        passDirection = nil
     end
     local function targetRoot(player)
         if not player or player == LocalPlayer or player.Parent ~= Players then return end
@@ -12526,10 +12527,16 @@ function Settings.SetupColdWarCarKillAll()
         end
         local forward = Vector3.new(target.CFrame.LookVector.X, 0, target.CFrame.LookVector.Z)
         if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) else forward = forward.Unit end
-        local under = target.Position + Vector3.new(0, -2.5, 0)
-        -- Alternate short approaches beneath the same target, without rotating the car.
-        local side = math.floor(now / 0.2) % 2 == 0 and -1 or 1
-        local desired = under + forward * (side * 4)
+        local center = target.Position
+        if not passDirection then
+            local approach = Vector3.new(center.X - root.Position.X, 0, center.Z - root.Position.Z)
+            passDirection = approach.Magnitude > 0.001 and approach.Unit or forward
+        end
+        -- Complete a pass through the player's position before reversing.
+        local fromTarget = root.Position - center
+        local passed = fromTarget.X * passDirection.X + fromTarget.Z * passDirection.Z
+        if passed >= 6 then passDirection = passDirection * -1 end
+        local desired = center + passDirection * 8
         local delta = desired - root.Position
         local speed = math.clamp(ram.Speed, 50, 250)
         local velocity = delta.Magnitude > 0.01 and delta.Unit * math.min(speed, delta.Magnitude * 25) or Vector3.zero
