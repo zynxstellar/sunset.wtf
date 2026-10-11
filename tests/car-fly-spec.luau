@@ -155,6 +155,10 @@ assert(Settings.ColdWarCarNoclip.Enabled,"contact boost disabled noclip")
 controls["Ram Speed"](200) fly.Step(1/60)
 assert(objects[#objects-1].VectorVelocity.Magnitude==200)
 local count=#objects
+Settings.ColdWarCarAntiAim={Enabled=true}
+fly.Step(1/60) assert(not objects[#objects].Enabled,"Car Fly fought anti aim rotation")
+Settings.ColdWarCarAntiAim.Enabled=false
+fly.Step(1/60) assert(objects[#objects].Enabled,"Car Fly did not resume upright hold")
 for _=1,100 do fly.Step(1/60) end assert(#objects==count)
 for _,object in ipairs(objects) do assert(object.ClassName~="AngularVelocity","ram mode created spin") end
 menu=true fly.Step(1/60)

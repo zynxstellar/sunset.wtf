@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-full-noclip-k358"
+local SUNSET_BUILD = "20261010-rift-car-anti-aim-k359"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -9205,6 +9205,7 @@ function BedWars.BuildUI(boardGame)
             { "Movement", "Car Fly", "Movement", "Cold War", "Car Fly", "Car Fly" },
             { "Movement", "Car Lift", "Movement", "Cold War", "Car Lift", "Car Lift" },
             { "Movement", "Car Noclip", "Movement", "Cold War", "Car Noclip", "Car Noclip" },
+            { "Movement", "Car Anti Aim", "Movement", "Cold War", "Car Anti Aim", "Car Anti Aim" },
             { "Movement", "Car Fling", "Movement", "Cold War", "Car Fling", "Car Fling" },
             { "Player", "Instant Actions", "Player", "Cold War", "Instant Actions", "Instant Actions" },
             { "Combat", "Car Kill All", "Combat", "Cold War", "Car Kill All", "Car Kill All" },
@@ -12359,6 +12360,54 @@ function Settings.SetupColdWarVisibility(gameName)
     Elements.Toggle(section, "Full Bright", false, function(on) options.FullBright = on options.Update() end)
 end
 
+function Settings.SetupColdWarCarAntiAim()
+    local options = { Enabled = false, Speed = 6, Destroyed = false }
+    Settings.ColdWarCarAntiAim = options
+    local root, attachment, angular
+    local toggle
+    local function clear()
+        if angular then angular:Destroy() angular = nil end
+        if attachment then attachment:Destroy() attachment = nil end
+        if root and root.Parent then root.AssemblyAngularVelocity = Vector3.zero end
+        root = nil
+    end
+    function options.Step()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local fly = Settings.ColdWarCarFly
+        local seat = options.Enabled and not options.Destroyed and Settings.SelectedGame == "Cold War"
+            and humanoid and humanoid.Health > 0 and fly and fly.DriverSeat(character, humanoid)
+        local vehicleRoot = seat and seat.AssemblyRootPart
+        if not vehicleRoot or not vehicleRoot.Parent or vehicleRoot.Anchored
+            or vehicleRoot:IsDescendantOf(character) then clear() return end
+        if vehicleRoot ~= root then clear() root = vehicleRoot end
+        if not angular then
+            attachment = new("Attachment", { Name = "RiftCarAntiAimAttachment" }, root)
+            angular = new("AngularVelocity", { Name = "RiftCarAntiAimAngular", Attachment0 = attachment,
+                RelativeTo = Enum.ActuatorRelativeTo.World, AngularVelocity = Vector3.zero,
+                MaxTorque = math.max(root.AssemblyMass * workspace.Gravity * 100, 10000) }, root)
+        end
+        local t, speed = os.clock(), math.clamp(options.Speed, 1, 12)
+        angular.AngularVelocity = Vector3.new(math.cos(t * 0.7), 0.75, math.sin(t * 0.9)) * speed
+    end
+    track(RunService.PreSimulation:Connect(function()
+        local ok, err = pcall(options.Step)
+        if not ok then
+            options.Enabled = false
+            clear()
+            if toggle then toggle.Set(false) end
+            Settings.Notify("Car Anti Aim paused", tostring(err), "error")
+        end
+    end))
+    track({ Disconnect = function() options.Destroyed, options.Enabled = true, false clear() end })
+    local section = gameSection("Cold War", MainTab.Left, "Car Anti Aim")
+    toggle = Elements.Toggle(section, "Car Anti Aim", false, function(on)
+        options.Enabled = on
+        if not on then clear() end
+    end)
+    Elements.Slider(section, "Spin Speed", 1, 12, 6, "rad/s", function(value) options.Speed = value end)
+end
+
 function Settings.SetupColdWarInstantActions()
     local options = { Enabled = false, Destroyed = false }
     Settings.ColdWarInstantActions = options
@@ -12860,7 +12909,7 @@ function Settings.SetupColdWarCarFly()
         fly.ContactCollisionActive = contact == true or (autoRam and autoRam.Active == true and autoRam.Contact == true) or false
         local speed = contact and math.clamp(fly.RamSpeed, 50, 250) or fly.Speed
         velocity.VectorVelocity = autoVelocity or movement * speed + Vector3.new(0, vertical * fly.VerticalSpeed, 0)
-        orientation.Enabled = true
+        orientation.Enabled = not (Settings.ColdWarCarAntiAim and Settings.ColdWarCarAntiAim.Enabled)
         if autoForward or fly.FaceCamera then orientation.CFrame = CFrame.lookAt(Vector3.zero, autoForward or forward) end
     end
     track(RunService.PreSimulation:Connect(function(dt)
@@ -13063,6 +13112,7 @@ function Settings.SetupColdWar()
     Settings.SetupColdWarSpider()
     Settings.SetupColdWarCarFly()
     Settings.SetupColdWarCarNoclip()
+    Settings.SetupColdWarCarAntiAim()
     Settings.SetupColdWarInstantActions()
     Settings.SetupColdWarCarKillAll()
     Settings.SetupColdWarWeaponTuning()

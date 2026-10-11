@@ -68,6 +68,7 @@ def main():
         for name, marker, production in [
             ('coldwar-penetration', '-- INSERT_PENETRATION', between(inner, 'function Settings.ColdWarPenetrationTrace(', '\nfunction Settings.SetupColdWarAim(')),
             ('config-confirm', '-- INSERT_CONFIG_CONFIRM', 'do\n' + between(inner, '    local s = makeSection(SettingsTab.Right, "Configs")', '\ndo\n    local s = makeSection(SettingsTab.Left, "Arena Travel")')),
+            ('car-anti-aim', '-- INSERT_CAR_ANTI_AIM', between(inner, 'function Settings.SetupColdWarCarAntiAim()', '\nfunction Settings.SetupColdWarInstantActions()')),
             ('instant-actions', '-- INSERT_INSTANT_ACTIONS', between(inner, 'function Settings.SetupColdWarInstantActions()', '\nfunction Settings.SetupColdWarCarKillAll()')),
             ('car-kill-all', '-- INSERT_CAR_KILL_ALL', between(inner, 'function Settings.SetupColdWarCarKillAll()', '\nfunction Settings.SetupColdWarCarNoclip()')),
             ('music-timeline', '-- INSERT_MUSIC_STEP', between(inner, '    function BedWars.SpotifyStep()', '\n    task.spawn(function()')),
