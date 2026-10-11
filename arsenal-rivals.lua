@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-blue-ui-k364"
+local SUNSET_BUILD = "20261011-rift-imported-startup-k365"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -252,7 +252,22 @@ for _, name in ipairs({ "MenuUI", "EspGui" }) do
     if old then old:Destroy() end
 end
 
+ENV.SunsetAbortStartup = function()
+    if BedWars then BedWars.Running = false end
+    for _, connection in ipairs(Connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    table.clear(Connections)
+    pcall(function() Settings.MenuBlurEffect:Destroy() end)
+    local loading = ENV.SunsetLoading
+    ENV.SunsetLoading = nil
+    if loading and loading.Gui then pcall(function() loading.Gui:Destroy() end) end
+    pcall(function() Settings.RootGui:Destroy() end)
+    ENV.SunsetAbortStartup = nil
+end
+
 local Gui = new("ScreenGui", { Name = "MenuUI", DisplayOrder = 2147483647, ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling }, PlayerGui)
+Settings.RootGui = Gui
 Settings.MenuBlurEffect = new("BlurEffect", { Name = "SunsetMenuBlur", Size = 0 }, Lighting)
 Settings.MenuBlurTween = nil
 function Settings.SetMenuBlur(size)
@@ -516,7 +531,10 @@ end
 
 local Tabs, currentTab = {}, nil
 Settings.GameBoards = {}
-Settings.StartupStage = function() end
+function Settings.StartupStage(stage)
+    local loading = ENV.SunsetLoading
+    if loading and loading.Status then loading.Status.Text = stage end
+end
 function Settings.IsRetiredSection(title)
     if title == "Player Outlines" or title == "Third Person" or title == "Zoom Unlocker" then return true end
     if title == "Enhanced ESP" or title == "Instant Hit" or title == "Hide Visuals"
@@ -10674,7 +10692,7 @@ local function arsenalWallbangWithinDistance(origin, direction, params, budget)
     end
     return false
 end
-local function makeArsenalHitboxes(deps)
+function RivalsAim.MakeArsenalHitboxes(deps)
     local saved = {}
     local function restore(part, original)
         if part.Parent then
@@ -13758,7 +13776,7 @@ do
         local ok, err = pcall(custom.Tick, os.clock())
         if not ok and (err ~= lastError or os.clock() - (lastErrorAt or 0) >= 5) then
             lastError, lastErrorAt = err, os.clock()
-            Settings.Notify("Visuals", tostring(err))
+            warn("[Rift Visuals] " .. tostring(err))
         end
     end))
     track({Disconnect=custom.Close})
@@ -13766,7 +13784,7 @@ end
 
 if game.PlaceId == 286090429 then
     local section = gameSection(BOARD_GAME_NAME, AimTab.Right, "Wallbang")
-    local hitboxes = makeArsenalHitboxes({Player=LocalPlayer,Players=Players,Vector=Vector3})
+    local hitboxes = RivalsAim.MakeArsenalHitboxes({Player=LocalPlayer,Players=Players,Vector=Vector3})
     Elements.Toggle(section, "Wallbang", false, function(on)
         RivalsAim.Wallbang.Enabled = on == true
         local ray = ENV.RiftArsenalDirectAimRay
@@ -14029,5 +14047,9 @@ if not chunk then error("Rift source did not compile: " .. tostring(err)) end
 local started, runtimeError = xpcall(chunk, function(message)
     return debug.traceback(tostring(message), 2)
 end)
-if not started then error("[Rift Universal] Startup failed: " .. runtimeError, 0) end
+if not started then
+    if type(environment.SunsetAbortStartup) == "function" then pcall(environment.SunsetAbortStartup) end
+    error("[Rift Universal] Startup failed: " .. tostring(runtimeError), 0)
+end
+environment.SunsetAbortStartup = nil
 print("[Rift Universal] Initialization finished. RightShift toggles the menu.")

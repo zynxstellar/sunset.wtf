@@ -129,8 +129,8 @@ def main():
             between(imported_inner, 'function BedWars.BuildUI(boardGame)', '\nif game.PlaceId == 6872265039'),
             between(imported_inner, 'function RivalsAim.BuildUI()', '\nif IS_GENERIC or game.PlaceId == 17625359962'),
             between(imported_inner, 'local CharacterCollision', '\nlocal MapFloorY'),
-            between(imported_inner, 'local function arsenalWallbangWithinDistance(', '\nlocal function makeArsenalHitboxes('),
-            between(imported_inner, 'local function makeArsenalHitboxes(', '\nlocal function arsenalWallbangFilter('),
+            between(imported_inner, 'local function arsenalWallbangWithinDistance(', '\nfunction RivalsAim.MakeArsenalHitboxes('),
+            'local function setupHitboxes()\n' + between(imported_inner, 'function RivalsAim.MakeArsenalHitboxes(', '\nlocal function arsenalWallbangFilter(') + '\nend\nsetupHitboxes()',
             between(imported_inner, 'local function canFire(', '\n    local aimGameFocused'),
             between(imported_inner, '    local function autoFire(', '\nlocal function silentRayDirection('),
         ]
@@ -189,6 +189,12 @@ def main():
         failure_path = temp / 'startup-failure-spec.luau'
         failure_path.write_text(failure_spec, encoding='utf-8')
         subprocess.run([str(runtime), str(failure_path)], check=True)
+        imported_failure = (ROOT / 'tests' / 'startup-failure-spec.luau').read_text(encoding='utf-8').split('-- Match the production HUD', 1)[0]
+        imported_failure = imported_failure.replace('-- INSERT_STARTUP_ABORT', between(imported_inner, 'ENV.SunsetAbortStartup = function()', '\nlocal Gui ='))
+        imported_failure = imported_failure.replace('-- INSERT_WRAPPER_HANDOFF', imported_source[imported_source.rindex('local chunk, err = loadstring(source)'):])
+        imported_failure_path = temp / 'imported-startup-failure-spec.luau'
+        imported_failure_path.write_text(imported_failure, encoding='utf-8')
+        subprocess.run([str(runtime), str(imported_failure_path)], check=True)
         hands_spec = (ROOT / 'tests' / 'universal-hands-spec.luau').read_text(encoding='utf-8')
         hands_spec = hands_spec.replace('-- INSERT_UNIVERSAL_VIEWMODEL',
             between(universal_inner, '    local function moveAimViewmodel(', '\n    local contexts ='))

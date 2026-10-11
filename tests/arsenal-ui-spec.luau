@@ -120,7 +120,7 @@ do
     local enemy = {Neutral=false,Team=2,Character={FindFirstChild=function() return head end,FindFirstChildOfClass=function() return hum end}}
     local owner = {Neutral=false,Team=1,Character={FindFirstChild=function() return {Position=Vector3.zero} end,FindFirstChildOfClass=function() return nil end}}
     local fakePlayers = {GetPlayers=function() return {owner,enemy} end}
-    local hitboxes = makeArsenalHitboxes({Player=owner,Players=fakePlayers,Vector=Vector3})
+    local hitboxes = RivalsAim.MakeArsenalHitboxes({Player=owner,Players=fakePlayers,Vector=Vector3})
     hitboxes.Tick(true,12,100)
     assert(head.Size.X==12 and not head.CanCollide and not head.CanTouch and head.Transparency==1)
     hum.Health=0
