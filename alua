@@ -63,7 +63,7 @@ local Debris = game:GetService("Debris")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261010-rift-car-anti-aim-k359"
+local SUNSET_BUILD = "20261010-rift-car-routing-filters-k360"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetCurrent.lua"
@@ -12521,12 +12521,38 @@ function Settings.SetupColdWarCarKillAll()
     Settings.ColdWarCarKillAll = ram
     local fly = Settings.ColdWarCarFly
     local nextScan, targetStarted = 0, 0
-    local previousTarget, passDirection, travelPhase, travelY
+    local passDirection, travelPhase, travelY, didHop
+    local retryAfter = {}
     local enabledNoclip = false
     local function reset()
         ram.Target, ram.TargetCharacter, ram.Active = nil, nil, false
         passDirection, travelPhase, travelY = nil, nil, nil
+        didHop = false
         ram.Contact = false
+    end
+    local groundCache = setmetatable({}, { __mode = "k" })
+    local groundMaterials = { Grass = true, Ground = true, Sand = true, Mud = true,
+        Rock = true, Slate = true, Basalt = true, Snow = true, Asphalt = true }
+    local groundParams = RaycastParams.new()
+    groundParams.FilterType = Enum.RaycastFilterType.Exclude
+    local function underground(character, root)
+        local now = os.clock()
+        local cached = groundCache[character]
+        if cached and now - cached.At < 0.25 and (root.Position - cached.Position).Magnitude < 8 then
+            return cached.Underground
+        end
+        groundParams.FilterDescendantsInstances = { character, workspace:FindFirstChild("Vehicles") }
+        local hit = workspace:Raycast(root.Position + Vector3.new(0, 48, 0), Vector3.new(0, -52, 0), groundParams)
+        local below = false
+        if hit and hit.Position.Y > root.Position.Y + 3 then
+            local material = tostring(hit.Material):match("[^%.]+$")
+            local name = hit.Instance.Name:lower()
+            local isGround = hit.Instance == workspace.Terrain or groundMaterials[material]
+                or name:find("ground", 1, true) or name:find("terrain", 1, true)
+            below = isGround and true or false
+        end
+        groundCache[character] = { At = now, Position = root.Position, Underground = below }
+        return below
     end
     local function targetRoot(player)
         if not player or player == LocalPlayer or player.Parent ~= Players then return end
@@ -12536,6 +12562,9 @@ function Settings.SetupColdWarCarKillAll()
         local root = character and character:FindFirstChild("HumanoidRootPart")
         if not character or not character.Parent or not humanoid or humanoid.Health <= 0
             or not root or root.Anchored or humanoid.SeatPart or humanoid.Sit then return end
+        local values = character:FindFirstChild("CharacterValues")
+        local unconscious = values and values:FindFirstChild("Unconscious")
+        if unconscious and unconscious.Value == true then return end
         for _, joint in ipairs(root:GetJoints()) do
             local other = joint.Part1 == root and joint.Part0 or joint.Part0 == root and joint.Part1
             if other and not other:IsDescendantOf(character) then
@@ -12553,6 +12582,7 @@ function Settings.SetupColdWarCarKillAll()
             local health = limb and limb:FindFirstChild("Health")
             if health and health:IsA("NumberValue") and health.Value <= 0 then return end
         end
+        if underground(character, root) then return end
         return root, character
     end
     function ram.Control(root)
@@ -12561,31 +12591,50 @@ function Settings.SetupColdWarCarKillAll()
         if anyMenuVisible() or UIS:GetFocusedTextBox() then return Vector3.zero end
         local now = os.clock()
         local target, character = targetRoot(ram.Target)
-        if not target or character ~= ram.TargetCharacter or now - targetStarted >= 10 then
-            previousTarget = ram.Target or previousTarget
+        local expired = target and now - targetStarted >= 10
+        if expired then retryAfter[ram.Target] = now + 3 end
+        if not target or character ~= ram.TargetCharacter or expired then
             reset()
-            if now < nextScan then return Vector3.zero end
-            nextScan = now + 0.5
+            target = nil
+            nextScan = 0
+        end
+        if now >= nextScan then
+            nextScan = now + 0.25
+            local localCharacter = LocalPlayer.Character
+            local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+            local origin = localRoot and localRoot.Position or root.Position
             local nearest, distance = nil, math.huge
             for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= previousTarget then
+                if now >= (retryAfter[player] or 0) then
                     local candidate = targetRoot(player)
                     if candidate then
-                        local candidateDistance = (candidate.Position - root.Position).Magnitude
+                        local candidateDistance = (candidate.Position - origin).Magnitude
                         if candidateDistance < distance then nearest, distance = player, candidateDistance end
                     end
                 end
             end
-            if not nearest then return Vector3.zero end
-            ram.Target = nearest
-            travelPhase = "Descend"
-            targetStarted = now
+            if nearest ~= ram.Target then
+                reset()
+                ram.Target = nearest
+                if nearest then
+                    travelPhase = "Descend"
+                    targetStarted = now
+                end
+            end
             target, ram.TargetCharacter = targetRoot(ram.Target)
-            if not target then reset() return Vector3.zero end
         end
+        if not target then return Vector3.zero end
         local forward = Vector3.new(target.CFrame.LookVector.X, 0, target.CFrame.LookVector.Z)
         if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) else forward = forward.Unit end
         local center = target.Position
+        if not didHop and (center - root.Position).Magnitude > 500 then
+            local approach = Vector3.new(center.X - root.Position.X, 0, center.Z - root.Position.Z)
+            local direction = approach.Magnitude > 0.001 and approach.Unit or forward
+            local near = center - direction * math.sqrt(100 * 100 - 12 * 12) + Vector3.new(0, -12, 0)
+            root.CFrame = CFrame.lookAt(near, near + direction)
+            root.AssemblyLinearVelocity = Vector3.zero
+            travelY, travelPhase, didHop = near.Y, "Cruise", true
+        end
         if not passDirection then
             local approach = Vector3.new(center.X - root.Position.X, 0, center.Z - root.Position.Z)
             passDirection = approach.Magnitude > 0.001 and approach.Unit or forward
@@ -12604,7 +12653,8 @@ function Settings.SetupColdWarCarKillAll()
         elseif travelPhase == "Cruise" then desired = Vector3.new(center.X, travelY, center.Z)
         elseif travelPhase == "Rise" then desired = center end
         local delta = desired - root.Position
-        local speed = ram.Speed
+        local speed = travelPhase == "Cruise" and root.Position.Y <= center.Y - 6
+            and 300 / (3.6 * 0.28) or ram.Speed
         ram.Contact = travelPhase == "Ram" and (root.Position - center).Magnitude <= 12
         local velocity = delta.Magnitude > 0.01 and delta.Unit * math.min(speed, delta.Magnitude * 25) or Vector3.zero
         ram.Active = true
@@ -12637,7 +12687,7 @@ function Settings.SetupColdWarCarKillAll()
         end
     end)
     Elements.Toggle(section, "Team Check", true, function(on) ram.TeamCheck = on reset() end)
-    Elements.Label(section, "Travel speed: 100 km/h")
+    Elements.Label(section, "Underground cruise: 300 km/h | Other movement: 100 km/h")
     Elements.Label(section, "Driver only. Skips seated players; switches after 10 seconds. Damage is unverified.")
 end
 
@@ -12649,7 +12699,7 @@ function Settings.SetupColdWarCarNoclip()
     local function restorePart(part)
         local original = saved[part]
         if original ~= nil then
-            if part.Parent then part.CanCollide = original end
+            if part.Parent then part.CanCollide, part.CanTouch = original.CanCollide, original.CanTouch end
             saved[part] = nil
         end
     end
@@ -12672,8 +12722,8 @@ function Settings.SetupColdWarCarNoclip()
                 ancestor = ancestor.Parent
             end
         end
-        if saved[part] == nil then saved[part] = part.CanCollide end
-        part.CanCollide = false
+        if saved[part] == nil then saved[part] = { CanCollide = part.CanCollide, CanTouch = part.CanTouch } end
+        part.CanCollide, part.CanTouch = false, false
     end
     function options.Step()
         local character = LocalPlayer.Character
@@ -12704,7 +12754,7 @@ function Settings.SetupColdWarCarNoclip()
         end
         for part in pairs(saved) do
             if part.Parent and (part:IsDescendantOf(model) or part:IsDescendantOf(activeCharacter)) then
-                part.CanCollide = false
+                part.CanCollide, part.CanTouch = false, false
             else restorePart(part) end
         end
     end
@@ -12868,6 +12918,7 @@ function Settings.SetupColdWarCarFly()
                     Size = Vector3.new(math.clamp(math.max(size.X, size.Z) + 4, 8, 60), 1, math.clamp(math.max(size.X, size.Z) + 4, 8, 60)),
                     CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z) }, workspace)
             end
+            platform.CanCollide = not (Settings.ColdWarCarKillAll and Settings.ColdWarCarKillAll.Enabled)
             platformTop = wheelBottom(root)
             -- Keep support directly below the wheels during flight, driving and falling.
             platform.CFrame = CFrame.new(root.Position.X, platformTop - 0.5, root.Position.Z)

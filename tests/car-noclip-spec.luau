@@ -13,7 +13,7 @@ local Elements={Toggle=function(_,n,_,fn) controls[n]=fn end}
 local function track(c) connections[#connections+1]=c end
 local function gameSection() return {} end
 local function node(kind,parent)
-    local object={Parent=parent,ClassName=kind,CanCollide=true,children={}}
+    local object={Parent=parent,ClassName=kind,CanCollide=true,CanTouch=true,children={}}
     if parent then parent.children[#parent.children+1]=object end
     function object:IsA(k) return self.ClassName==k end
     function object:IsDescendantOf(other)
@@ -57,7 +57,7 @@ Settings.SetupColdWarCarNoclip()
 local options=Settings.ColdWarCarNoclip
 options.Step() assert(chassis.CanCollide)
 controls["Car Noclip"](true) options.Step()
-assert(not chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide and not driverBody.CanCollide)
+assert(not chassis.CanCollide and not chassis.CanTouch and not driverBody.CanTouch and not wheel.CanCollide and passengerBody.CanCollide and not driverBody.CanCollide)
 chassis.CanCollide=true options.Step() assert(not chassis.CanCollide)
 Settings.ColdWarCarFly.ContactFlingEnabled=true
 Settings.ColdWarCarFly.ContactCollisionActive=true
@@ -72,7 +72,7 @@ local added=node("BasePart",car) car.DescendantAdded:Fire(added) assert(not adde
 car.DescendantRemoving:Fire(added) assert(added.CanCollide)
 added.Parent=workspace
 controls["Car Noclip"](false)
-assert(chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide and driverBody.CanCollide and driverAdded.CanCollide and not driverAccessory.CanCollide)
+assert(chassis.CanCollide and not wheel.CanCollide and passengerBody.CanCollide and driverBody.CanCollide and driverAdded.CanCollide and not driverAccessory.CanCollide and chassis.CanTouch and driverBody.CanTouch)
 controls["Car Noclip"](true) options.Step()
 activeSeat=nil options.Step() assert(chassis.CanCollide and driverBody.CanCollide)
 activeSeat=seat options.Step()
