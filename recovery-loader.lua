@@ -2,7 +2,7 @@
 -- Auto reinjection, automatic startup webhook, and menu blur stay paused.
 local environment = (typeof(getgenv) == "function" and getgenv()) or _G
 environment.SunsetRecovery = true
-local source = game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/83562721f8b65fd19625dd503ccca6bf139fb9e0/loader.lua")
+local source = game:HttpGet("https://raw.githubusercontent.com/zynxstellar/sunset.wtf/7637ae6921681d40751d443140f64d3cb2ab1fb9/loader.lua")
 local chunk, err = loadstring(source, "=RIFT recovery loader")
 assert(chunk, "RIFT: recovery loader failed to compile: " .. tostring(err))
 chunk()
