@@ -13,10 +13,10 @@ if not imported and not dedicated then
     warn("[RIFT] This game is unsupported. No client was downloaded or started.")
     return
 end
-local expectedBuild = imported and "20261011-rift-huss-speed-limit-k372" or "20261011-rift-car-flight-platform-k373"
+local expectedBuild = imported and "20261011-rift-huss-speed-limit-k372" or "20261011-rift-car-spin-camera-k374"
 local sourceUrl = imported
     and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/1268640d350078276fdd56bb49e05b928ef7ea27/arsenal-rivals.lua"
-    or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/afe67259a8b81ac0c20544a33a34bec32df42fab/alua"
+    or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/10f5f27e1ba5b7b426b0aac085882fab96a19b9f/alua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
 assert(ok and type(source) == "string", "RIFT: current build download failed: " .. tostring(source))
