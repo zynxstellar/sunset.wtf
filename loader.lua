@@ -1,10 +1,11 @@
--- Game support includes: Arsenal, BedWars (easy.gg; Full Support), Rivals, Cold War (Full Support).
+-- Game support includes: Arsenal, BedWars, Rivals, Cold War, Project Delta, and Huss Valley (shared features).
 -- Executor support includes: Potassium, Synapse Z, and Volt. Other executors are labeled NOT TESTED.
 -- Contact z.y.n.x. on Discord for help, assistance, or suggestions.
 -- You can also join the Discord at: https://discord.gg/4pj9cedscb
 
 -- Route Arsenal and Rivals to the supplied client; retain the other dedicated clients.
 local imported = game.PlaceId == 286090429 or game.PlaceId == 17625359962 or game.GameId == 6035872082
+    or game.PlaceId == 107535308163741
 local dedicated = game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 13687899540 or game.GameId == 4750561026
     or game.PlaceId == 7336302630 or game.GameId == 2862098693
@@ -12,9 +13,9 @@ if not imported and not dedicated then
     warn("[RIFT] This game is unsupported. No client was downloaded or started.")
     return
 end
-local expectedBuild = imported and "20261011-rift-imported-kill-all-k369" or "20261011-rift-compact-ui-k367"
+local expectedBuild = imported and "20261011-rift-huss-valley-k370" or "20261011-rift-compact-ui-k367"
 local sourceUrl = imported
-    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/27a39e2b7afac0cfc647e54959c1f837bbdb7dc6/arsenal-rivals.lua"
+    and "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/d0ab59c6d8344c6d05ec098b11754cedccc684f7/arsenal-rivals.lua"
     or "https://raw.githubusercontent.com/zynxstellar/sunset.wtf/3d09ca3604fe43a8f68482d3a308d06f6f6a0af3/alua"
 
 local ok, source = pcall(game.HttpGet, game, sourceUrl)
