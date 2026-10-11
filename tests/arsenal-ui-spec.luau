@@ -24,6 +24,11 @@ local function aimUnobstructed() return sight end
 local function focusedGame() return true end
 local function aimStatus() end
 function game:GetService() return {MenuIsOpen=false} end
+local crosshairHit = true
+local targetModel = {}
+local function castToward()
+    if crosshairHit then return {Instance={IsDescendantOf=function(_,model) return model == targetModel end}} end
+end
 local silentTarget
 local function closestTarget() return silentTarget end
 -- INSERT_IMPORTED_UI
@@ -146,7 +151,7 @@ do
     Settings.SelectedGame="Arsenal"
     Window.Visible, RivalsUI.Visible = false, false
     for _, board in pairs(Settings.GameBoards) do board.Visible=false end
-    local target={Position=Vector3.new(0,0,100),IsDescendantOf=function() return true end}
+    local target={Position=Vector3.new(0,0,100),Size=Vector3.new(2,2,2),FindFirstAncestorOfClass=function() return targetModel end,IsDescendantOf=function() return true end}
     local camera={CFrame={Position=Vector3.zero,LookVector=Vector3.new(0,0,1)}}
     RivalsAim.AutoShoot.Enabled=false
     RivalsAim.Aimbot.Enabled=true
@@ -167,7 +172,7 @@ do
     RivalsAim.Aimbot.Enabled=false
     autoFire(RivalsAim.AutoShoot,nil,target,camera)
     assert(firingWanted==true,"trigger depended on aimbot being enabled")
-    silentTarget={Position=Vector3.new(100,0,100),IsDescendantOf=function() return true end}
+    silentTarget={Position=Vector3.new(100,0,100),Size=Vector3.new(2,2,2),FindFirstAncestorOfClass=function() return targetModel end,IsDescendantOf=function() return true end}
     RivalsAim.Enabled=true
     autoFire(RivalsAim.AutoShoot,nil,nil,camera)
     assert(firingWanted==true,"silent aim target was not used off crosshair")
@@ -175,9 +180,13 @@ do
     autoFire(RivalsAim.AutoShoot,nil,target,camera)
     assert(firingWanted==false,"silent target bypassed shoot distance")
     RivalsAim.Enabled=false
+    crosshairHit=false
     RivalsAim.AutoShoot.MaxDistance=200
     autoFire(RivalsAim.AutoShoot,nil,silentTarget,camera)
-    assert(firingWanted==false,"trigger ignored alignment with silent aim off")
+    assert(firingWanted==false,"trigger fired when crosshair ray missed target")
+    autoFire(RivalsAim.AutoShoot,nil,target,camera)
+    assert(firingWanted==false,"trigger accepted a near miss inside the old aiming cone")
+    crosshairHit=true
 end
 print("PASS imported Auto Shoot: disabled aim never fires, independent trigger, alignment, visibility, range")
 do

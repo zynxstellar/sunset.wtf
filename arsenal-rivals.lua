@@ -68,7 +68,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-compact-ui-k367"
+local SUNSET_BUILD = "20261011-rift-imported-native-shots-k368"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -9866,6 +9866,102 @@ local rivalsModuleLoaded=makeRivalsModuleCache({Env=ENV,Global=getloadedmodules,
 
 RivalsAim.Wallbang = { Enabled = false, Rays = 0, Distance = 20, HitboxSize = 8 }
 
+-- Arsenal's supplied client uses GeneralFunctions.cast(Ray, hitlist).
+function Settings.MakeArsenalCastAdapter(deps)
+    local adapter = {Closed=false, Calls=0, Redirects=0}
+    local api, previous, wrapper
+    local busy = setmetatable({}, {__mode="k"})
+    function adapter.Install(module)
+        if adapter.Closed then return false end
+        if api == module and module.cast == wrapper then return true end
+        if api then return false end
+        if type(module) ~= "table" or type(module.cast) ~= "function" then return false end
+        api, previous = module, module.cast
+        wrapper = function(ray, ignored, ...)
+            local thread = coroutine.running()
+            if adapter.Closed or busy[thread] then return previous(ray, ignored, ...) end
+            local identified, shot = pcall(deps.IsShot, ray, ignored)
+            if not identified or not shot then return previous(ray, ignored, ...) end
+            adapter.Calls += 1
+            busy[thread] = true
+            local ok, changedRay, changedIgnore = pcall(deps.Transform, ray, ignored)
+            if ok and changedRay then ray, ignored = changedRay, changedIgnore or ignored; adapter.Redirects += 1 end
+            local result = table.pack(pcall(previous, ray, ignored, ...))
+            busy[thread] = nil
+            if not result[1] then error(result[2], 0) end
+            if deps.OnShot then pcall(deps.OnShot, ray.Origin, result[3] or (ray.Origin + ray.Direction)) end
+            return table.unpack(result, 2, result.n)
+        end
+        local ok = pcall(function() api.cast = wrapper end)
+        return ok and api.cast == wrapper
+    end
+    function adapter.Close()
+        adapter.Closed = true
+        if api and api.cast == wrapper then pcall(function() api.cast = previous end) end
+    end
+    return adapter
+end
+function Settings.MakeArsenalAmmo(deps)
+    local mod = {Enabled=false, Closed=false, Applied=false}
+    local saved = {}
+    local function restore()
+        for state, fields in pairs(saved) do
+            for key, value in pairs(fields) do
+                pcall(function() if state[key] == value.Last then state[key] = value.Original end end)
+            end
+        end
+        table.clear(saved)
+    end
+    function mod.Tick()
+        mod.Applied = false
+        if mod.Closed or not mod.Enabled then return end
+        local state = deps.Resolve()
+        if not state or not state.gun then return end
+        local key = state.equipped == "primary" and state.primarymode ~= "2" and "ammocount"
+            or state.equipped == "secondary" and "ammo2count" or nil
+        if not key or type(state[key]) ~= "number" then return end
+        for old in pairs(saved) do if old ~= state then restore(); break end end
+        local fields = saved[state] or {}; saved[state] = fields
+        local entry = fields[key]
+        if not entry then entry = {Original=state[key]}; fields[key] = entry
+        elseif entry.Last ~= state[key] then entry.Original = state[key] end
+        local amount = math.floor(math.clamp(tonumber(deps.Amount()) or 99, 1, 300))
+        state[key], entry.Last, mod.Applied = amount, amount, true
+    end
+    function mod.Set(on)
+        mod.Enabled = on == true and not mod.Closed
+        if not mod.Enabled then restore() else mod.Tick() end
+    end
+    function mod.Status()
+        return not mod.Enabled and "Off" or mod.Applied and "Client State ammo applied; server effect unverified"
+            or "Waiting for an equipped Arsenal weapon"
+    end
+    function mod.Close() mod.Set(false); mod.Closed=true end
+    return mod
+end
+function Settings.MakeBulletTracers(deps)
+    local mod = {Enabled=false, Lifetime=0.7, Width=0.08, Color=deps.Color, Paths={}, Closed=false}
+    local function remove(index)
+        pcall(function() mod.Paths[index].Object:Destroy() end)
+        table.remove(mod.Paths, index)
+    end
+    function mod.Clear() for i=#mod.Paths,1,-1 do remove(i) end end
+    function mod.Emit(origin, destination)
+        if mod.Closed or not mod.Enabled or (destination-origin).Magnitude < 0.01 then return end
+        while #mod.Paths >= 96 do remove(1) end
+        local object = deps.Create(origin, destination, mod)
+        table.insert(mod.Paths, {Object=object, Until=deps.Now()+mod.Lifetime})
+    end
+    function mod.Tick()
+        if not mod.Enabled then mod.Clear(); return end
+        local now=deps.Now()
+        for i=#mod.Paths,1,-1 do if now>=mod.Paths[i].Until then remove(i) end end
+    end
+    function mod.Set(on) mod.Enabled=on==true and not mod.Closed; if not mod.Enabled then mod.Clear() end end
+    function mod.Close() mod.Set(false); mod.Closed=true end
+    return mod
+end
+
 function RivalsAim.Setup()
     -- Retire the global ray/mouse wrappers left by older builds.
     local oldState = ENV.SunsetRivalsAimHook
@@ -9928,6 +10024,24 @@ local function createBaseplateController(players, localPlayer, world)
     end })
 end
 
+    local arsenalModules = {}
+    function RivalsAim.ResolveArsenalModule(name)
+        if game.PlaceId ~= 286090429 then return end
+        if arsenalModules[name] then return arsenalModules[name] end
+        local module
+        if name == "GeneralFunctions" then
+            local modules = game:GetService("ReplicatedStorage"):FindFirstChild("Modules")
+            module = modules and modules:FindFirstChild(name)
+        else
+            local client = game:GetService("ReplicatedFirst"):FindFirstChild("Client")
+            local utility = client and client:FindFirstChild("Utility")
+            module = utility and utility:FindFirstChild(name)
+        end
+        if not module then return end
+        local ok, result = pcall(withGameIdentity, function() return require(module) end)
+        if ok and type(result)=="table" then arsenalModules[name]=result; return result end
+        RivalsAim.LoadError = "Arsenal " .. name .. ": " .. tostring(result)
+    end
     local function loadApi()
         if IS_GENERIC then
             if not controller then controller=createBaseplateController(Players,LocalPlayer,workspace)end
@@ -10500,6 +10614,7 @@ end
         state.Active = false
         RivalsAim.Enabled = on == true and installShot() or false
         state.Active = RivalsAim.Enabled
+        if ENV.RiftArsenalDirectAimRay then ENV.RiftArsenalDirectAimRay.Active=state.Active end
         if state.Active and RivalsAim.ArsenalSilentAvailable then
             RivalsAim.StopAutoFire()
             for _, name in ipairs({ "Assist", "Legit", "Aimbot" }) do
@@ -10636,8 +10751,17 @@ end
         if part then
             local visible = not options.VisibleOnly or aimUnobstructed(fighter, part, camera.CFrame.Position, options)
             local direction = part.Position - camera.CFrame.Position
-            local aligned = direction.Magnitude > 0.001
-                and (silent or camera.CFrame.LookVector:Dot(direction.Unit) >= math.cos(math.rad(2)))
+            local aligned = false
+            if direction.Magnitude > 0.001 then
+                if silent then
+                    aligned = true
+                else
+                    local hit = castToward(fighter, camera.CFrame.Position,
+                        camera.CFrame.Position + camera.CFrame.LookVector * (direction.Magnitude + part.Size.Magnitude), nil, true)
+                    local model = part:FindFirstAncestorOfClass("Model") or part.Parent
+                    aligned = hit ~= nil and model ~= nil and hit.Instance:IsDescendantOf(model)
+                end
+            end
             local shoot = RivalsAim.AutoShoot
             wanted = canFire(shoot, part:IsDescendantOf(workspace), visible, aligned, focusedGame())
                 and (part.Position - camera.CFrame.Position).Magnitude <= shoot.MaxDistance
@@ -10663,19 +10787,6 @@ local function silentRayDirection(origin, direction, targetPosition)
     -- Keep the game's ray range and origin; only change its direction.
     return offset.Unit * length
 end
-local function arsenalShotQuery(scriptPath, receiver, origin, direction, params, world)
-    if scriptPath ~= "ReplicatedFirst.Client.Utility.Scheduler" or receiver ~= world then return false end
-    if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3"
-        or direction.Magnitude < 100 or typeof(params) ~= "RaycastParams" then return false end
-    if params.IgnoreWater ~= true or params.FilterType ~= Enum.RaycastFilterType.Exclude then return false end
-    local map = world:FindFirstChild("Map")
-    local clips = map and map:FindFirstChild("Clips")
-    local ignored = world:FindFirstChild("Ray_Ignore")
-    if not clips or not ignored then return false end
-    local filter = params.FilterDescendantsInstances
-    return table.find(filter, clips) ~= nil and table.find(filter, ignored) ~= nil
-end
-
 -- Experimental client query filtering, not a verified server penetration bypass.
 -- Reject map filtering unless each covered surface fits the configured penetration budget.
 local function arsenalWallbangWithinDistance(origin, direction, params, budget)
@@ -10776,52 +10887,52 @@ local function arsenalWallbangFilter(params, world, players)
 end
 
     if game.PlaceId == 286090429 then
-        local hook = ENV.hookfunction or hookfunction
-        local own = ENV.checkcaller or checkcaller
-        local caller = ENV.getcallingscript or getcallingscript
-        local wrap = ENV.newcclosure or newcclosure or function(fn) return fn end
-        local rayState = ENV.RiftArsenalDirectAimRay
-        if not rayState and type(hook) == "function"
-            and type(own) == "function" and type(caller) == "function" then
-            rayState = { Active = false, Busy = setmetatable({}, {__mode = "k"}) }
-            local previous
-            local ok, err = pcall(function()
-                previous = hook(workspace.Raycast, wrap(function(receiver, ...)
-                    local thread = coroutine.running()
-                    if rayState.Active and not rayState.Busy[thread] and receiver == workspace
-                        and not own() then
-                        local identified, scriptObject = pcall(caller)
-                        if identified and typeof(scriptObject) == "Instance" then
-                            local args = table.pack(...)
-                            local valid, eligible = pcall(arsenalShotQuery, scriptObject:GetFullName(),
-                                receiver, args[1], args[2], args[3], workspace)
-                            if valid and eligible then
-                                rayState.Busy[thread] = true
-                                local changed, direction, params = pcall(rayState.Transform, args[1], args[2], args[3])
-                                rayState.Busy[thread] = nil
-                                if changed and direction then
-                                    args[2], args[3] = direction, params
-                                    args.n = math.max(args.n, 3)
-                                    return previous(receiver, table.unpack(args, 1, args.n))
-                                end
-                            end
-                        end
-                    end
-                    return previous(receiver, ...)
-                end))
-            end)
-            if ok then ENV.RiftArsenalDirectAimRay = rayState else
-                RivalsAim.LoadError = tostring(err)
-                rayState = nil
-            end
-        end
+        local oldRay = ENV.RiftArsenalDirectAimRay
+        if oldRay then oldRay.Active=false; oldRay.Transform=nil end
+        local rayState = {Active=false}
+        ENV.RiftArsenalDirectAimRay = rayState
         if rayState then
             -- Retire the older map-only observer without replacing other hooks.
             if ENV.RiftArsenalMapRay then ENV.RiftArsenalMapRay.active = false end
             if ENV.RiftArsenalAimRay then ENV.RiftArsenalAimRay.Active = false end
             RivalsAim.ArsenalSilentAvailable, RivalsAim.MapRayAvailable = true, true
             RivalsAim.VisibleOnly, RivalsAim.MaxDistance = true, 1000
-            state.StartArsenalSilent = function() return not state.Restored end
+            local nativeCast = Settings.MakeArsenalCastAdapter({
+                IsShot=function(ray, ignored)
+                    if state.Restored or typeof(ray) ~= "Ray" or type(ignored) ~= "table" then return false end
+                    local values=RivalsAim.ResolveArsenalModule("State")
+                    local weapon=values and values.gun
+                    local range=weapon and weapon:FindFirstChild("Range")
+                    local camera=workspace.CurrentCamera
+                    return values ~= nil and values.equipped ~= "melee" and range ~= nil and camera ~= nil
+                        and not weapon:FindFirstChild("Projectile")
+                        and (ray.Origin-camera.CFrame.Position).Magnitude < 2
+                        and math.abs(ray.Direction.Magnitude-range.Value) <= math.max(1, range.Value*0.01)
+                end,
+                Transform=function(ray, ignored)
+                    if not rayState.Active or not rayState.Transform then return end
+                    local params=RaycastParams.new()
+                    params.FilterType, params.IgnoreWater = Enum.RaycastFilterType.Exclude, true
+                    params.FilterDescendantsInstances=ignored
+                    local direction, filtered=rayState.Transform(ray.Origin,ray.Direction,params)
+                    if direction then return Ray.new(ray.Origin,direction), filtered and filtered.FilterDescendantsInstances or ignored end
+                end,
+                OnShot=function(origin, destination)
+                    local trails=RivalsAim.BulletTracers
+                    if trails and typeof(destination)=="Vector3" then trails.Emit(origin,destination) end
+                end,
+            })
+            state.StartArsenalSilent = function()
+                if state.Restored then return false end
+                local values=RivalsAim.ResolveArsenalModule("State")
+                local api=RivalsAim.ResolveArsenalModule("GeneralFunctions")
+                local ok=values ~= nil and api ~= nil and nativeCast.Install(api) == true
+                if not ok then RivalsAim.LoadError="GeneralFunctions.cast could not be installed" end
+                RivalsAim.ArsenalSilentAvailable=ok==true
+                return ok==true
+            end
+            RivalsAim.StartArsenalShotAdapter=state.StartArsenalSilent
+            track({Disconnect=nativeCast.Close})
             local redirects = 0
             local function status(message)
                 if RivalsAim.SilentStatusLabel then RivalsAim.SilentStatusLabel.Text = "Status: " .. message end
@@ -11895,6 +12006,17 @@ end
         if not IS_GENERIC then makeGunMods=makeRivalsGunMods end
         local guns = makeGunMods({ Storage = game:GetService("ReplicatedStorage"),
             Player = LocalPlayer, Now = os.clock,Resolve=RivalsAim.ResolveItemLibrary })
+        if IS_GENERIC then
+            local ammo=Settings.MakeArsenalAmmo({Resolve=function() return RivalsAim.ResolveArsenalModule("State") end,
+                Amount=function() return guns.Ammo end})
+            local originalSet, originalTick, originalStatus, originalClose=guns.Set,guns.Tick,guns.Status,guns.Close
+            guns.Set=function(feature,on)
+                if feature=="InfiniteAmmo" then ammo.Set(on) else originalSet(feature,on) end
+            end
+            guns.Tick=function(now) originalTick(now); ammo.Tick() end
+            guns.Status=function(feature) if feature=="InfiniteAmmo" then return ammo.Status() end; return originalStatus(feature) end
+            guns.Close=function() ammo.Close(); originalClose() end
+        end
         if not IS_GENERIC then
             local section=gameSection(BOARD_GAME_NAME,AimTab.Right,"Rivals Compatibility")
             local reportStatus=Elements.Label(section,"Client adapters need live verification.")
@@ -13819,6 +13941,36 @@ if game.PlaceId == 286090429 then
     track({Disconnect=hitboxes.Close})
 end
 
+    end
+    if IS_GENERIC then
+        local trails=Settings.MakeBulletTracers({Now=os.clock,Color=Color3.fromRGB(64,145,255),
+            Create=function(origin,destination,options)
+                local root=new("Part", {Name="RiftBulletTracer", Anchored=true, CanCollide=false,
+                    CanTouch=false, CanQuery=false, Transparency=1, Size=Vector3.new(0.05,0.05,0.05),
+                    CFrame=CFrame.new(origin)}, workspace)
+                local first=new("Attachment", {}, root)
+                local last=new("Attachment", {Position=destination-origin}, root)
+                new("Beam", {Attachment0=first,Attachment1=last,FaceCamera=true,
+                    Width0=options.Width,Width1=options.Width,Color=ColorSequence.new(options.Color),
+                    Transparency=NumberSequence.new(0.15),LightEmission=1,LightInfluence=0}, root)
+                return root
+            end})
+        RivalsAim.BulletTracers=trails
+        local section=gameSection(BOARD_GAME_NAME,VisualsTab.Right,"Bullet Tracers")
+        local control
+        control=Elements.Toggle(section,"Bullet Tracers",false,function(on)
+            if on and not RivalsAim.StartArsenalShotAdapter() then
+                warn("[Rift] " .. tostring(RivalsAim.LoadError))
+                if control then control.Set(false) end
+                return
+            end
+            trails.Set(on)
+        end)
+        Elements.ColorPicker(section,"Color",trails.Color,function(value) trails.Color=value end)
+        Elements.Slider(section,"Disappear After",100,3000,700,"ms",function(value) trails.Lifetime=value/1000 end)
+        Elements.Slider(section,"Thickness",0.02,0.4,0.08,"studs",function(value) trails.Width=value end,0.01)
+        track(RunService.Heartbeat:Connect(trails.Tick))
+        track({Disconnect=trails.Close})
     end
     RivalsAim.BuildUI()
 end

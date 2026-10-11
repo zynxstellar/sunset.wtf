@@ -134,6 +134,12 @@ def main():
             between(imported_inner, 'local function canFire(', '\n    local aimGameFocused'),
             between(imported_inner, '    local function autoFire(', '\nlocal function silentRayDirection('),
         ]
+        arsenal_native_spec = (ROOT / 'tests' / 'arsenal-native-spec.luau').read_text(encoding='utf-8')
+        arsenal_native_spec = arsenal_native_spec.replace('-- INSERT_ARSENAL_ADAPTERS', between(imported_inner, 'function Settings.MakeArsenalCastAdapter(', '\nfunction RivalsAim.Setup()'))
+        arsenal_native_spec = arsenal_native_spec.replace('-- INSERT_NATIVE_ELIGIBILITY', between(imported_inner, 'IsShot=function(ray, ignored)', '\n                Transform=function').rstrip().removesuffix(',').replace('IsShot=', 'local eligibleQuery = ', 1) )
+        arsenal_native_path = temp / 'arsenal-native-spec.luau'
+        arsenal_native_path.write_text(arsenal_native_spec, encoding='utf-8')
+        subprocess.run([str(runtime), str(arsenal_native_path)], check=True)
         imported_ui_spec = (ROOT / 'tests' / 'arsenal-ui-spec.luau').read_text(encoding='utf-8')
         imported_ui_source = ui_prefix + '\n' + imported_ui_spec.replace('-- INSERT_IMPORTED_UI', '\n'.join(imported_ui_parts))
         imported_ui_path = temp / 'arsenal-ui-spec.luau'
