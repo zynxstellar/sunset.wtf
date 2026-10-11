@@ -1,4 +1,5 @@
 local IS_GENERIC=true
+local game={PlaceId=286090429}
 local V,meta={},{}
 function V.new(x,y,z) return setmetatable({X=x,Y=y,Z=z,Magnitude=math.sqrt(x*x+y*y+z*z)},meta) end
 meta.__add=function(a,b) return V.new(a.X+b.X,a.Y+b.Y,a.Z+b.Z) end

@@ -8,13 +8,14 @@ local source = [========[print("[Rift Universal] Starting in place " .. tostring
 
 
 if not game:IsLoaded() then game.Loaded:Wait() end
-if game.PlaceId ~= 286090429 and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082 then
-    warn("[Rift] This client supports Arsenal and Rivals only.")
+if game.PlaceId ~= 286090429 and game.PlaceId ~= 17625359962 and game.GameId ~= 6035872082
+    and game.PlaceId ~= 107535308163741 then
+    warn("[Rift] This client supports Arsenal, Rivals, and Huss Valley.")
     return
 end
 local IS_GENERIC = not (game.PlaceId == 6872265039 or game.GameId == 2619619496
     or game.PlaceId == 17625359962 or game.GameId == 6035872082)
-local BOARD_GAME_NAME = IS_GENERIC and "Arsenal" or "Rivals"
+local BOARD_GAME_NAME = IS_GENERIC and (game.PlaceId == 107535308163741 and "Huss Valley" or "Arsenal") or "Rivals"
 local function isRivalsMode(name)
     return name == "Rivals" or name == "JUST A BASEPLATE."
         or (IS_GENERIC and name == BOARD_GAME_NAME)
@@ -68,7 +69,7 @@ while not workspace.CurrentCamera do
 end
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-local SUNSET_BUILD = "20261011-rift-imported-kill-all-k369"
+local SUNSET_BUILD = "20261011-rift-huss-valley-k370"
 local BRAND = "RIFT"
 local RIFT_KILL_MESSAGE = "RIFT ON TOP 10$ LIFETIME, STEAL AN EGG, RIVALS, BEDWARS, ZSA, JJS, ARSENAL!"
 local SUNSET_LOCAL_SOURCE = "SunsetConfigs/SunsetArsenalRivalsCurrent.lua"
@@ -10434,7 +10435,7 @@ local function closestBodyPart(entity, camera, radius, visible)
 end
 
 -- One probability decision per eligible firing query. A miss leaves the native shot intact.
-    if IS_GENERIC then
+    if game.PlaceId == 286090429 then
         local mode=RivalsAim.KillAll
         local view, freeFrame, pitch, yaw
         local function closeView()
@@ -11661,6 +11662,7 @@ function RivalsFOV.Setup()
 end
 
 function RivalsAim.BuildUI()
+    if BOARD_GAME_NAME ~= "Huss Valley" then
     if IS_GENERIC and not RivalsAim.ArsenalSilentAvailable then
         local unavailable = gameSection(BOARD_GAME_NAME, AimTab.Left, "Silent Aim")
         Elements.Label(unavailable, "Needs a game-specific weapon adapter.")
@@ -11689,6 +11691,7 @@ function RivalsAim.BuildUI()
     Elements.Toggle(aim, "Wall Check", true, function(on)
         RivalsAim.WallCheck = on
     end)
+    end
     end
     for _, spec in ipairs({ { "Aim Assist", "Assist" }, { "Aimbot", "Aimbot" } }) do
         local name, key = spec[1], spec[2]
@@ -11838,7 +11841,7 @@ function RivalsAim.BuildUI()
         Settings.NoclipEnabled = on
         CharacterCollision.SetManual(on)
     end)
-    if IS_GENERIC then
+    if game.PlaceId == 286090429 then
         local kill=gameSection(BOARD_GAME_NAME,AimTab.Left,"Kill All")
         RivalsAim.KillAll.Toggle=Elements.Toggle(kill,"Kill All",false,function(on) RivalsAim.SetKillAll(on) end)
         Elements.Slider(kill,"Switch Target After",0.25,5,2,"seconds",function(value) RivalsAim.KillAll.RetryTime=value end,0.25)
@@ -14114,7 +14117,7 @@ if game.PlaceId == 286090429 then
 end
 
     end
-    if IS_GENERIC then
+    if game.PlaceId == 286090429 then
         local trails=Settings.MakeBulletTracers({Now=os.clock,Color=Color3.fromRGB(64,145,255),
             Create=function(origin,destination,options)
                 local root=new("Part", {Name="RiftBulletTracer", Anchored=true, CanCollide=false,

@@ -1,5 +1,5 @@
 local IS_GENERIC, BOARD_GAME_NAME = true, "Arsenal"
-local function isRivalsMode(name) return name == "Arsenal" or name == "Rivals" end
+local function isRivalsMode(name) return name == "Arsenal" or name == "Rivals" or name == "Huss Valley" end
 Settings.StartupStage = function() end
 Settings.Notify = function() end
 RunService.PostSimulation = signal()
@@ -42,8 +42,9 @@ RivalsKillChat.SetEnabled = function(on) RivalsKillChat.Enabled = on end
 BedWars.SpotifyPanel = new("Frame",{Visible=false},Gui)
 BedWars.MusicOverlayVisible = function() return RivalsVisuals.MusicOverlayOn end
 T.bg, T.panel, T.inner, T.element, T.border, T.gold = color(0,0,0),color(0,0,0),color(0,0,0),color(0,0,0),color(0,0,0),color(0,0,1)
-for _, gameName in ipairs({"Arsenal","Rivals"}) do
-    IS_GENERIC, BOARD_GAME_NAME = gameName == "Arsenal", gameName
+for _, gameName in ipairs({"Arsenal","Rivals","Huss Valley"}) do
+    IS_GENERIC, BOARD_GAME_NAME = gameName ~= "Rivals", gameName
+    game.PlaceId = gameName == "Arsenal" and 286090429 or gameName == "Rivals" and 17625359962 or 107535308163741
     Settings.SelectedGame = gameName
     for _, title in ipairs({"ESP Boxes","Player Outlines","Third Person","Zoom Unlocker","Hide Visuals","Preset Profiles","Named Presets"}) do
         Elements.Toggle(gameSection(gameName,VisualsTab.Left,title),title,false,function() end)
@@ -75,11 +76,14 @@ for _, gameName in ipairs({"Arsenal","Rivals"}) do
         for _, option in ipairs(ConfigControls) do if option.Key == key then return option end end
         error("missing "..key)
     end
-    if IS_GENERIC then
+    if gameName == "Arsenal" then
         assert(cards["Kill All"],"Kill All card missing")
         control("Kill All","Kill All").Set(true)
         assert(RivalsAim.KillAll.Enabled and not RivalsAim.AutoShoot.Enabled,"Kill All changed the Auto Shoot toggle")
         control("Kill All","Kill All").Set(false)
+    end
+    if gameName == "Huss Valley" then
+        assert(not cards["Kill All"] and not cards["Silent Aim"],"Arsenal-only weapon controls leaked into Huss Valley")
     end
     control("Aimbot","Aimbot").Set(true)
     assert(RivalsAim.Aimbot.Enabled and not RivalsAim.AutoShoot.Enabled,"aimbot enabled auto firing")
